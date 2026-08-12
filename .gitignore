@@ -1,0 +1,11 @@
+node_modules/
+studio/dist/
+runtime/internal/interfaces/http/static/*
+!runtime/internal/interfaces/http/static/index.html
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+coverage/
+*.tsbuildinfo
+.gyrifi/

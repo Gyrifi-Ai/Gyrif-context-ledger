@@ -1,0 +1,46 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+type Config struct {
+	HTTPAddress        string
+	DataDirectory      string
+	SQLitePath         string
+	ObjectsPath        string
+	QdrantURL          string
+	QdrantCollection   string
+	QdrantAPIKey       string
+	EvaluationProvider string
+	ModelPath          string
+	LlamaServerPath    string
+	LlamaServerPort    int
+	LogLevel           string
+}
+
+func Load() (Config, error) {
+	data := environment("GYRIFI_DATA_DIR", "/data")
+	port, err := strconv.Atoi(environment("GYRIFI_LLAMA_SERVER_PORT", "8081"))
+	if err != nil || port < 1 || port > 65535 {
+		return Config{}, fmt.Errorf("invalid GYRIFI_LLAMA_SERVER_PORT")
+	}
+	config := Config{HTTPAddress: environment("GYRIFI_HTTP_ADDRESS", ":8080"), DataDirectory: data, SQLitePath: environment("GYRIFI_SQLITE_PATH", filepath.Join(data, "state.db")), ObjectsPath: environment("GYRIFI_OBJECTS_PATH", filepath.Join(data, "objects")), QdrantURL: environment("GYRIFI_QDRANT_URL", "http://127.0.0.1:6333"), QdrantCollection: environment("GYRIFI_QDRANT_COLLECTION", "gyrifi"), QdrantAPIKey: os.Getenv("GYRIFI_QDRANT_API_KEY"), EvaluationProvider: strings.ToLower(environment("GYRIFI_EVALUATION_PROVIDER", "disabled")), ModelPath: os.Getenv("GYRIFI_MODEL_PATH"), LlamaServerPath: environment("GYRIFI_LLAMA_SERVER_PATH", "llama-server"), LlamaServerPort: port, LogLevel: strings.ToLower(environment("GYRIFI_LOG_LEVEL", "info"))}
+	if config.EvaluationProvider != "disabled" && config.EvaluationProvider != "llamacpp" {
+		return Config{}, fmt.Errorf("GYRIFI_EVALUATION_PROVIDER must be disabled or llamacpp")
+	}
+	if config.EvaluationProvider == "llamacpp" && config.ModelPath == "" {
+		return Config{}, fmt.Errorf("GYRIFI_MODEL_PATH is required when local evaluation is enabled")
+	}
+	return config, nil
+}
+func environment(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+	return fallback
+}

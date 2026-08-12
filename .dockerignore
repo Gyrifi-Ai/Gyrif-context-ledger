@@ -1,0 +1,11 @@
+.git
+.gitignore
+node_modules
+studio/node_modules
+studio/dist
+runtime/gyrifi
+*.db
+*.db-shm
+*.db-wal
+coverage
+.DS_Store

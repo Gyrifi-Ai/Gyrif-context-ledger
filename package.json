@@ -1,0 +1,11 @@
+{
+  "name": "gyrif-context-ledger",
+  "private": true,
+  "packageManager": "pnpm@11.15.1",
+  "scripts": {
+    "build": "pnpm --filter @gyrifi/studio build",
+    "dev": "pnpm --filter @gyrifi/studio dev",
+    "test": "pnpm --filter @gyrifi/studio test",
+    "typecheck": "pnpm --filter @gyrifi/studio typecheck"
+  }
+}
