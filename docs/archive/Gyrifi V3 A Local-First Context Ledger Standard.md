@@ -1,3 +1,6 @@
+> **SUPERSEDED — HISTORICAL ONLY.** Current documentation is [docs/ai/](../ai/README.md).
+> Where this document disagrees with the code, the code wins. See [AGENTS.md](../../AGENTS.md).
+
 # Gyrifi V3: Local-First Context Ledger Standard
 
 ## Status and technology baseline

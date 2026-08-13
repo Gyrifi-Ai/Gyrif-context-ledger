@@ -1,3 +1,9 @@
+> **SUPERSEDED — HISTORICAL ONLY. DO NOT IMPLEMENT FROM THIS FILE.**
+>
+> The `GRF-1XX` ticket IDs below are **retired** and have no ticket files. The current
+> backlog is [docs/ai/tickets/INDEX.md](../ai/tickets/INDEX.md) using `GRF-2XX` IDs.
+> Where this document disagrees with the code, the code wins. See [AGENTS.md](../../AGENTS.md).
+
 # Gyrif V3 Implementation Roadmap
 
 ## Delivery contract

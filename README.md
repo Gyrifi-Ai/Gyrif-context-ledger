@@ -1,201 +1,253 @@
 # Gyrifi Context Ledger
 
-Gyrifi is a local-first governance layer for mutable AI context. Applications submit desired-state **Changes**; people collect them into reviewable **Proposals**; evaluation evidence and approvals bind to the exact Proposal hash; an approved Proposal becomes an immutable **Release** after Gyrifi safely applies and verifies it against the target context store.
+**Version control for the context your AI systems depend on.**
 
-Gyrifi does not replace the target database. SQLite owns Gyrifi metadata and governance state, local content-addressed objects retain values and rollback material, and the Qdrant adapter owns target interaction.
+Gyrifi is a local-first governance layer for mutable AI context. Applications submit desired-state **Changes**. A person groups them into a reviewable **Proposal**. Evaluation evidence and approvals bind to the exact Proposal hash. Only then does Gyrifi apply the batch to the target vector store, verify it, and record an immutable **Release**.
 
-## Run with Docker
+Gyrifi does not replace your vector database. It sits in front of it and makes every mutation reviewable, reversible, and auditable.
 
-The supported distribution is one Docker image with one user-facing port:
+```text
+Application ──► Change ──► Proposal ──► Evaluation ──► Approval ──► Release ──► Qdrant
+              durable inbox   batch      evidence      authority    verified
+```
+
+---
+
+## Why
+
+Vector stores are usually written to blindly. An embedding job runs, points are upserted, and nobody can answer:
+
+- What changed in the knowledge base last Tuesday?
+- Who approved this content?
+- Can we get back to the state from before the bad ingestion run?
+
+Gyrifi answers all three. Every mutation is a durable record, every batch is reviewed against retained before-images, and rollback is a first-class forward operation rather than a database restore.
+
+---
+
+## Core concepts
+
+| Concept | Meaning |
+|---|---|
+| **Ledger** | A governed namespace. Owns its own Change inbox, Proposals, Releases, and `HEAD`. |
+| **Change** | One desired-state mutation (`PUT` or `DELETE`) to one logical unit — for Qdrant, a point ID. Idempotent. |
+| **Proposal** | An explicit, ordered selection of Ready Changes. Identified by a deterministic hash over ledger + base HEAD + ordered Change IDs. |
+| **Evaluation** | Deterministic checks plus optional local LLM evidence. Produces evidence, never authority. |
+| **Approval** | A human decision bound to an exact Proposal hash. Re-hashing a Proposal invalidates it. |
+| **Release** | An immutable, parent-linked record written only after the target applied *and* verified. Advances `HEAD`. |
+| **Rollback** | Reconstructs an earlier state from retained before-images into new Changes and a new Proposal. History only moves forward. |
+
+---
+
+## Quick start
+
+The supported distribution is one Docker image with one public port.
 
 ```sh
 docker build -t gyrifi:dev .
+
 docker run --rm \
-	-p 8080:8080 \
-	-v gyrifi-data:/data \
-	gyrifi:dev
+  -p 8080:8080 \
+  -v gyrifi-data:/data \
+  -e GYRIFI_QDRANT_URL=http://host.docker.internal:6333 \
+  -e GYRIFI_QDRANT_COLLECTION=context \
+  gyrifi:dev
 ```
 
-Open <http://localhost:8080>. The same Go HTTP server provides Studio at `/`, the versioned API at `/api/v1/...`, and server-sent events at `/events/v1`.
+Open <http://localhost:8080>. The same Go server serves Studio at `/`, the API at `/api/v1/...`, and the event stream at `/events/v1`.
 
-The image runs as a non-root user, exposes only port `8080`, runs SQLite migrations at startup, and stores persistent state below `/data`. Node.js and the Go toolchain are build-stage dependencies only; neither is a production application server.
+The image runs as a non-root user, exposes only `8080`, runs SQLite migrations at startup, and persists everything under `/data`.
 
-## Architecture
+---
 
-```text
-React + TypeScript Studio
-					│
-					│ HTTP / SSE on :8080
-					▼
-Go interfaces (HTTP and CLI)
-					│
-					▼
-				Engine
-			┌───┼──────────────┐
-			▼   ▼              ▼
-	 Ledger Repository  TargetAdapter     InferenceProvider
-	 (pure)  │              │                    │
-					 ▼              ▼                    ▼
-			 SQLite +         Qdrant          llama-server HTTP
-			 local CAS                         (optional Gemma GGUF)
-```
+## Using Gyrifi
 
-The repository is a modular monolith:
+### 1. Create a Ledger
 
-- `studio/` — React, TypeScript, Vite, and reusable UI.
-- `runtime/cmd/gyrifi/` — the single Go executable.
-- `runtime/internal/ledger/` — deterministic model, hashes, and invariants; no I/O.
-- `runtime/internal/engine/` — Change, Proposal, evaluation, release, recovery, and rollback behavior.
-- `runtime/internal/repository/` — Gyrifi-owned SQLite state and local content-addressed objects.
-- `runtime/internal/targets/qdrant/` — Qdrant-specific target operations.
-- `runtime/internal/inference/` — typed evaluation boundary and llama.cpp provider.
-- `runtime/internal/interfaces/` — protocol parsing and response mapping only.
-- `runtime/internal/bootstrap/` — composition root and lifecycle.
-- `runtime/migrations/` — ordered SQLite migrations embedded into the executable.
-
-Only the Engine release path calls `TargetAdapter.Apply`. Evaluation produces evidence, never authority. Rollback reconstructs retained prior values into new Changes and a new Proposal, so released history always moves forward.
-
-## Local development
-
-Requirements:
-
-- Go 1.24 or newer
-- Node.js 24 or newer
-- pnpm 11
-- Docker only when building/running the production image
-
-Install and build Studio:
+Use **Ledgers** in Studio, or:
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm typecheck
-pnpm test
-pnpm build
+curl -X POST localhost:8080/api/v1/ledgers \
+  -H 'content-type: application/json' \
+  -d '{"name":"product-docs","description":"Support knowledge base"}'
 ```
 
-Run Studio with Vite during development:
+### 2. Submit Changes
+
+For Qdrant the logical `unit` is the point ID and `desired` is the complete point object.
 
 ```sh
-pnpm dev
+curl -X POST localhost:8080/api/v1/ledgers/$LEDGER/changes \
+  -H 'content-type: application/json' \
+  -d '{
+    "unit": "42",
+    "action": "PUT",
+    "desired": { "id": 42, "vector": [0.1, 0.2, 0.3], "payload": { "title": "Refunds" } },
+    "idempotencyKey": "ingest-2026-08-12-42"
+  }'
 ```
 
-Vite listens on `5173` and proxies `/api` and `/events` to the Go runtime at `127.0.0.1:8080`.
+Returns `202 Accepted` **only after the SQLite transaction commits**. No target write happens here. Retrying with the same key and the same body returns the original Change; the same key with a different body is a `409`.
 
-Run the Go runtime:
+### 3. Build a Proposal
 
 ```sh
-cd runtime
-GYRIFI_DATA_DIR=../.gyrifi go run ./cmd/gyrifi
+curl -X POST localhost:8080/api/v1/ledgers/$LEDGER/proposals \
+  -H 'content-type: application/json' \
+  -d '{"title":"August refund policy refresh","changeIds":["chg_...","chg_..."]}'
 ```
 
-The source build serves a small fallback page unless production Studio assets have been copied into `runtime/internal/interfaces/http/static/`. Vite is the normal local frontend during development; the Docker build embeds the real production assets before compiling Go.
+Every selected Change is claimed transactionally. A Change belongs to at most one Proposal.
 
-Go quality gates:
+### 4. Evaluate and approve
 
 ```sh
-cd runtime
-go fmt ./...
-go vet ./...
-go test ./...
-go build ./cmd/gyrifi
+curl -X POST localhost:8080/api/v1/ledgers/$LEDGER/proposals/$PR/evaluation \
+  -H 'content-type: application/json' \
+  -d '{"criteria":"No PII; policy statements must cite a source."}'
+
+curl -X POST localhost:8080/api/v1/ledgers/$LEDGER/proposals/$PR/approvals \
+  -H 'content-type: application/json' \
+  -d '{"actor":"you@example.com"}'
 ```
 
-The CLI uses the same Engine as HTTP:
+Approval is refused unless a **current passing** evaluation exists for the Proposal's exact hash.
+
+### 5. Release
 
 ```sh
-cd runtime
-GYRIFI_DATA_DIR=../.gyrifi go run ./cmd/gyrifi doctor
+curl -X POST localhost:8080/api/v1/ledgers/$LEDGER/proposals/$PR/release
 ```
 
-## Qdrant
+Gyrifi validates `HEAD`, compiles the plan, captures before-images, persists a Release Intent, applies to Qdrant, verifies, and only then inserts the Release and advances `HEAD` in one SQLite transaction.
 
-Qdrant is the first and only target adapter. Configure it with environment variables:
+### 6. Roll back
 
 ```sh
-docker run --rm \
-	-p 8080:8080 \
-	-v gyrifi-data:/data \
-	-e GYRIFI_QDRANT_URL=http://host.docker.internal:6333 \
-	-e GYRIFI_QDRANT_COLLECTION=context \
-	-e GYRIFI_QDRANT_API_KEY=... \
-	gyrifi:dev
+curl -X POST localhost:8080/api/v1/ledgers/$LEDGER/releases/$OLD_RELEASE/rollback
 ```
 
-The API key is optional and is never included in structured request logs. For Qdrant `PUT` Changes, the desired JSON value is a complete Qdrant point object, including its `id`, vector, and payload. The logical unit is the point ID used for reads, deletes, conflict checks, and history. The initial adapter supports Qdrant collections with one unnamed vector configuration; named multi-vector collections are rejected explicitly rather than verified with the wrong distance metric.
+This does **not** rewind. It creates a new Proposal whose Changes restore the state as of the selected Release, then follows the ordinary evaluation → approval → release path.
 
-Qdrant sparse in-place updates are reported as **recoverable**, not falsely advertised as globally atomic. Gyrifi captures current fingerprints and before-images, persists a Release Intent, applies, verifies, and only then advances ledger `HEAD`.
-
-## Optional Gemma evaluation with llama.cpp
-
-The image includes `llama-server`, but no model. Deterministic governance works with inference disabled, which is the default.
-
-Mount a compatible Gemma GGUF and enable the provider explicitly:
-
-```sh
-docker run --rm \
-	-p 8080:8080 \
-	-v gyrifi-data:/data \
-	-v /absolute/path/gemma.gguf:/models/gemma.gguf:ro \
-	-e GYRIFI_EVALUATION_PROVIDER=llamacpp \
-	-e GYRIFI_MODEL_PATH=/models/gemma.gguf \
-	gyrifi:dev
-```
-
-The Go process validates the model path, starts `/opt/llama/llama-server` on loopback port `8081`, waits for readiness, communicates over its OpenAI-compatible HTTP endpoint, and terminates it during shutdown. Port `8081` is not exposed by the image.
-
-Natural-language output is parsed into Gyrifi-owned typed evidence containing `passed`, `summary`, `findings`, and model identity. Invalid free-form output is rejected. Evidence is persisted against the exact Proposal hash and cannot directly approve or release anything.
+---
 
 ## Configuration
 
-Configuration is loaded once in the composition root and injected into concrete components.
+Configuration is loaded once at startup and injected. No config file, no service discovery.
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `GYRIFI_HTTP_ADDRESS` | `:8080` | Studio/API listen address |
 | `GYRIFI_DATA_DIR` | `/data` | Persistent data root |
-| `GYRIFI_SQLITE_PATH` | `/data/state.db` | SQLite database path |
-| `GYRIFI_OBJECTS_PATH` | `/data/objects` | Content-addressed object root |
+| `GYRIFI_SQLITE_PATH` | `$GYRIFI_DATA_DIR/state.db` | SQLite database path |
+| `GYRIFI_OBJECTS_PATH` | `$GYRIFI_DATA_DIR/objects` | Content-addressed object root |
 | `GYRIFI_QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant base URL |
 | `GYRIFI_QDRANT_COLLECTION` | `gyrifi` | Governed collection |
-| `GYRIFI_QDRANT_API_KEY` | empty | Optional Qdrant credential |
+| `GYRIFI_QDRANT_API_KEY` | empty | Optional Qdrant credential, sent as `api-key` |
 | `GYRIFI_EVALUATION_PROVIDER` | `disabled` | `disabled` or `llamacpp` |
-| `GYRIFI_MODEL_PATH` | empty | Mounted Gemma GGUF path |
-| `GYRIFI_LLAMA_SERVER_PATH` | image: `/opt/llama/llama-server` | llama-server executable |
-| `GYRIFI_LLAMA_SERVER_PORT` | `8081` | Internal loopback port |
+| `GYRIFI_MODEL_PATH` | empty | GGUF path; required when provider is `llamacpp` |
+| `GYRIFI_LLAMA_SERVER_PATH` | `llama-server` (image: `/opt/llama/llama-server`) | llama-server executable |
+| `GYRIFI_LLAMA_SERVER_PORT` | `8081` | Internal loopback port, never exposed |
 | `GYRIFI_LOG_LEVEL` | `info` | `info` or `debug` |
 
-SQLite starts in WAL mode with `synchronous=FULL`, foreign keys enabled, and a bounded busy timeout. Migrations execute automatically before HTTP starts.
+SQLite runs with `journal_mode=WAL`, `synchronous=FULL`, `foreign_keys=ON`, and `busy_timeout=5000`. Migrations run automatically before HTTP starts.
 
-## Core API flow
+---
 
-The maintained contract uses `/api/v1`:
+## Optional local evaluation
 
-```text
-POST /api/v1/ledgers
-POST /api/v1/ledgers/{ledgerId}/changes
-POST /api/v1/ledgers/{ledgerId}/proposals
-POST /api/v1/ledgers/{ledgerId}/proposals/{proposalId}/evaluation
-POST /api/v1/ledgers/{ledgerId}/proposals/{proposalId}/approvals
-POST /api/v1/ledgers/{ledgerId}/proposals/{proposalId}/release
-POST /api/v1/ledgers/{ledgerId}/releases/{releaseId}/rollback
+The image ships `llama-server` but no model. Deterministic governance works with inference disabled, which is the default.
+
+```sh
+docker run --rm -p 8080:8080 \
+  -v gyrifi-data:/data \
+  -v /abs/path/gemma.gguf:/models/gemma.gguf:ro \
+  -e GYRIFI_EVALUATION_PROVIDER=llamacpp \
+  -e GYRIFI_MODEL_PATH=/models/gemma.gguf \
+  gyrifi:dev
 ```
 
-A successful Change response is sent only after the SQLite transaction commits. Reusing an idempotency key with the same logical request returns the original Change; reusing it for different desired state returns a conflict. Proposal creation claims every selected Change transactionally. Checks and approvals are valid only for the current Proposal hash.
+Go supervises `llama-server` on loopback `8081`, waits for `/health`, and terminates it on shutdown. Model output is parsed into typed evidence (`passed`, `summary`, `findings`, model identity). Free-form output is rejected. Evidence can never approve or release on its own.
+
+---
+
+## Local development
+
+Requirements: Go 1.24+, Node.js 24+, pnpm 11. Docker only for the image.
+
+```sh
+# Studio
+pnpm install --frozen-lockfile
+pnpm typecheck && pnpm test && pnpm build
+pnpm dev            # Vite on :5173, proxies /api and /events to :8080
+
+# Runtime
+cd runtime
+GYRIFI_DATA_DIR=../.gyrifi go run ./cmd/gyrifi
+go fmt ./... && go vet ./... && go test ./... && go build ./cmd/gyrifi
+```
+
+The source build serves a fallback page unless production Studio assets are copied into `runtime/internal/interfaces/http/static/`. The Docker build does this automatically.
+
+The CLI uses the same Engine as HTTP:
+
+```sh
+go run ./cmd/gyrifi doctor     # ledger count and inference state as JSON
+go run ./cmd/gyrifi version
+```
+
+---
 
 ## Persistence and backups
 
-Back up the mounted `/data` volume using a volume-aware snapshot mechanism while Gyrifi is stopped, or use a future repository-aware backup command. The state layout is intentionally simple:
-
 ```text
 /data/
-├── state.db
+├── state.db          # governance state
 ├── state.db-wal
 ├── state.db-shm
-└── objects/
-		└── <sha256 shards>
+└── objects/          # sha256-addressed values and before-images
+    └── ab/cdef…
 ```
 
-Object writes use a temporary file, sync, and atomic rename. The initial implementation intentionally does not include packs, remote object storage, delta compression, or background repacking.
+Back up the whole `/data` volume with Gyrifi stopped. Object writes use a temp file, `fsync`, and atomic rename. There are deliberately no packs, remote object stores, deltas, or repacking.
+
+---
+
+## Architecture at a glance
+
+```text
+React + TypeScript Studio
+      │ HTTP / SSE :8080
+      ▼
+Interfaces (HTTP, CLI)
+      ▼
+   Engine ──► Ledger (pure, no I/O)
+      ├────► Repository        → SQLite (WAL) + local CAS
+      ├────► TargetAdapter     → Qdrant REST
+      └────► InferenceProvider → llama-server HTTP (optional)
+```
+
+One Go module, one frontend package, one image. No Rust, no Python runtime, no production Node server, no microservices.
+
+---
+
+## Documentation
+
+Deep documentation lives in [docs/ai/](docs/ai/README.md) and is written to be read one file at a time:
+
+| Document | Read it when |
+|---|---|
+| [docs/ai/product.md](docs/ai/product.md) | You need the domain model, workflows, and invariants |
+| [docs/ai/repo-structure.md](docs/ai/repo-structure.md) | You need to know where code goes |
+| [docs/ai/tech-spec.md](docs/ai/tech-spec.md) | You need API shapes, schema, types, algorithms |
+| [docs/ai/design-system.md](docs/ai/design-system.md) | You are touching Studio UI |
+| [docs/ai/tickets/INDEX.md](docs/ai/tickets/INDEX.md) | You are picking up work |
+| [docs/ai/phases/](docs/ai/phases/README.md) | You want the history of what was built and why |
+| [AGENTS.md](AGENTS.md) | You are an AI agent working in this repo |
+
+Architecture decisions live in [docs/adr/](docs/adr/). Superseded design documents are kept in [docs/archive/](docs/archive/) for history only — **they do not describe the current system.**
+
+---
 
 ## License
 

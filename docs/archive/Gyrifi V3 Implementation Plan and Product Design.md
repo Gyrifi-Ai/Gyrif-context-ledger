@@ -1,3 +1,7 @@
+> **SUPERSEDED — HISTORICAL ONLY.** Current documentation is [docs/ai/](../ai/README.md).
+> The design described here was replaced by [docs/ai/design-system.md](../ai/design-system.md).
+> Where this document disagrees with the code, the code wins. See [AGENTS.md](../../AGENTS.md).
+
 # Gyrifi V3 Implementation Plan and Product Design
 
 ## Implemented product shape
