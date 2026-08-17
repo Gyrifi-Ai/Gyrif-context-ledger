@@ -428,7 +428,7 @@ A ledger is a governed namespace with its own inbox, proposals, and release hist
 │ ┌───────────────────────────────┐ ┌───────────────────────────────┐   │
 │ │ ● product-docs      [ACTIVE]  │ │   support-kb                  │   │
 │ │ Support knowledge base        │ │   Ticket macros               │   │
-│ │ ldg_9f2c…  · 12 ready · 3 rel │ │   ldg_44ab…  · 0 ready · 0 rel│   │
+│ │ ldg_9f2c…  ·  12 ready · 3 rel │ │   ldg_44ab…  ·  0 ready · 0 rel│   │
 │ └───────────────────────────────┘ └───────────────────────────────┘   │
 └───────────────────────────────────────────────────────────────────────┘
 ```
@@ -556,19 +556,11 @@ Action buttons additionally implement `idle → loading → success/error`. Succ
 
 ## 8. Implementation constraints
 
-1. **No new runtime dependencies.** Plain CSS with custom properties. No Tailwind, no CSS-in-JS, no component library, no icon package. Icons are hand-written inline SVG in `ui/primitives/icon.tsx`.
-2. **Split `styles.css`.** Target structure:
-   ```
-   studio/src/styles/
-   ├── tokens.css        # :root only — every token in §2
-   ├── reset.css         # box-sizing, margins, focus defaults
-   ├── base.css          # element defaults, typography
-   └── components.css    # component classes, BEM-ish: .gy-panel, .gy-panel__header
-   ```
-   `main.tsx` imports one `styles/index.css` that `@import`s the four.
-3. **Class naming:** `gy-{block}__{element}--{modifier}`. Every class is prefixed `gy-` to avoid collisions with embedded content.
+1. **UI stack (revised 2026-08-17).** Studio is built with **shadcn/ui conventions on Tailwind CSS v4**: `tailwindcss` + `@tailwindcss/vite`, Radix UI primitives (`react-dialog`, `react-checkbox`, `react-label`, `react-select`, `react-separator`, `react-tooltip`), `lucide-react` icons, and `class-variance-authority` + `clsx` + `tailwind-merge`. This supersedes the previous no-dependency rule below, which was relaxed by explicit owner decision to reach a production-grade visual standard. No *further* runtime dependencies beyond this set without a ticket.
+2. **Tokens live in the Tailwind theme.** `studio/src/styles.css` declares the §2 palette as `@theme` custom properties (`--color-*`, `--font-*`, `--radius-*`); components consume them through Tailwind utilities, not raw values. The earlier `styles/{tokens,reset,base,components}.css` split plan is retired.
+3. **Class naming:** shadcn convention — Tailwind utilities composed via `cn()` (`src/lib/utils.ts`). The `gy-` BEM prefix scheme is retired with the hand-rolled stylesheet.
 4. **No inline `style` attributes** except for genuinely dynamic values (a progress width, a grid `--width` custom property).
-5. **`ui/` stays domain-free.** Domain→tone mapping lives in `features/shared/status.ts`.
+5. **`components/ui/` stays domain-free.** Domain→tone mapping lives in `features/shared/status.ts`.
 6. **Every component gets a Vitest test** covering render, the disabled/loading path, and keyboard interaction (GRF-230).
 7. `pnpm typecheck` must stay clean under `strict: true`.
 

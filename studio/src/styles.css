@@ -1,25 +1,93 @@
-:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; background: #080b10; color: #e7edf4; font-synthesis: none; }
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 65% -20%, #17342d 0, transparent 33%), #080b10; }
-button, input, textarea { font: inherit; }
-button { color: inherit; }
-.shell { min-height: 100vh; display: grid; grid-template-columns: 240px 1fr; }
-aside { border-right: 1px solid #202833; background: rgba(10,14,20,.9); padding: 28px 18px; display: flex; flex-direction: column; }
-.brand { display: flex; gap: 12px; align-items: center; padding: 0 9px 34px; }
-.brand__mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; color: #07110e; background: #6ee7b7; font-weight: 900; }
-.brand b, .brand small { display: block; }.brand small { color: #718094; margin-top: 2px; }
-nav { display: grid; gap: 7px; } nav a { padding: 11px 13px; border-radius: 9px; color: #8997aa; text-decoration: none; font-weight: 650; } nav a:hover, nav a.active { background: #18221f; color: #b6f4d8; }
-.aside__footer { margin-top: auto; color: #718094; font-size: 12px; }.health-dot { width: 7px; height: 7px; background: #6ee7b7; display: inline-block; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 10px #6ee7b7; }
-main { padding: 34px 48px; min-width: 0; } main > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; } h1, h2, h3, p { margin-top: 0; } h1 { font-size: 32px; margin-bottom: 0; } h2 { font-size: 20px; } h3 { margin-bottom: 7px; } code { color: #8e9daf; font-size: 12px; overflow-wrap: anywhere; }
-.eyebrow { color: #6ee7b7; letter-spacing: .13em; font-size: 10px; font-weight: 800; display: block; margin-bottom: 7px; }
-.content-grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 20px; align-items: start; }
-.panel { background: rgba(16,21,29,.86); border: 1px solid #252e3b; border-radius: 16px; padding: 24px; box-shadow: 0 18px 50px rgba(0,0,0,.12); }.panel--wide { min-height: 390px; }.panel__heading { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 18px; border-bottom: 1px solid #252e3b; }.panel__heading > span { color: #718094; font-size: 13px; }
-form { display: grid; gap: 16px; } label { display: grid; gap: 7px; color: #a7b3c2; font-size: 13px; font-weight: 650; } input, textarea { width: 100%; border: 1px solid #303b49; border-radius: 9px; background: #0b1016; color: #e7edf4; padding: 10px 12px; outline: none; } input:focus, textarea:focus { border-color: #6ee7b7; box-shadow: 0 0 0 3px rgba(110,231,183,.08); }
-.button { border: 1px solid #3d6f60; background: #173b31; color: #baf7dd; border-radius: 9px; padding: 9px 13px; font-weight: 750; cursor: pointer; }.button:hover { background: #205044; }.button:disabled { opacity: .4; cursor: default; }
-.empty { text-align: center; color: #718094; padding: 68px 20px; }.empty strong { color: #dce6f1; }.empty p { margin: 8px auto 0; max-width: 430px; }
-.cards { display: grid; gap: 10px; padding-top: 18px; }.ledger-card { width: 100%; text-align: left; display: grid; grid-template-columns: 38px 1fr auto; gap: 12px; align-items: center; border: 1px solid #252e3b; background: #0d1219; border-radius: 11px; padding: 13px; cursor: pointer; }.ledger-card:hover, .ledger-card.selected { border-color: #4d8b78; background: #111e1b; }.ledger-card__icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; background: #22362f; color: #77e5bd; font-weight: 900; }.ledger-card b, .ledger-card small { display: block; }.ledger-card small { margin-top: 4px; color: #718094; }
-.table { display: grid; padding-top: 12px; }.table__row { display: grid; grid-template-columns: 110px 1fr 70px 100px; align-items: center; gap: 10px; padding: 13px 8px; border-bottom: 1px solid #202833; }
-.status { display: inline-flex; width: max-content; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 850; letter-spacing: .04em; }.status--positive { color: #8df0c8; background: #16382e; }.status--negative { color: #ffadad; background: #3b1f25; }.status--neutral { color: #b2c0d2; background: #232c38; }
-.checklist { max-height: 180px; overflow: auto; display: grid; gap: 8px; }.checklist label { display: flex; align-items: center; }.checklist input { width: auto; }.proposal-list { display: grid; gap: 12px; padding-top: 18px; }.proposal-list article { display: flex; justify-content: space-between; gap: 20px; border: 1px solid #252e3b; background: #0d1219; border-radius: 12px; padding: 16px; }.proposal-list h3 { margin-top: 9px; }.actions { display: flex; gap: 6px; align-items: center; }.actions .button { padding: 7px 9px; font-size: 12px; }
-.timeline { padding: 25px 0 0 12px; }.timeline article { position: relative; border-left: 1px solid #304039; padding: 0 0 28px 28px; }.timeline__node { position: absolute; left: -6px; top: 0; width: 11px; height: 11px; border-radius: 50%; background: #6ee7b7; box-shadow: 0 0 13px rgba(110,231,183,.6); }.timeline small { color: #6ee7b7; }.timeline p { color: #718094; margin-top: 8px; }.error { color: #ffadad; font-size: 13px; }
-@media (max-width: 900px) { .shell { grid-template-columns: 1fr; } aside { position: static; } nav { grid-template-columns: repeat(4,1fr); } .aside__footer { display: none; } main { padding: 24px 18px; } .content-grid { grid-template-columns: 1fr; } }
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Gyrifi Studio theme — shadcn/ui convention, values ported from
+ * docs/ai/design-system.md §2 (slate ramp + jade brand, dark only).
+ */
+:root {
+  --background: #06080c;
+  --foreground: #eef2f7;
+  --card: #0c1017;
+  --card-foreground: #eef2f7;
+  --popover: #11161f;
+  --popover-foreground: #eef2f7;
+  --primary: #2bb98b;
+  --primary-foreground: #06080c;
+  --secondary: #161d28;
+  --secondary-foreground: #eef2f7;
+  --muted: #11161f;
+  --muted-foreground: #8394a9;
+  --accent: #161d28;
+  --accent-foreground: #eef2f7;
+  --destructive: #e05a6e;
+  --destructive-foreground: #eef2f7;
+  --border: #1e2734;
+  --input: #1e2734;
+  --ring: #2bb98b;
+  --radius: 0.625rem;
+
+  /* Gyrifi status accents (design-system.md §2.2) */
+  --success: #5fd9ae;
+  --info: #3f96d6;
+  --review: #a99bff;
+  --warning: #f0b855;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-info: var(--info);
+  --color-review: var(--review);
+  --color-warning: var(--warning);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Inter var", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  code, kbd, pre {
+    @apply font-mono;
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 35%, transparent);
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 999px;
+    border: 2px solid var(--background);
+  }
+  ::-webkit-scrollbar-track { background: transparent; }
+}

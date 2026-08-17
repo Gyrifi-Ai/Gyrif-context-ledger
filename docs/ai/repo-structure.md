@@ -121,17 +121,18 @@ bootstrap ──► everything (composition only)
 
 ## 3. `studio/` — React frontend
 
-Package: `@gyrifi/studio`. React 19.1.1, TypeScript 5.9.2 (strict), Vite 7.1.4, Vitest 3.2.4. **No UI framework, no router library, no data-fetching library.**
+Package: `@gyrifi/studio`. React 19.1.1, TypeScript 5.9.2 (strict), Vite 7.1.4, Vitest 3.2.4. UI is built with **shadcn/ui conventions on Tailwind CSS v4** (`tailwindcss` + `@tailwindcss/vite`), Radix UI primitives, `lucide-react` icons, and `class-variance-authority`/`clsx`/`tailwind-merge` (stack authorised 2026-08-17, see `design-system.md` §8). No router library, no data-fetching library.
 
 ```text
 studio/
 ├── package.json
-├── tsconfig.json               # strict: true, target ES2022, moduleResolution Bundler, noEmit
-├── vite.config.ts              # port 5173; proxies /api and /events → 127.0.0.1:8080
-├── index.html                  # <div id="root">, theme-color #0d1117
+├── tsconfig.json               # strict: true, target ES2022, moduleResolution Bundler, noEmit, paths @/* → src/*
+├── vite.config.ts              # port 5173; proxies /api and /events → 127.0.0.1:18080; @tailwindcss/vite plugin
+├── index.html                  # <div id="root">, theme-color #06080c
 └── src/
     ├── main.tsx                # imports styles.css, calls bootstrap(root)
-    ├── styles.css              # ALL styling. plain CSS, single file.
+    ├── styles.css              # Tailwind v4 entry: @theme tokens (design-system palette) + base layer
+    ├── lib/utils.ts            # cn() — clsx + tailwind-merge
     ├── app/
     │   ├── bootstrap.tsx       # createRoot + StrictMode + Providers + Shell
     │   ├── providers.tsx       # AppState context: { ledgerId, setLedgerId } persisted to localStorage
@@ -142,12 +143,14 @@ studio/
     │   ├── client.ts           # request<T>() + the `api` object
     │   ├── client.test.ts
     │   └── events.ts           # subscribeToEvents() over EventSource
+    ├── components/ui/          # shadcn/ui components (button, card, badge, input, textarea, label,
+    │                           #  table, dialog, checkbox, separator, skeleton, tooltip)
     ├── ui/                     # VISUAL ONLY. must not know about ledgers/changes/etc.
-    │   ├── primitives/button.tsx
     │   ├── patterns/status-badge.tsx
     │   ├── layout/application-shell.tsx
     │   └── feedback/empty-state.tsx
     ├── features/               # ALL domain-aware UI
+    │   ├── shared/status.ts    # domain status → badge tone mapping (design-system §2.2)
     │   ├── ledgers/ledgers-page.tsx
     │   ├── changes/changes-page.tsx
     │   ├── proposals/proposals-page.tsx

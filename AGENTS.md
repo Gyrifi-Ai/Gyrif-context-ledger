@@ -72,7 +72,7 @@ These are not preferences. A change that violates one is rejected.
 
 ### Dependencies
 
-- **Do not add a dependency** unless the ticket explicitly permits it. The runtime has exactly one direct Go dependency (`modernc.org/sqlite`) and Studio has two (`react`, `react-dom`). That is deliberate.
+- **Do not add a dependency** unless the ticket explicitly permits it. The runtime has exactly one direct Go dependency (`modernc.org/sqlite`). Studio's stack is React + the shadcn/ui set authorised on 2026-08-17 (Tailwind CSS v4, Radix UI primitives, `lucide-react`, `class-variance-authority`, `clsx`, `tailwind-merge`, `tw-animate-css`) — see `docs/ai/design-system.md` §8. Nothing beyond that set without a ticket.
 - `CGO_ENABLED=0` must keep working. No cgo, no matter how convenient.
 
 ### Secrets
