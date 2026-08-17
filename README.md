@@ -41,22 +41,21 @@ Gyrifi answers all three. Every mutation is a durable record, every batch is rev
 
 ## Quick start
 
-The supported distribution is one Docker image with one public port.
+Start the complete local system with one command:
 
 ```sh
-docker build -t gyrifi:dev .
-
-docker run --rm \
-  -p 8080:8080 \
-  -v gyrifi-data:/data \
-  -e GYRIFI_QDRANT_URL=http://host.docker.internal:6333 \
-  -e GYRIFI_QDRANT_COLLECTION=context \
-  gyrifi:dev
+docker compose up --build
 ```
 
-Open <http://localhost:8080>. The same Go server serves Studio at `/`, the API at `/api/v1/...`, and the event stream at `/events/v1`.
+Or choose **Gyrifi: Start local stack** from VS Code's **Run and Debug** view and press the Run button. This starts the compiled Studio and Go runtime in the `gyrifi` container, plus its local Qdrant target and a one-time collection initializer. No separate Go, Node, Studio, or Qdrant setup is needed.
 
-The image runs as a non-root user, exposes only `8080`, runs SQLite migrations at startup, and persists everything under `/data`.
+Open <http://127.0.0.1:8080>. The same Go server serves Studio at `/`, the API at `/api/v1/...`, and the event stream at `/events/v1`. The stack creates the `gyrifi` Qdrant collection as a 3-dimensional cosine collection only when it does not already exist.
+
+Gyrifi and Qdrant data persist in named Docker volumes. Stop the stack with `docker compose down`. To delete all local governance and target data, use `docker compose down --volumes`.
+
+The Compose port is bound to `127.0.0.1` only. Until GRF-220 adds authentication, this local Compose configuration is not a production deployment mechanism.
+
+The application image runs as a non-root user, exposes only `8080`, runs SQLite migrations at startup, and persists Gyrifi state under `/data`.
 
 ---
 

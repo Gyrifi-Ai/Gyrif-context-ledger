@@ -1,0 +1,31 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  qdrant-init:
+    image: curlimages/curl:8.12.1
+    depends_on:
+      - qdrant
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec", "until curl --fail --silent --output /dev/null http://qdrant:6333/; do echo 'Waiting for Qdrant...'; sleep 1; done; if curl --fail --silent --output /dev/null http://qdrant:6333/collections/gyrifi; then echo 'Qdrant collection gyrifi already exists.'; else curl --fail --silent --show-error --request PUT http://qdrant:6333/collections/gyrifi --header 'Content-Type: application/json' --data '{\"vectors\":{\"size\":3,\"distance\":\"Cosine\"}}'; fi"]
+
+  gyrifi:
+    build:
+      context: .
+    image: gyrifi:local
+    depends_on:
+      qdrant-init:
+        condition: service_completed_successfully
+    environment:
+      GYRIFI_QDRANT_URL: http://qdrant:6333
+      GYRIFI_QDRANT_COLLECTION: gyrifi
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - gyrifi-data:/data
+
+volumes:
+  gyrifi-data:
+  qdrant-data:

@@ -85,6 +85,7 @@ Goal: make a shared deployment defensible.
 | [GRF-224](GRF-224-health-and-metrics.md) | Health, readiness, and operational metrics | M | — |
 | [GRF-225](GRF-225-inference-supervision.md) | Inference process supervision | M | — |
 | [GRF-226](GRF-226-rate-limiting.md) | Request rate limiting and abuse controls | M | GRF-220 |
+| [GRF-227](GRF-227-local-docker-launch.md) | Local Docker launch | M | — |
 
 ## Phase 4 — Qualification
 
@@ -149,6 +150,7 @@ Update this table when a ticket is completed, and write the corresponding entry 
 | GRF-224 | Not started | — | — |
 | GRF-225 | Not started | — | — |
 | GRF-226 | Not started | — | — |
+| GRF-227 | Done | 2026-08-17 | phase-3.md |
 | GRF-230 | Not started | — | — |
 | GRF-231 | Not started | — | — |
 | GRF-232 | Not started | — | — |

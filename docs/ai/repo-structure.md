@@ -11,11 +11,14 @@ gyrif-context-ledger/
 ├── AGENTS.md                  # working agreement for AI agents — read first
 ├── README.md                  # product README for humans
 ├── Dockerfile                 # 4-stage build, produces the only shipping artifact
+├── compose.yaml               # local Gyrifi + Qdrant launch, loopback-only Studio/API port
 ├── LICENSE
 ├── package.json               # pnpm workspace root, thin script proxies
 ├── pnpm-workspace.yaml        # packages: [studio]
 ├── pnpm-lock.yaml
 ├── .dockerignore / .gitignore
+├── .vscode/
+│   └── launch.json            # Run and Debug entry point for the local Compose stack
 ├── docs/
 │   ├── adr/                   # architecture decision records
 │   ├── ai/                    # the documentation set in this folder
@@ -197,6 +200,10 @@ studio/
 Node and Go are **build-stage only**. The final image contains one Go binary plus llama-server artifacts.
 
 `pnpm` scripts in `studio/package.json` invoke tool entry points directly (`node node_modules/vite/bin/vite.js`) because the local workspace path contains a `:`, which makes prepending `node_modules/.bin` to `PATH` unsafe. **Keep this pattern** when adding scripts.
+
+### Local Compose launch
+
+`compose.yaml` is development-only composition, not a second shipping artifact. It starts the built Gyrifi image, a pinned Qdrant target, and an idempotent collection initializer. The only published port is `127.0.0.1:8080`; both Gyrifi and Qdrant use named Docker volumes. `.vscode/launch.json` runs `docker compose up --build --remove-orphans` from the workspace root through the Run and Debug control. Do not change this binding to all interfaces before GRF-220 adds authentication.
 
 ---
 

@@ -17,7 +17,7 @@ Status: extracted from source. Every identifier, path, and default below appears
 | Package manager | pnpm | 11.15.1 |
 | Target adapter | Qdrant REST | — |
 | Optional inference | `llama-server` over loopback HTTP | `ghcr.io/ggml-org/llama.cpp:server` |
-| Distribution | one Docker image, one public port | `ubuntu:24.04` base |
+| Distribution | one shipping Docker image; local Compose stack on loopback | `ubuntu:24.04` base |
 
 Go direct dependency list is exactly one module. Frontend runtime dependency list is exactly `react` and `react-dom`. Adding to either requires an ADR.
 
@@ -41,6 +41,12 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 10. Construct `httpinterface.New(application, logger, Version)`.
 11. `http.Server{ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and `ListenAndServe`.
 12. On `ctx.Done()`: `server.Shutdown` with a 10s timeout; deferred closes stop llama-server and the repository.
+
+### Local Docker Compose contract
+
+`compose.yaml` is the supported local launch: `docker compose up --build` starts the `gyrifi` application image, a pinned `qdrant/qdrant:v1.13.4` target, and a short-lived pinned `curlimages/curl:8.12.1` initializer. The initializer waits for Qdrant, then creates collection `gyrifi` with `{ "vectors": { "size": 3, "distance": "Cosine" } }` only if it is absent; it never replaces an existing collection.
+
+`gyrifi` receives `GYRIFI_QDRANT_URL=http://qdrant:6333` and `GYRIFI_QDRANT_COLLECTION=gyrifi`. Its `8080` port is published as `127.0.0.1:8080` only. Named `gyrifi-data` and `qdrant-data` volumes persist both stores across `docker compose down`; `docker compose down --volumes` is the explicit destructive local reset. This is local-only until GRF-220 authenticates the runtime.
 
 ### Configuration (`internal/config/config.go`)
 
