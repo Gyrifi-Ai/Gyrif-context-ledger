@@ -42,13 +42,14 @@ These are **not** tickets. They are scope that existing tickets explicitly pushe
 
 ---
 
-## Phase 1 — Studio experience
+### Phase 1 — Studio experience
 
 Goal: turn the functional-but-plain Studio into a product that reads like a control room. Spec: [design-system.md](../design-system.md).
 
 | ID | Title | Size | Depends on |
 |---|---|---|---|
-| [GRF-201](GRF-201-design-tokens.md) | Design token foundation and stylesheet split | M | — |
+| [GRF-240](GRF-240-mockup-led-studio-product-system.md) | Mockup-led Studio product system | XL | — |
+| [GRF-201](GRF-201-design-tokens.md) | Mockup-led design token foundation | M | — |
 | [GRF-202](GRF-202-ui-library.md) | UI primitive and pattern library | L | GRF-201 |
 | [GRF-203](GRF-203-application-shell.md) | Application shell, navigation, and real runtime status | M | GRF-201, GRF-202 |
 | [GRF-204](GRF-204-async-data-layer.md) | Async data layer with loading, error, and empty states | M | GRF-202 |
@@ -125,7 +126,8 @@ Update this table when a ticket is completed, and write the corresponding entry 
 
 | ID | Status | Completed | Phase log entry |
 |---|---|---|---|
-| GRF-201 | Not started | — | — |
+| GRF-240 | In progress | — | — |
+| GRF-201 | Done | 2026-08-17 | phase-1.md |
 | GRF-202 | Not started | — | — |
 | GRF-203 | Not started | — | — |
 | GRF-204 | Not started | — | — |

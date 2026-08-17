@@ -1,6 +1,6 @@
 # Phase 1 — Studio experience
 
-**Goal:** turn the functional-but-unfinished Studio into an interface that makes the governance model obvious. The runtime already enforces the rules; Phase 1 makes them visible, explicable, and hard to get wrong.
+**Goal:** turn the functional-but-unfinished Studio into a mockup-led, light SaaS interface that makes the governance model obvious. The runtime already enforces the rules; Phase 1 makes them visible, explicable, and hard to get wrong.
 
 **Status:** Not started
 
@@ -8,7 +8,8 @@
 
 | ID | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| [GRF-201](../tickets/GRF-201-design-tokens.md) | Design token foundation and stylesheet split | M | — | Not started |
+| [GRF-240](../tickets/GRF-240-mockup-led-studio-product-system.md) | Mockup-led Studio product system | XL | — | In progress |
+| [GRF-201](../tickets/GRF-201-design-tokens.md) | Mockup-led design token foundation | M | — | Done |
 | [GRF-202](../tickets/GRF-202-ui-library.md) | UI primitive and pattern library | L | GRF-201 | Not started |
 | [GRF-203](../tickets/GRF-203-application-shell.md) | Application shell, navigation, real runtime status | M | GRF-202 | Not started |
 | [GRF-204](../tickets/GRF-204-async-data-layer.md) | Async data layer | M | — | Not started |
@@ -122,3 +123,108 @@ Visual verification: all four pages exercised in the browser against a live runt
 - Ticket needed: `ListChanges` NULL-desired scan failure for DELETE changes (see traps).
 - Ticket needed (or fold into GRF-204): server should return `"items": []` instead of `null` for empty lists.
 - GRF-201/202/203 are partially pre-empted by this change; their acceptance criteria should be re-scoped against `components/ui/` when picked up.
+
+### GRF-201 — Mockup-led design token foundation
+
+| | |
+|---|---|
+| Completed | 2026-08-17 |
+| Commit / PR | — |
+| Deviated from ticket | No |
+
+**What was built**
+
+Studio now has the approved light SaaS token foundation: an off-white application canvas, white working surfaces, cool-gray navigation and borders, a warm-orange primary/focus/selection colour, and distinct semantic status colours. The existing Tailwind v4 and shadcn implementation remains in place; this ticket changes no route, API call, workflow, or domain decision.
+
+**Files added**
+
+- None.
+
+**Files changed**
+
+- `studio/src/styles.css` — replaced interim dark/jade values with raw and semantic light-theme tokens, mapped them to Tailwind aliases, and added global focus and reduced-motion behavior.
+- `docs/ai/design-system.md` — established the designer mockups as the visual reference and documented the implemented token source.
+- `docs/ai/tickets/GRF-201-design-tokens.md` — re-scoped the obsolete stylesheet-split work order to the current Tailwind v4 implementation.
+- `docs/ai/tickets/INDEX.md` — recorded GRF-201 completion and the GRF-240 umbrella ticket.
+
+**Files removed**
+
+- None.
+
+**Contracts introduced or changed**
+
+```css
+:root {
+	--surface-base: var(--gy-slate-050);
+	--surface-raised: var(--gy-white);
+	--action-primary-bg: var(--gy-orange-500);
+	--focus-ring: 0 0 0 2px var(--surface-raised), 0 0 0 4px var(--gy-orange-400);
+}
+```
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Keep one Tailwind v4 style entry | The installed stack already centralizes shadcn theme aliases in `styles.css` | Recreate the retired split BEM stylesheet plan | It conflicts with the authorised Tailwind/shadcn conventions and would duplicate the styling system. |
+| Warm orange is the primary accent | It matches the approved mockups and clearly separates brand/selection from semantic success | Retain jade from the interim redesign | It no longer matches the final designer direction. |
+| Keep semantic green, amber, and rose independent of brand | Governance states must not be confused with selection or navigation | Use orange for all positive/current states | Orange is brand and selection, not evidence of safe release state. |
+
+**Deviations from the ticket**
+
+None. The ticket was re-scoped before implementation because its original BEM stylesheet split had already been superseded by the owner-authorised Tailwind v4 architecture.
+
+**Traps for future work**
+
+- `@theme` font variables must not refer to themselves. Keep the root `--font-sans` and `--font-mono` aliases as the source used by Tailwind utility classes.
+- Existing page layouts intentionally remain unchanged in this ticket. The visual foundation is not a substitute for the shell, component, async, and workflow tickets.
+- The mockups are visual-only references. Do not add dashboard, system, sharing, avatar, trend, or CRM surfaces without a product/API decision.
+
+**Tests added**
+
+- None — token values have no behavioral unit-test surface. Existing client tests and the production build validate that the theme compiles without changing API behavior.
+
+**Docs updated**
+
+- `docs/ai/design-system.md` §0–§3 — mockup-led visual direction, light tokens, and orange interaction language.
+- `docs/ai/tickets/GRF-201-design-tokens.md` — current implementation scope and acceptance criteria.
+- `docs/ai/tickets/INDEX.md` — GRF-201 status and GRF-240 registration.
+
+**Verification**
+
+```
+$ pnpm typecheck
+$ pnpm test
+Test Files  1 passed (1)
+Tests       2 passed (2)
+$ pnpm build
+✓ 1902 modules transformed.
+✓ built in 1.03s
+
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference      1.538s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger         2.907s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant 2.031s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/tests                    2.692s
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Already up to date
+Test Files  1 passed (1)
+Tests       2 passed (2)
+✓ 1902 modules transformed.
+✓ built in 1.01s
+
+$ cd .. && docker build -t gyrifi:local .
+[+] Building 83.8s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+
+$ cd docs/ai/tickets && diff <(ls GRF-*.md | grep -oE 'GRF-[0-9]+' | sort) <(grep -oE '^\| GRF-[0-9]+ \| (Not started|In progress|Done)' INDEX.md | grep -oE 'GRF-[0-9]+' | sort)
+tickets consistent
+
+Manual browser verification: `#ledgers` rendered at 1440 × 1024 px against a live local runtime. The off-white canvas, orange primary action/focus/selection styling, white cards, light sidebar, and semantic connected status rendered without unstyled regions.
+```
+
+**Follow-ups discovered**
+
+- GRF-202 must provide the mockup-specific reusable primitives — grouped navigation, dense DataTable, detail drawer, KPI strip, and floating selection bar — before the shell and workflow pages are rebuilt.
+- The known DELETE `desired = NULL` runtime scan failure remains a server bug; it needs its own Phase 2 ticket before Changes can reliably render DELETE rows.

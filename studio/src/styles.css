@@ -8,32 +8,130 @@
  * docs/ai/design-system.md §2 (slate ramp + jade brand, dark only).
  */
 :root {
-  --background: #06080c;
-  --foreground: #eef2f7;
-  --card: #0c1017;
-  --card-foreground: #eef2f7;
-  --popover: #11161f;
-  --popover-foreground: #eef2f7;
-  --primary: #2bb98b;
-  --primary-foreground: #06080c;
-  --secondary: #161d28;
-  --secondary-foreground: #eef2f7;
-  --muted: #11161f;
-  --muted-foreground: #8394a9;
-  --accent: #161d28;
-  --accent-foreground: #eef2f7;
-  --destructive: #e05a6e;
-  --destructive-foreground: #eef2f7;
-  --border: #1e2734;
-  --input: #1e2734;
-  --ring: #2bb98b;
-  --radius: 0.625rem;
+  /* Raw palette. Only this file may contain raw colour values. */
+  --gy-slate-950: #181b22;
+  --gy-slate-900: #252a33;
+  --gy-slate-800: #394150;
+  --gy-slate-700: #596273;
+  --gy-slate-600: #747d8d;
+  --gy-slate-500: #9299a6;
+  --gy-slate-400: #b6bdc8;
+  --gy-slate-300: #d5d9e0;
+  --gy-slate-200: #e5e8ed;
+  --gy-slate-100: #f1f3f6;
+  --gy-slate-050: #f8f9fb;
+  --gy-white: #ffffff;
+  --gy-orange-600: #d95d12;
+  --gy-orange-500: #f26f21;
+  --gy-orange-400: #ff8538;
+  --gy-orange-300: #ffb27d;
+  --gy-orange-200: #ffe0cb;
+  --gy-green-600: #15734c;
+  --gy-green-500: #1b9360;
+  --gy-green-100: #e8f6ee;
+  --gy-amber-500: #a96913;
+  --gy-amber-100: #fff6e6;
+  --gy-rose-500: #c53d49;
+  --gy-rose-100: #fff0f1;
+  --gy-sky-500: #347bb4;
+  --gy-sky-100: #e8f2fa;
+  --gy-violet-500: #7664d9;
+  --gy-violet-100: #efedff;
 
-  /* Gyrifi status accents (design-system.md §2.2) */
-  --success: #5fd9ae;
-  --info: #3f96d6;
-  --review: #a99bff;
-  --warning: #f0b855;
+  /* Semantic aliases consumed by application and component tokens. */
+  --surface-base: var(--gy-slate-050);
+  --surface-sunken: var(--gy-slate-100);
+  --surface-raised: var(--gy-white);
+  --surface-overlay: var(--gy-white);
+  --surface-inset: var(--gy-slate-100);
+  --border-subtle: var(--gy-slate-200);
+  --border-default: var(--gy-slate-300);
+  --border-strong: var(--gy-slate-400);
+  --border-accent: var(--gy-orange-500);
+  --text-primary: var(--gy-slate-950);
+  --text-secondary: var(--gy-slate-900);
+  --text-tertiary: var(--gy-slate-700);
+  --text-muted: var(--gy-slate-600);
+  --text-inverted: var(--gy-white);
+  --text-accent: var(--gy-orange-600);
+  --action-primary-bg: var(--gy-orange-500);
+  --action-primary-bg-hover: var(--gy-orange-600);
+  --action-primary-fg: var(--gy-white);
+  --action-secondary-bg: var(--gy-white);
+  --action-secondary-bg-hover: var(--gy-slate-100);
+  --action-secondary-fg: var(--gy-slate-900);
+  --action-danger-bg: var(--gy-rose-500);
+  --action-danger-fg: var(--gy-white);
+  --status-neutral-fg: var(--gy-slate-700);
+  --status-neutral-bg: var(--gy-slate-100);
+  --status-info-fg: var(--gy-sky-500);
+  --status-info-bg: var(--gy-sky-100);
+  --status-review-fg: var(--gy-violet-500);
+  --status-review-bg: var(--gy-violet-100);
+  --status-success-fg: var(--gy-green-600);
+  --status-success-bg: var(--gy-green-100);
+  --status-warning-fg: var(--gy-amber-500);
+  --status-warning-bg: var(--gy-amber-100);
+  --status-danger-fg: var(--gy-rose-500);
+  --status-danger-bg: var(--gy-rose-100);
+  --focus-ring: 0 0 0 2px var(--surface-raised), 0 0 0 4px var(--gy-orange-400);
+
+  --font-sans: "Inter var", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+  --text-2xs: 0.6875rem;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 1.875rem;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+  --radius: 0.625rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-full: 999px;
+  --elev-1: 0 1px 2px rgb(24 27 34 / 0.06);
+  --elev-2: 0 8px 24px rgb(24 27 34 / 0.10);
+  --elev-3: 0 16px 40px rgb(24 27 34 / 0.16);
+  --dur-instant: 80ms;
+  --dur-fast: 140ms;
+  --dur-normal: 220ms;
+  --dur-slow: 360ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* shadcn/Tailwind aliases. */
+  --background: var(--surface-base);
+  --foreground: var(--text-primary);
+  --card: var(--surface-raised);
+  --card-foreground: var(--text-primary);
+  --popover: var(--surface-overlay);
+  --popover-foreground: var(--text-primary);
+  --primary: var(--action-primary-bg);
+  --primary-foreground: var(--action-primary-fg);
+  --secondary: var(--action-secondary-bg);
+  --secondary-foreground: var(--action-secondary-fg);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--text-muted);
+  --accent: var(--action-secondary-bg-hover);
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--action-danger-bg);
+  --destructive-foreground: var(--action-danger-fg);
+  --border: var(--border-subtle);
+  --input: var(--border-default);
+  --ring: var(--gy-orange-400);
+  --success: var(--gy-green-500);
+  --info: var(--gy-sky-500);
+  --review: var(--gy-violet-500);
+  --warning: var(--gy-amber-500);
 }
 
 @theme inline {
@@ -64,8 +162,6 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: "Inter var", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
 }
 
 @layer base {
@@ -75,6 +171,8 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv11", "ss01";
+    font-size: 0.875rem;
+    line-height: 1.5;
   }
   code, kbd, pre {
     @apply font-mono;
@@ -85,9 +183,23 @@
   }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb {
-    background: var(--border);
+    background: var(--input);
     border-radius: 999px;
     border: 2px solid var(--background);
   }
   ::-webkit-scrollbar-track { background: transparent; }
+
+  :focus-visible {
+    box-shadow: var(--focus-ring);
+    outline: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

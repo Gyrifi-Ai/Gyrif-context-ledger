@@ -1,8 +1,23 @@
 # Studio design system
 
-Status: **target specification.** The current `studio/src/styles.css` is a single flat file of hardcoded hex values with no tokens, no loading states, no focus-visible handling, and no motion. This document defines what it must become. Tickets GRF-201 … GRF-208 implement it.
+Status: **target specification — mockup-led redesign in progress (GRF-240).** The four approved Studio mockups are the visual reference for hierarchy, density, geometry, and interaction patterns. They are CRM references only: Gyrifi retains its own workflows and must not present fabricated CRM, collaboration, or analytics data.
 
 Read this before writing any Studio markup or CSS.
+
+## 0. Visual source of truth
+
+The final Studio is a bright, dense SaaS workspace: an off-white canvas, cool-gray 248–256 px sidebar, white working surfaces, compact 52–56 px utility topbar, restrained 1 px dividers, and a warm-orange primary accent.
+
+| Reference pattern | Gyrifi application |
+|---|---|
+| Sidebar search with `/` shortcut | Workspace navigation search; it filters only known Studio destinations and Ledger names. |
+| Grouped CRM navigation | The four product areas: Ledgers, Changes, Proposals, and Releases. Recovery remains inside Releases. |
+| KPI strip | Current server-backed counts only. Trends and sparklines are omitted until a time-series contract exists. |
+| Leads data table and floating selection bar | Changes inbox, ready-Change selection, and Proposal creation. |
+| Customer profile panel | Change, Proposal, Release-plan, and recovery detail drawer. |
+| Avatar stack and sharing action | Not rendered until authentication and collaboration are product capabilities. |
+
+The reference viewport is 1440 × 1024 px. Preserve its dense desktop hierarchy; adapt at 1180 px, 900 px, and 480 px without hiding a governance action or its reason.
 
 ---
 
@@ -11,10 +26,10 @@ Read this before writing any Studio markup or CSS.
 Gyrifi is a governance tool. People use it to make irreversible decisions about production data. The interface must feel like a control room, not a dashboard.
 
 1. **Consequence is visible.** The closer an action is to mutating the target, the heavier its visual weight. `Release` is the only destructive-weight button in the product.
-2. **State before chrome.** Every screen answers "what is the current state?" in the first 200 px of vertical space.
+2. **State before chrome.** Every screen answers "what is the current state?" in the first 200 px of vertical space with real counts, status, or a visible unavailable state.
 3. **Evidence is content, not a tooltip.** Hashes, fingerprints, findings, and before-images are first-class UI, rendered in mono type, always copyable.
 4. **No optimistic lies.** The UI never claims something succeeded before the server confirms it. Never shows "connected" without a probe.
-5. **Calm by default, loud on exception.** Colour is reserved for status and focus. A healthy screen is near-monochrome.
+5. **Calm by default, loud on exception.** Orange identifies brand, selection, current navigation, primary creation, and focus; green, amber, and red are semantic only. A healthy screen is near-monochrome.
 6. **Density with air.** Governance data is dense. Use a tight type scale and a generous 8 px spacing rhythm rather than shrinking whitespace.
 7. **Keyboard first.** Every action reachable by tab, every list navigable, every focus ring visible.
 
@@ -31,42 +46,45 @@ Gyrifi is a governance tool. People use it to make irreversible decisions about 
 
 ## 2. Token system
 
-All tokens live in `studio/src/styles.css` under `:root`. **No component may use a raw colour, size, or duration value.** Dark is the default and only theme for v1; the token names are theme-neutral so a light theme is additive later.
+**Implemented by GRF-201.** `studio/src/styles.css` is the Tailwind v4 token entry. All visual changes in later Studio tickets consume its aliases rather than introducing local palette values.
+
+All tokens live in `studio/src/styles.css` under `:root`. **No component may use a raw colour, size, or duration value.** Light is the v1 theme; semantic token names keep a future dark theme additive rather than disruptive.
 
 ### 2.1 Colour — raw palette
 
 ```css
 :root {
-  /* Neutrals — cool slate ramp */
-  --gy-slate-950: #06080c;
-  --gy-slate-925: #090c12;
-  --gy-slate-900: #0c1017;
-  --gy-slate-850: #11161f;
-  --gy-slate-800: #161d28;
-  --gy-slate-700: #1e2734;
-  --gy-slate-600: #2a3546;
-  --gy-slate-500: #3c4a5e;
-  --gy-slate-400: #5b6b81;
-  --gy-slate-300: #8394a9;
-  --gy-slate-200: #aebbcb;
-  --gy-slate-100: #d6dee8;
-  --gy-slate-050: #eef2f7;
+  /* Neutrals — warm off-white canvas and cool gray UI ramp. */
+  --gy-slate-950: #181b22;
+  --gy-slate-900: #252a33;
+  --gy-slate-800: #394150;
+  --gy-slate-700: #596273;
+  --gy-slate-600: #747d8d;
+  --gy-slate-500: #9299a6;
+  --gy-slate-400: #b6bdc8;
+  --gy-slate-300: #d5d9e0;
+  --gy-slate-200: #e5e8ed;
+  --gy-slate-100: #f1f3f6;
+  --gy-slate-050: #f8f9fb;
 
-  /* Brand — jade. used for identity, focus, and "current". */
-  --gy-jade-600: #0f6b52;
-  --gy-jade-500: #17916d;
-  --gy-jade-400: #2bb98b;
-  --gy-jade-300: #5fd9ae;
-  --gy-jade-200: #9aeccd;
+  /* Brand — warm orange for identity, selection, focus, and current state. */
+  --gy-orange-600: #d95d12;
+  --gy-orange-500: #f26f21;
+  --gy-orange-400: #ff8538;
+  --gy-orange-300: #ffb27d;
+  --gy-orange-200: #ffe0cb;
 
-  /* Semantic accents */
-  --gy-amber-400: #d99a2b;
-  --gy-amber-300: #f0b855;
-  --gy-rose-500:  #b8384c;
-  --gy-rose-400:  #e05a6e;
-  --gy-rose-300:  #f79aa7;
-  --gy-violet-400:#7c6cf0;   /* proposals / review */
-  --gy-sky-400:   #3f96d6;   /* informational */
+  /* Semantic accents. */
+  --gy-green-600: #15734c;
+  --gy-green-500: #1b9360;
+  --gy-green-300: #63be91;
+  --gy-amber-500: #a96913;
+  --gy-amber-300: #d99a2b;
+  --gy-rose-500: #c53d49;
+  --gy-rose-400: #dc5964;
+  --gy-rose-300: #ef9ba2;
+  --gy-violet-400: #7664d9;
+  --gy-sky-400: #347bb4;
 }
 ```
 
@@ -77,47 +95,47 @@ Components use **only** these.
 ```css
 :root {
   /* Surfaces, ascending elevation */
-  --surface-base:    var(--gy-slate-950);
-  --surface-sunken:  var(--gy-slate-925);
-  --surface-raised:  var(--gy-slate-900);
-  --surface-overlay: var(--gy-slate-850);
-  --surface-inset:   var(--gy-slate-925);   /* inputs, code blocks */
+  --surface-base:    var(--gy-slate-050);
+  --surface-sunken:  var(--gy-slate-100);
+  --surface-raised:  #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-inset:   var(--gy-slate-100);   /* inputs, code blocks */
 
   /* Borders */
-  --border-subtle:   var(--gy-slate-800);
-  --border-default:  var(--gy-slate-700);
-  --border-strong:   var(--gy-slate-600);
-  --border-accent:   var(--gy-jade-600);
+  --border-subtle:   var(--gy-slate-200);
+  --border-default:  var(--gy-slate-300);
+  --border-strong:   var(--gy-slate-400);
+  --border-accent:   var(--gy-orange-500);
 
   /* Text */
-  --text-primary:    var(--gy-slate-050);
-  --text-secondary:  var(--gy-slate-200);
-  --text-tertiary:   var(--gy-slate-300);
-  --text-muted:      var(--gy-slate-400);
-  --text-inverted:   var(--gy-slate-950);
-  --text-accent:     var(--gy-jade-300);
+  --text-primary:    var(--gy-slate-950);
+  --text-secondary:  var(--gy-slate-900);
+  --text-tertiary:   var(--gy-slate-700);
+  --text-muted:      var(--gy-slate-600);
+  --text-inverted:   #ffffff;
+  --text-accent:     var(--gy-orange-600);
 
   /* Interactive */
-  --action-primary-bg:       var(--gy-jade-500);
-  --action-primary-bg-hover: var(--gy-jade-400);
-  --action-primary-fg:       var(--gy-slate-950);
-  --action-secondary-bg:     var(--gy-slate-800);
-  --action-secondary-bg-hover: var(--gy-slate-700);
+  --action-primary-bg:       var(--gy-orange-500);
+  --action-primary-bg-hover: var(--gy-orange-600);
+  --action-primary-fg:       #ffffff;
+  --action-secondary-bg:     #ffffff;
+  --action-secondary-bg-hover: var(--gy-slate-100);
   --action-secondary-fg:     var(--text-primary);
   --action-danger-bg:        var(--gy-rose-500);
   --action-danger-bg-hover:  var(--gy-rose-400);
-  --action-danger-fg:        var(--gy-slate-050);
+  --action-danger-fg:        #ffffff;
 
   /* Status — used by badges, dots, rails */
-  --status-neutral-fg: var(--gy-slate-200);  --status-neutral-bg: var(--gy-slate-800);
-  --status-info-fg:    var(--gy-sky-400);    --status-info-bg:    #10202e;
-  --status-review-fg:  #a99bff;              --status-review-bg:  #1c1836;
-  --status-success-fg: var(--gy-jade-300);   --status-success-bg: #0d2a22;
-  --status-warning-fg: var(--gy-amber-300);  --status-warning-bg: #2c2210;
-  --status-danger-fg:  var(--gy-rose-300);   --status-danger-bg:  #2e1218;
+  --status-neutral-fg: var(--gy-slate-700);  --status-neutral-bg: var(--gy-slate-100);
+  --status-info-fg:    var(--gy-sky-400);    --status-info-bg:    #e8f2fa;
+  --status-review-fg:  var(--gy-violet-400); --status-review-bg:  #efedff;
+  --status-success-fg: var(--gy-green-600);  --status-success-bg: #e8f6ee;
+  --status-warning-fg: var(--gy-amber-500);  --status-warning-bg: #fff6e6;
+  --status-danger-fg:  var(--gy-rose-500);   --status-danger-bg:  #fff0f1;
 
   /* Focus */
-  --focus-ring: 0 0 0 2px var(--surface-base), 0 0 0 4px var(--gy-jade-400);
+  --focus-ring: 0 0 0 2px var(--surface-raised), 0 0 0 4px var(--gy-orange-400);
 }
 ```
 
@@ -135,7 +153,7 @@ Components use **only** these.
 | Intent `READY`, `APPLYING`, `VERIFYING` | warning |
 | Intent `FINALIZED` | success |
 | Intent `RECOVERY_REQUIRED` | danger |
-| `HEAD` marker | accent (jade) |
+| `HEAD` marker | accent (orange) |
 
 `StatusBadge` MUST map by exact value against this table. The current regex-based tone guessing is replaced (GRF-202).
 
@@ -174,7 +192,7 @@ Rules:
 
 - Body copy is `--text-base` / `--leading-normal` / `--weight-normal`.
 - Page titles are `--text-xl` / `--weight-semibold` / `--tracking-tight`.
-- The "eyebrow" label is `--text-2xs` / `--weight-semibold` / `--tracking-caps` / uppercase / `--text-muted`. It is **muted, not jade** — the current jade eyebrow competes with real status colour.
+- The "eyebrow" label is `--text-2xs` / `--weight-semibold` / `--tracking-caps` / uppercase / `--text-muted`. It is muted, not orange — it must not compete with real status colour.
 - **Every hash, ID, fingerprint, unit key, and JSON value uses `--font-mono`** at `--text-xs`, with `font-variant-numeric: tabular-nums`.
 - Never use font weights above 700. The current file uses 850/900 — remove them.
 
@@ -277,7 +295,7 @@ Nav items are the four product areas only: Ledgers, Changes, Proposals, Releases
 - the label,
 - an optional count pill on the right (`READY` change count, open proposal count).
 
-Active item: `--surface-overlay` background, `--text-primary` label, and a 2 px jade rail on the left edge (`::before`, `--radius-full`). Hover: `--surface-raised`.
+Active item: white background, `--text-primary` label, and a 2 px orange rail on the left edge (`::before`, `--radius-full`). Hover: `--surface-raised`.
 
 Nav is **disabled except Ledgers** when no ledger is selected, with a tooltip "Select a ledger first". This replaces the current behaviour of rendering four empty-state pages.
 
@@ -287,7 +305,7 @@ Nav is **disabled except Ledgers** when no ledger is selected, with a tooltip "S
 |---|---|
 | Left | Ledger switcher — a button showing the ledger name plus `⌄`, opening a popover list with search. Shows "Select ledger" when empty. |
 | Centre-left | HEAD chip: `HEAD · rel_1a2b…` in mono, click-to-copy. `No releases yet` when HEAD is empty. |
-| Right | Runtime status dot + label, driven by a real `GET /api/v1/system/status` poll every 30 s. Three states: `Connected` (jade), `Degraded` (amber, request slow or non-200), `Offline` (rose, request failed). Tooltip shows version and inference mode. |
+| Right | Runtime status dot + label, driven by a real `GET /api/v1/system/status` poll every 30 s. Three states: `Connected` (green), `Degraded` (amber, request slow or non-200), `Offline` (rose, request failed). Tooltip shows version and inference mode. |
 
 The current hardcoded "Runtime connected" text MUST be removed.
 
@@ -367,7 +385,7 @@ type DataTableProps<T> = {
 };
 ```
 
-Real `<table>` semantics. Row height `44px`. Header `--text-2xs` uppercase `--text-muted`, sticky. Row hover `--surface-overlay`. Selected row gets a 2 px jade left rail. `loading` renders `--space-1`-rounded skeleton bars, never a replacement spinner. Keyboard: `ArrowUp`/`ArrowDown` move focus, `Space` toggles selection, `Enter` activates `onRowClick`.
+Real `<table>` semantics. Row height `44px`. Header `--text-2xs` uppercase `--text-muted`, sticky. Row hover `--surface-overlay`. Selected row gets a 2 px orange left rail. `loading` renders `--space-1`-rounded skeleton bars, never a replacement spinner. Keyboard: `ArrowUp`/`ArrowDown` move focus, `Space` toggles selection, `Enter` activates `onRowClick`.
 
 ### 4.5 `EmptyState` (`ui/feedback/empty-state.tsx`)
 
@@ -403,7 +421,7 @@ Wraps label + control + hint + error. Label `--text-sm --weight-medium --text-se
 
 ### 4.10 `Timeline` (`ui/patterns/timeline.tsx`) — new
 
-Vertical rail with nodes. Props: `items` with `{ id, node, title, meta, body, tone, current? }`. `current` renders a jade filled node with a soft glow; the rest are hollow `--border-strong` nodes. Rail is 1 px `--border-default`.
+Vertical rail with nodes. Props: `items` with `{ id, node, title, meta, body, tone, current? }`. `current` renders an orange filled node with a soft glow; the rest are hollow `--border-strong` nodes. Rail is 1 px `--border-default`.
 
 ### 4.11 `Stat` (`ui/patterns/stat.tsx`) — new
 
@@ -435,7 +453,7 @@ A ledger is a governed namespace with its own inbox, proposals, and release hist
 
 - Cards, not a form-beside-list split. Creating a ledger opens an inline expanding card in the first grid slot, or a `ConfirmDialog`-style panel — not a permanently occupied side rail.
 - Each card shows name, description, `HashChip` for the ID, and counts for ready Changes and Releases.
-- The active ledger card gets a jade border and an `ACTIVE` badge.
+- The active ledger card gets an orange border and an `ACTIVE` badge.
 - Empty state: "No ledgers yet" + description + primary `Create your first ledger`.
 
 ### 5.2 Changes
@@ -489,7 +507,7 @@ Review batched changes, attach evidence, approve, and release.
 
 Required behaviours:
 
-- **A four-step progress rail** across the top of the detail pane: Changes → Evidence → Approval → Release. Completed steps are jade, the current step is outlined, later steps are muted. This is the single clearest expression of the governance model.
+- **A four-step progress rail** across the top of the detail pane: Changes → Evidence → Approval → Release. Completed steps are orange, the current step is outlined, later steps are muted. This is the single clearest expression of the governance model.
 - **Gate reasons are explicit.** A disabled `Approve` button must be accompanied by the literal reason: "Run an evaluation first." A disabled `Release` shows "Approval required" or "HEAD moved after this proposal was created — this proposal can no longer be released."
 - **Criteria is user input**, persisted per proposal in `localStorage`, with 3–4 starter presets. The current hardcoded criteria string must go.
 - **Evidence renders findings** as a list of `{severity, unit, message}` rows with severity tones, plus the model identity and the bound proposal hash.
@@ -517,7 +535,7 @@ Every release was applied to the target and verified before it was recorded.
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-- `HEAD` node is jade and filled; all others are hollow.
+- `HEAD` node is orange and filled; all others are hollow.
 - `Roll back to here` is `danger` and opens a `ConfirmDialog` that explains: this creates a **new proposal**, does not rewind, and must itself be evaluated, approved, and released. It lists the number of units that would be restored.
 - `View plan` opens a drawer showing the operations with unit, action, expected fingerprint, and whether a before-image was retained.
 - Recovery banner links to the intent detail (GRF-213).
