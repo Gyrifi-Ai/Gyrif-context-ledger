@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -78,7 +79,7 @@ func Run(ctx context.Context, args []string) error {
 		logger.Error("release recovery needs attention", "error", err)
 	}
 	api := httpinterface.New(application, logger, Version)
-	server := &http.Server{Addr: settings.HTTPAddress, Handler: api.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
+	server := &http.Server{Addr: settings.HTTPAddress, Handler: api.Handler(), BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
 	errChannel := make(chan error, 1)
 	go func() {
 		logger.Info("Gyrifi started", "address", settings.HTTPAddress, "data_directory", settings.DataDirectory, "inference", application.InferenceName())

@@ -23,10 +23,12 @@ gyrif-context-ledger/
 │   ├── adr/                   # architecture decision records
 │   ├── ai/                    # the documentation set in this folder
 │   └── archive/               # SUPERSEDED docs — historical only, never authoritative
-├── e2e/                       # browser end-to-end suite (currently empty — GRF-232)
+├── e2e/                       # isolated Playwright package; built-image browser qualification
 ├── runtime/                   # the single Go module
 └── studio/                    # the single frontend package
 ```
+
+`e2e/` is deliberately not listed in the root `pnpm-workspace.yaml`: it is an expensive Docker/Chromium qualification package with its own lockfile and install lifecycle, and it needs no dependency hoisting from Studio.
 
 ---
 
@@ -210,6 +212,23 @@ Test files are co-located as `*.test.ts` or `*.test.tsx`; only shared test infra
 ---
 
 ## 4. Build and packaging
+
+### Browser qualification package
+
+```text
+e2e/
+├── package.json               # direct-entry Playwright test, repeat, and Chromium-install scripts
+├── pnpm-lock.yaml             # isolated, pinned test dependency graph
+├── playwright.config.ts       # Chromium-only, one worker, bounded timeout, failure traces/screenshots
+├── compose.yaml               # current image build + pinned Qdrant + per-run named volumes/collection
+└── tests/
+    ├── global-setup.ts        # builds the repository Dockerfile and waits for healthy Runtime startup
+    ├── global-teardown.ts     # removes containers, network, and qualification volumes
+    ├── harness.ts             # Compose, health, SIGTERM/WAL, ingestion, and Qdrant helpers
+    └── governance.spec.ts     # empty first run and full release/rollback/restart/deep-link journey
+```
+
+Run installs inside this package with `pnpm --ignore-workspace`; this prevents pnpm from walking up to the root workspace. Tests use only roles and accessible names, never selectors coupled to styling or DOM position. The harness calls Qdrant REST directly and does not add a target client library.
 
 `Dockerfile` has four stages:
 

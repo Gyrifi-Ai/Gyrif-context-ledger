@@ -1,0 +1,46 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    ports:
+      - "127.0.0.1:${GYRIFI_E2E_QDRANT_PORT:-16333}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  qdrant-init:
+    image: curlimages/curl:8.12.1
+    depends_on:
+      - qdrant
+    restart: "no"
+    environment:
+      COLLECTION: ${GYRIFI_E2E_COLLECTION:?GYRIFI_E2E_COLLECTION is required}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until curl --fail --silent --output /dev/null http://qdrant:6333/; do sleep 1; done
+        if ! curl --fail --silent --output /dev/null "http://qdrant:6333/collections/$${COLLECTION}"; then
+          curl --fail --silent --show-error --request PUT "http://qdrant:6333/collections/$${COLLECTION}" \
+            --header 'Content-Type: application/json' \
+            --data '{"vectors":{"size":3,"distance":"Cosine"}}'
+        fi
+
+  gyrifi:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: gyrifi:e2e
+    depends_on:
+      qdrant-init:
+        condition: service_completed_successfully
+    environment:
+      GYRIFI_EVALUATION_PROVIDER: disabled
+      GYRIFI_QDRANT_URL: http://qdrant:6333
+      GYRIFI_QDRANT_COLLECTION: ${GYRIFI_E2E_COLLECTION:?GYRIFI_E2E_COLLECTION is required}
+    ports:
+      - "127.0.0.1:${GYRIFI_E2E_PORT:-18082}:8080"
+    volumes:
+      - gyrifi-data:/data
+
+volumes:
+  gyrifi-data:
+  qdrant-data:

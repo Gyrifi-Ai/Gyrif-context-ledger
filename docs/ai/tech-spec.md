@@ -14,6 +14,7 @@ Status: extracted from source. Every identifier, path, and default below appears
 | Frontend | React + TypeScript | React 19.1.1, TS 5.9.2 |
 | Frontend build | Vite | 7.1.4 |
 | Frontend tests | Vitest | 3.2.4 |
+| Browser qualification | Playwright + Chromium | 1.55.0 |
 | Package manager | pnpm | 11.15.1 |
 | Target adapter | Qdrant REST | — |
 | Optional inference | `llama-server` over loopback HTTP | `ghcr.io/ggml-org/llama.cpp:server` |
@@ -39,7 +40,7 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 8. `cli.Run(ctx, args, application, os.Stdout)` — **if it handled the args, return here; the HTTP server never starts.**
 9. `application.RecoverReleases(ctx)` — logs and continues on error.
 10. Construct `httpinterface.New(application, logger, Version)`.
-11. `http.Server{ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and `ListenAndServe`.
+11. `http.Server{BaseContext: signal context, ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and `ListenAndServe`. Cancelling the process context cancels long-lived SSE request contexts before graceful shutdown waits for active connections.
 12. On `ctx.Done()`: `server.Shutdown` with a 10s timeout; deferred closes stop llama-server and the repository.
 
 ### Local Docker Compose contract
@@ -797,7 +798,8 @@ The Releases page loads Releases, Proposals, and Release Intents as one workspac
 | `studio/src/test/setup.ts` | jest-dom registration, deterministic browser API shims, per-test API reset, cleanup, and unexpected `console.error` failure |
 | `studio/src/test/render.tsx` | `renderWithProviders` plus a configured `userEvent` instance |
 | `studio/src/test/api-mock.ts` | fetch-level router backed by a compile-time-complete `MockApi` derived from `Api` |
-| `e2e/` | **empty** (GRF-232) |
+| `e2e/tests/governance.spec.ts` | first-run empty state plus the complete built-image Ledger → Change ingestion → Proposal → deterministic evaluation → approval → Release path; rendered gates, real Qdrant values, a second Release, forward rollback, three-Release HEAD, persistence, SIGTERM/WAL behavior, and SPA fallback deep links |
+| `e2e/tests/harness.ts` | per-test unique Qdrant collection and fresh named volumes, Compose lifecycle, healthy-status wait, typed ingestion, direct Qdrant reads, graceful termination, and WAL inspection |
 
 Large model downloads are never part of tests.
 
@@ -816,11 +818,18 @@ pnpm install --frozen-lockfile
 pnpm typecheck && pnpm test && pnpm coverage && pnpm build
 
 docker build -t gyrifi:dev .
+
+cd e2e
+pnpm install --ignore-workspace --frozen-lockfile
+pnpm --ignore-workspace install:browser
+pnpm --ignore-workspace test
 ```
 
 `docker build` runs `go test ./...` inside the `runtime-build` stage, so a broken test breaks the image.
 
 Studio tests run in jsdom through Vitest with globals disabled, jest-dom matchers, CSS processing, Testing Library, and `userEvent`. `pnpm coverage` invokes the direct Vitest entry point with `--coverage`; V8 enforces global minimums of **80% statements** and **75% branches** across `src/`. GRF-233 must invoke this existing command in CI rather than duplicating its thresholds in workflow YAML.
+
+The e2e package is intentionally outside the root pnpm workspace and owns its lockfile. Its direct-entry Playwright command builds `gyrifi:e2e` from the repository Dockerfile, starts pinned Qdrant plus the built image on loopback, waits for `/api/v1/system/status`, and runs Chromium with one worker. Every test recreates named volumes, chooses a unique collection, and creates its own Ledger. Failure traces and screenshots are retained under `e2e/test-results/`; `pnpm --ignore-workspace test:repeat` executes every journey three times for stability qualification. Inference is disabled and the suite asserts deterministic-only evidence; no model is downloaded.
 
 ---
 

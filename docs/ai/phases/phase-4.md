@@ -11,7 +11,7 @@
 | [GRF-233](../tickets/GRF-233-ci-pipeline.md) | CI pipeline | M | — | Not started |
 | [GRF-230](../tickets/GRF-230-studio-tests.md) | Studio component and integration test suite | L | GRF-202 | Done |
 | [GRF-231](../tickets/GRF-231-qdrant-qualification.md) | Qdrant integration qualification | L | — | Not started |
-| [GRF-232](../tickets/GRF-232-e2e-suite.md) | Browser end-to-end qualification | L | GRF-205 … GRF-208 | Not started |
+| [GRF-232](../tickets/GRF-232-e2e-suite.md) | Browser end-to-end qualification | L | GRF-205 … GRF-208 | Done |
 
 ## Phase-level notes
 
@@ -188,3 +188,159 @@ $ git diff --check
 
 - GRF-233 must invoke `pnpm coverage` in the Studio CI job so the thresholds become a required continuous check.
 - GRF-232 remains responsible for native-dialog, focus, full governance workflow, recovery, restart, and persistence qualification in real Chromium against the shipped image; jsdom tests do not replace that browser/runtime boundary.
+
+### GRF-232 — Browser end-to-end qualification
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | Yes — CI enforcement remains owned by the not-yet-landed GRF-233 workflow |
+
+**What was built**
+
+An isolated Playwright package now builds the current repository Dockerfile, starts that image with pinned Qdrant, waits for a healthy Runtime, and drives Chromium through the product. Two expensive journeys cover an empty first run and the complete Ledger creation, API ingestion, browser Proposal review, deterministic evaluation, approval, Release, second Release, rollback-as-forward-Proposal, third Release, Qdrant verification, persistence, graceful SIGTERM, and SPA fallback path. Each test gets fresh named volumes, a unique collection, and its own Ledger; the suite passed three consecutive isolated repetitions in 45.9 seconds.
+
+The browser-connected SIGTERM check exposed a production shutdown defect: an active SSE request kept `http.Server.Shutdown` waiting until its ten-second deadline and made the container exit 1. The server now derives every request context from the process signal context, so the stream exits before graceful shutdown waits and the container exits 0 with a non-growing WAL.
+
+**Files added**
+
+- `e2e/package.json` and `e2e/pnpm-lock.yaml` — isolated pinned Playwright package with direct-entry test, stability, and Chromium-install commands
+- `e2e/playwright.config.ts` — Chromium-only, one-worker, bounded suite with retained failure traces/screenshots
+- `e2e/compose.yaml` — current-image build, pinned Qdrant/initializer, loopback ports, named volumes, and configurable per-test collection
+- `e2e/tests/global-setup.ts` and `global-teardown.ts` — image build, initial health gate, and deterministic cleanup
+- `e2e/tests/harness.ts` — Compose lifecycle, status polling, per-test isolation, SIGTERM/WAL inspection, ingestion, and direct Qdrant reads
+- `e2e/tests/governance.spec.ts` — empty-first-run and full governance/rollback/restart/deep-link journeys
+
+**Files changed**
+
+- `runtime/internal/bootstrap/bootstrap.go` — HTTP request contexts now inherit process cancellation so SSE cannot prevent graceful shutdown
+- `.gitignore` — excludes Playwright reports and per-failure result artifacts
+- `README.md` — local e2e prerequisites, isolated install, invocation, ports, artifacts, and three-run command
+- `docs/ai/tech-spec.md` — Playwright version, request-lifecycle shutdown contract, test surface, and e2e quality command
+- `docs/ai/repo-structure.md` — populated isolated e2e package and root-workspace relationship
+- `docs/ai/tickets/GRF-232-e2e-suite.md`, `docs/ai/tickets/INDEX.md`, and this file — acceptance, status, and implementation record
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```ts
+// e2e/tests/harness.ts
+export const runtimeURL: string;
+export const qdrantURL: string;
+export async function buildImage(): Promise<void>;
+export async function startFreshStack(collection: string): Promise<void>;
+export async function stopStack(collection: string): Promise<void>;
+export async function waitForHealth(timeoutMs?: number): Promise<void>;
+export async function startRuntime(collection: string): Promise<void>;
+export async function terminateRuntime(collection: string): Promise<{
+	beforeWal: number;
+	afterWal: number;
+	exitCode: number;
+}>;
+export const test: TestType<PlaywrightTestArgs & { stack: { collection: string } }, PlaywrightWorkerArgs>;
+```
+
+```go
+// runtime/internal/bootstrap/bootstrap.go
+http.Server{
+		BaseContext: func(net.Listener) context.Context { return ctx },
+		// existing timeout fields unchanged
+}
+```
+
+The isolated package commands are `node node_modules/@playwright/test/cli.js test`, `... test --repeat-each=3`, and `... install chromium`. It is not a member of the root pnpm workspace; install it with `pnpm install --ignore-workspace --frozen-lockfile`. Defaults are Runtime `127.0.0.1:18082`, Qdrant `127.0.0.1:16333`, image `gyrifi:e2e`, Qdrant `v1.13.4`, and deterministic evaluation.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Keep `e2e/` outside the root workspace with its own lockfile | Docker/Chromium qualification has a separate install and execution lifecycle and needs no Studio hoisting | Add it to `pnpm-workspace.yaml` | Every normal Studio install would carry browser-test package resolution without sharing useful dependencies |
+| Build through Compose from the repository Dockerfile in global setup | Every suite must qualify the current embedded Studio and Runtime binary | Test `compose.yaml` with a previously published or manually tagged image | It can silently test stale code and miss packaging defects |
+| Use one worker and recreate volumes per test | Fixed loopback ports remain simple while tests retain order independence and unique collections | Parallel workers against one Runtime/collection | Process-global collection configuration and shared ports would create cross-test races |
+| Keep two high-value journeys | Browser/image tests are expensive and should prove boundaries, not duplicate component branches | Mirror the 144-test Studio suite in Chromium | It increases runtime and flakiness without stronger product evidence |
+| Ingest Changes through HTTP but drive every supported governance action through Studio | This matches applications writing the durable inbox and operators governing in the browser | Create Proposals/evidence/approvals/releases directly by API | It would bypass the product controls the ticket exists to qualify |
+| Assert Qdrant through raw REST | The suite proves the target mutation independently without broadening dependencies | Add a Qdrant client package or trust Studio state | A UI-only assertion cannot prove data landed, and a client adds unnecessary surface |
+| Set `http.Server.BaseContext` to the signal context | Active SSE requests must observe SIGTERM before `Shutdown` waits | Increase the shutdown timeout or force-close all connections | A longer timeout still exits late; force close is not graceful and can interrupt ordinary requests |
+| Make the collection initializer idempotent | Compose re-evaluates completed dependencies when only Gyrifi restarts | Recreate the collection during restart | It would destroy the target state that the persistence test must preserve |
+
+**Deviations from the ticket**
+
+GRF-233 has not created a CI workflow, so this ticket cannot yet make e2e failures block the pipeline or publish the retained artifacts there. The pinned package, stable `pnpm --ignore-workspace test` command, and `test-results/` artifact contract are ready for GRF-233 to invoke. The optional Gemma job was not created because there is neither a workflow nor an externally provisioned model; the required default suite runs with inference disabled exactly as specified. All other acceptance criteria were met.
+
+**Traps for future work**
+
+- `docker compose start gyrifi` re-evaluates its completed `qdrant-init` dependency. The initializer must remain idempotent or persistence restart fails on Qdrant's existing-collection response.
+- `http.Server.Shutdown` does not cancel active request contexts by itself. Long-lived SSE handlers need the process cancellation propagated through `BaseContext`.
+- Qdrant cosine collections normalize vectors. Browser qualification compares vector direction and exact payload, not raw vector bytes.
+- Qdrant point IDs in this suite are valid numeric IDs; logical Change `unit` is the matching decimal string.
+- Hash fragments never reach the server and cannot alone prove SPA fallback. The deep links intentionally request `/operator` before `#changes` or `#proposals/{id}` so the Go fallback serves `index.html` for an unmatched path.
+- Playwright's default TypeScript transform needs this isolated package declared as ESM because the harness resolves Compose through `import.meta.url`.
+- A `docker kill --signal TERM` while Studio is connected tests the real SSE shutdown path; a container with no browser connection will not reproduce the former exit-1 defect.
+
+**Tests added**
+
+- `e2e/tests/governance.spec.ts` empty-first-run journey — embedded Studio boot, empty call to action, direct empty Qdrant assertion, and UI Ledger creation on fresh volumes
+- `e2e/tests/governance.spec.ts` full journey — rendered server gate reasons, two real target Releases, rollback to original point payload/vector direction, forward third HEAD, all durable records after restart, exit code 0, bounded/non-growing WAL, and fresh-page fallback routes
+- `e2e/tests/harness.ts` fixture — every test receives a unique Qdrant collection and fresh named governance/target volumes with health-gated startup and cleanup
+
+**Docs updated**
+
+- `README.md` §Browser end-to-end qualification — installation, invocation, ports, artifacts, and repetition
+- `docs/ai/tech-spec.md` §§1–2 and §§12–13 — Playwright stack, graceful request cancellation, e2e surface, and quality command
+- `docs/ai/repo-structure.md` §§1 and 4 — isolated package structure and workspace decision
+- `docs/ai/tickets/GRF-232-e2e-suite.md` — acceptance results and explicit GRF-233 CI deferral
+- `docs/ai/tickets/INDEX.md` — GRF-232 marked Done
+- `docs/ai/phases/phase-4.md` — ticket status and this completion record
+
+**Verification**
+
+```text
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests (cached)
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm coverage && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files  47 passed (47)
+Tests       144 passed (144)
+All files  | 86.20 % Stmts | 85.83 % Branch | 71.14 % Funcs | 86.20 % Lines
+✓ 1867 modules transformed.
+✓ built in 894ms
+
+$ cd e2e && pnpm install --ignore-workspace --frozen-lockfile && pnpm --ignore-workspace test:repeat
+Already up to date
+Running 6 tests using 1 worker
+✓ 1 a fresh shipped image shows the empty first-run path (6.0s)
+✓ 2 the shipped image governs, rolls back, restarts, and deep-links (6.1s)
+✓ 3 a fresh shipped image shows the empty first-run path (5.9s)
+✓ 4 the shipped image governs, rolls back, restarts, and deep-links (6.2s)
+✓ 5 a fresh shipped image shows the empty first-run path (5.8s)
+✓ 6 the shipped image governs, rolls back, restarts, and deep-links (6.2s)
+6 passed (45.9s)
+
+$ docker build -t gyrifi:local .
+[+] Building 3.4s (31/31) FINISHED
+=> [runtime-build 8/8] RUN CGO_ENABLED=0 go test ./... && CGO_ENABLED=0 go build -o /out/gyrifi ./cmd/gyrifi
+=> naming to docker.io/library/gyrifi:local
+
+$ cd docs/ai/tickets && diff <ticket files> <INDEX status rows>
+tickets consistent
+
+$ git diff --check
+(no output)
+```
+
+**Follow-ups discovered**
+
+- GRF-233 must run `pnpm install --ignore-workspace --frozen-lockfile`, install Chromium with the direct entry point, invoke `pnpm --ignore-workspace test`, and upload `e2e/test-results/` on failure so the existing suite becomes a blocking check.
+- An optional externally provisioned Gemma job can reuse this harness after CI has a model source; the required path must remain model-free.

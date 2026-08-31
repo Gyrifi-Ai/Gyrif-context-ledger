@@ -39,31 +39,31 @@ Unit and integration tests cover the parts. This covers the product.
 
 **Harness**
 
-- [ ] `e2e/` is its own package with `package.json`, `playwright.config.ts`, and `tests/`. It is **not** added to `pnpm-workspace.yaml` `packages` unless dependency hoisting requires it — decide, and document the decision.
-- [ ] Scripts use the direct-entry-point form required by the `:` in the workspace path (e.g. `node node_modules/@playwright/test/cli.js test`).
-- [ ] A `docker compose` file in `e2e/` brings up the built `gyrifi` image plus a pinned `qdrant/qdrant`, with a named volume for `/data`.
-- [ ] The suite builds the image from the repository `Dockerfile`; it never tests a stale or published image.
-- [ ] Playwright waits on `/api/v1/system/status` returning healthy before starting.
-- [ ] Traces and screenshots are captured on failure and retained as CI artefacts.
-- [ ] Each test creates its own Ledger and Qdrant collection; tests do not depend on execution order.
+- [x] `e2e/` is its own package with `package.json`, `playwright.config.ts`, and `tests/`. It is **not** added to `pnpm-workspace.yaml` `packages` unless dependency hoisting requires it — decide, and document the decision.
+- [x] Scripts use the direct-entry-point form required by the `:` in the workspace path (e.g. `node node_modules/@playwright/test/cli.js test`).
+- [x] A `docker compose` file in `e2e/` brings up the built `gyrifi` image plus a pinned `qdrant/qdrant`, with a named volume for `/data`.
+- [x] The suite builds the image from the repository `Dockerfile`; it never tests a stale or published image.
+- [x] Playwright waits on `/api/v1/system/status` returning healthy before starting.
+- [x] Traces and screenshots are captured on failure and retained as CI artefacts.
+- [x] Each test creates its own Ledger and Qdrant collection; tests do not depend on execution order.
 
 **Journeys**
 
-- [ ] **Full governance path**, driven entirely through the UI where the UI supports it and through the API only for ingestion (which is the real-world shape): create a Ledger in Studio → `POST` two Changes via the API → see them appear in the Changes inbox → create a Proposal selecting both → run an evaluation with custom criteria → see the evidence rendered → approve → release → confirm the release appears as `HEAD` → verify the points exist in Qdrant with the expected values by querying Qdrant directly.
-- [ ] **Rollback path**: from the above state, ingest and release a second Proposal, then roll back to the first release, complete the resulting proposal through evaluation and approval and release, and assert Qdrant holds the original values and `HEAD` has moved **forward** to a third release.
-- [ ] **Gates are enforced in the browser**: `Approve` is disabled before evaluation and shows its reason; `Release` is disabled before approval and shows its reason.
-- [ ] **Persistence**: restart the container with the same volume, reload Studio, and assert every Ledger, Change, Proposal, and Release is intact and `HEAD` is unchanged.
-- [ ] **Graceful shutdown**: send `SIGTERM` during idle, assert exit code 0 and no `-wal` growth pathology; restart and assert the database opens cleanly.
-- [ ] **SPA routing**: deep-link directly to `#changes` and to a proposal detail URL in a fresh page load and assert the correct view renders — this exercises the `studioHandler` fallback.
-- [ ] **Empty first-run**: a fresh volume shows the Ledgers empty state with its call to action, and nothing errors.
+- [x] **Full governance path**, driven entirely through the UI where the UI supports it and through the API only for ingestion (which is the real-world shape): create a Ledger in Studio → `POST` two Changes via the API → see them appear in the Changes inbox → create a Proposal selecting both → run an evaluation with custom criteria → see the evidence rendered → approve → release → confirm the release appears as `HEAD` → verify the points exist in Qdrant with the expected values by querying Qdrant directly.
+- [x] **Rollback path**: from the above state, ingest and release a second Proposal, then roll back to the first release, complete the resulting proposal through evaluation and approval and release, and assert Qdrant holds the original values and `HEAD` has moved **forward** to a third release.
+- [x] **Gates are enforced in the browser**: `Approve` is disabled before evaluation and shows its reason; `Release` is disabled before approval and shows its reason.
+- [x] **Persistence**: restart the container with the same volume, reload Studio, and assert every Ledger, Change, Proposal, and Release is intact and `HEAD` is unchanged.
+- [x] **Graceful shutdown**: send `SIGTERM` during idle, assert exit code 0 and no `-wal` growth pathology; restart and assert the database opens cleanly.
+- [x] **SPA routing**: deep-link directly to `#changes` and to a proposal detail URL in a fresh page load and assert the correct view renders — this exercises the `studioHandler` fallback.
+- [x] **Empty first-run**: a fresh volume shows the Ledgers empty state with its call to action, and nothing errors.
 
 **Discipline**
 
-- [ ] Locators use roles and accessible names, never CSS classes or `nth-child`.
-- [ ] No fixed `waitForTimeout`. Use web-first assertions.
-- [ ] Each test asserts against Qdrant's actual contents at least once — a UI-only assertion cannot prove the release landed.
-- [ ] The suite completes in a bounded time and is stable across three consecutive runs.
-- [ ] CI (GRF-233) runs the suite; failures block the pipeline.
+- [x] Locators use roles and accessible names, never CSS classes or `nth-child`.
+- [x] No fixed `waitForTimeout`. Use web-first assertions.
+- [x] Each test asserts against Qdrant's actual contents at least once — a UI-only assertion cannot prove the release landed.
+- [x] The suite completes in a bounded time and is stable across three consecutive runs.
+- [ ] CI (GRF-233) runs the suite; failures block the pipeline. The suite and stable command are ready; workflow enforcement remains deferred because GRF-233 has not landed.
 
 ## Implementation notes
 

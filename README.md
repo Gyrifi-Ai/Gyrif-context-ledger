@@ -188,6 +188,19 @@ go fmt ./... && go vet ./... && go test ./... && go build ./cmd/gyrifi
 
 The source build serves a fallback page unless production Studio assets are copied into `runtime/internal/interfaces/http/static/`. The Docker build does this automatically.
 
+### Browser end-to-end qualification
+
+Requirements: Docker with Compose and the Node.js/pnpm versions above. The e2e package is intentionally separate from the Studio workspace and builds the current repository image before every suite:
+
+```sh
+cd e2e
+pnpm install --ignore-workspace --frozen-lockfile
+pnpm --ignore-workspace install:browser
+pnpm --ignore-workspace test
+```
+
+The suite uses loopback ports `18082` and `16333`, creates and removes dedicated named volumes, and runs Chromium only. Override the ports with `GYRIFI_E2E_PORT` and `GYRIFI_E2E_QDRANT_PORT` if needed. To repeat every isolated journey three times for stability qualification, run `pnpm --ignore-workspace test:repeat`. Failure traces and screenshots are written under `e2e/test-results/`.
+
 The CLI uses the same Engine as HTTP:
 
 ```sh
