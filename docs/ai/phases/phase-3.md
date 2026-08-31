@@ -13,19 +13,18 @@
 | [GRF-222](../tickets/GRF-222-retention-backup.md) | Retention budgets, quotas, and backup command | L | — | Not started |
 | [GRF-224](../tickets/GRF-224-health-and-metrics.md) | Health, readiness, and operational metrics | M | — | Done |
 | [GRF-225](../tickets/GRF-225-inference-supervision.md) | Inference process supervision | M | — | Not started |
-| [GRF-220](../tickets/GRF-220-authentication.md) | Ingestion tokens and browser session auth | XL | — | Not started |
-| [GRF-226](../tickets/GRF-226-rate-limiting.md) | Request rate limiting and abuse controls | M | GRF-220 | Not started |
+| [GRF-220](../tickets/GRF-220-authentication.md) | Trusted deployment boundary decision | XL | — | Done |
+| [GRF-226](../tickets/GRF-226-rate-limiting.md) | Request rate limiting and abuse controls | M | — | Not started |
 | [GRF-227](../tickets/GRF-227-local-docker-launch.md) | Local Docker launch | M | — | Done |
 
 Listed in recommended execution order, smallest and least entangled first.
 
 ## Phase-level notes
 
-- **GRF-220 requires an ADR before implementation.** `docs/adr/0002-authentication-model.md` must be written and reviewed first. It changes the product's trust model, and that decision should outlive the ticket.
-- **GRF-220 is the gate on any non-loopback deployment.** Until it lands, the only defensible deployment is `127.0.0.1`. Say so in any deployment guidance written before then.
+- **ADR 0002 accepts a trusted deployment boundary instead of application authentication.** Gyrifi may bind to a company-controlled private interface only behind VM/VPC/VPN/service-mesh or reverse-proxy admission controls; public exposure is unsupported.
 - GRF-221 makes the `ACCEPTED` and `INVALID` change statuses real for the first time. Phase 1's Changes inbox will need updating to render them — that update is inside GRF-221's scope, not a Phase 1 regression.
-- Migration numbers continue from Phase 2: 005 (GRF-220), 006 (GRF-221). Adjust and record here if the order changes.
-- GRF-220 permits exactly one new dependency (`golang.org/x/crypto`). No other ticket in this phase adds one.
+- Migration numbers continue from Phase 2: 005 is available because GRF-220 creates no schema; the next schema ticket takes it. Adjust and record here if the order changes.
+- No authentication dependency is added. No remaining Phase 3 ticket adds a dependency.
 
 ## The theme
 
@@ -38,7 +37,7 @@ Each ticket in this phase closes a way the product can fail silently:
 | GRF-222 | A volume filling up mid-release, taking rollback material with it |
 | GRF-224 | An orchestrator that cannot tell a healthy runtime from a broken one |
 | GRF-225 | An inference process that died hours ago and took its logs with it |
-| GRF-220 | An audit trail anyone on the network can forge |
+| GRF-220 | An undocumented trust boundary that invites unsafe public exposure |
 | GRF-226 | One runaway client starving every operator out of the system |
 
 ## Exit criteria
@@ -47,7 +46,7 @@ Each ticket in this phase closes a way the product can fail silently:
 - [ ] The runtime reports one accurate, build-injected version everywhere.
 - [ ] Every Change has a known relationship to the target's observed state before it can be proposed.
 - [ ] Disk growth is bounded and a supported backup/restore procedure exists and is tested.
-- [ ] No governance operation is reachable without an authenticated principal, and ingestion credentials cannot approve or release.
+- [x] The trusted VM/VPC deployment boundary and its lack of application-authenticated identity are documented without ambiguity.
 - [ ] Liveness, readiness, and metrics are exposed, and a `RECOVERY_REQUIRED` intent is visible without making the runtime unready.
 - [ ] The inference child process is supervised, its output is captured, and its failures are legible.
 - [ ] No single client can starve the runtime.
@@ -504,3 +503,124 @@ diff whitespace: clean
 **Follow-ups discovered**
 
 GRF-220 must continue exempting `/healthz` and must not move metrics onto the application listener. GRF-226 must exempt `/healthz` from rate limiting. Both are already explicit acceptance criteria in their existing tickets; no new ticket was required.
+
+### GRF-220 — Trusted deployment boundary decision
+
+| | |
+|---|---|
+| Completed | 2026-09-01 |
+| Commit / PR | Uncommitted workspace change |
+| Deviated from ticket | Yes — application authentication was explicitly rejected by the owner |
+
+**What was built**
+
+ADR 0002 now defines Gyrifi as a local-first service deployed inside a company-controlled VM, private VPC, VPN, service mesh, firewall, or authenticated reverse proxy. The decision closes GRF-220 without adding application users, passwords, sessions, ingestion tokens, auth middleware, auth UI, a migration, or a dependency. Current product, technical, repository, and operator documentation now states that every admitted caller has full governance authority and public-internet exposure is unsupported.
+
+**Files added**
+
+- `docs/adr/0002-authentication-model.md` — accepted trusted-boundary architecture decision and revisit triggers
+
+**Files changed**
+
+- `README.md` — supported private-deployment boundary and caller-asserted approval identity
+- `docs/ai/product.md` — trust model and removal of application authentication as a product gap
+- `docs/ai/tech-spec.md` — trusted deployment contract and removal of the closed technical gap
+- `docs/ai/repo-structure.md` — Compose/private-interface guidance
+- `docs/ai/tickets/GRF-220-authentication.md` — superseded resolution while retaining rejected criteria as history
+- `docs/ai/tickets/GRF-226-rate-limiting.md` — address-keyed limiting with no authentication dependency
+- `docs/ai/tickets/GRF-211-proposal-detail-api.md` and `GRF-232-e2e-suite.md` — removed future application-auth assumptions
+- `docs/ai/tickets/GRF-227-local-docker-launch.md` — corrected deployment-boundary acceptance wording
+- `docs/ai/tickets/INDEX.md` — GRF-220 completion, GRF-226 dependency, and prior phase-log reference repairs
+- `runtime/internal/interfaces/http/server.go` — removed the obsolete GRF-220 evidence-authorization TODO
+- `docs/ai/phases/phase-3.md` — current phase contracts and this completion record
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+There is deliberately no new Runtime wire, schema, config, CLI, Go, or TypeScript contract. The deployment contract is:
+
+```text
+application authentication: none
+supported admission boundary: company VM / private VPC / VPN / service mesh / firewall / authenticated reverse proxy
+public internet exposure: unsupported
+approval actor: caller-asserted, not cryptographically verified
+metrics: separate loopback-only listener
+```
+
+Migration `005` remains available to the next schema-changing ticket. GRF-226 now has no dependency on GRF-220 and keys all limited routes by validated client address.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Delegate admission and identity to company infrastructure | The owner specified a local-first system running inside a controlled company VM or VPC | Built-in passwords, sessions, and ingestion tokens | Duplicates company identity infrastructure and adds credential/session operations outside the desired product scope |
+| Keep the lack of verified actor identity explicit | The audit record must not imply a guarantee the product does not provide | Describe `actor` as authenticated identity | No application credential binds the supplied value to a person |
+| Keep local Compose loopback-only | It is the safest zero-configuration development boundary | Publish `8080` on all host interfaces | A default wildcard host bind would normalize unsafe accidental exposure |
+| Retain GRF-226 with address-based keys | Trusted clients can still be buggy or compromised and starve the runtime | Drop rate limiting with auth | Availability protection remains valuable without application identity |
+
+**Deviations from the ticket**
+
+Every original implementation acceptance criterion for credential storage, bearer-token authentication, signed Operator sessions, route authorization, auth CLI operations, secret non-leakage tests, login UI, token management UI, and authenticated approval identity was intentionally not implemented. The owner explicitly decided that no application authentication is needed for the company VM/VPC deployment model and approved ADR 0002 on 2026-09-01. The accepted deliverable is the replacement trust-boundary decision and accurate documentation; the rejected criteria remain unchecked in the ticket so they cannot be mistaken for implemented behavior.
+
+**Traps for future work**
+
+- A private VPC is an admission boundary, not caller identity. Do not describe approval actors as verified.
+- Public exposure remains unsupported. A future public or multi-tenant deployment requires a new ADR, not a silent bind-address change.
+- Reverse-proxy forwarding headers are untrusted unless the immediate peer is configured as trusted; GRF-226 owns that enforcement.
+- Historical phase entries mention future GRF-220 authentication because they record the decisions at that time. Current reference docs and ADR 0002 supersede those forward-looking notes.
+
+**Tests added**
+
+None — no executable behavior was added. The obsolete authorization TODO was removed, and the full existing Runtime/Studio/image gate verifies that the documentation-only scope decision did not disturb the product.
+
+**Docs updated**
+
+- `docs/adr/0002-authentication-model.md` — accepted trust model
+- `docs/ai/product.md` §§1, 2, and 7 — deployment boundary, approval identity, and gap closure
+- `docs/ai/tech-spec.md` §§1–2, §3, and §14 — distribution, trust boundary, metrics wording, and gap closure
+- `docs/ai/repo-structure.md` §4 — local and private-interface deployment rules
+- `README.md` §Quick start — operator-facing deployment warning
+- `docs/ai/tickets/GRF-220-authentication.md` — superseded resolution
+- `docs/ai/tickets/GRF-226-rate-limiting.md` — address-keyed replacement scope
+- `docs/ai/tickets/INDEX.md` and this file — completion bookkeeping
+
+**Verification**
+
+```
+$ test -z "$(gofmt -l .)"
+runtime format: clean
+$ go vet ./...
+runtime vet: passed
+$ go test ./... -race
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http 2.106s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests 3.504s
+$ go build ./...
+runtime build: passed
+
+$ pnpm install --frozen-lockfile
+Already up to date
+Done in 232ms using pnpm v11.15.1
+$ pnpm typecheck
+$ pnpm test
+Test Files  48 passed (48)
+Tests  152 passed (152)
+$ pnpm build
+✓ 1868 modules transformed.
+✓ built in 833ms
+
+$ docker build -t gyrifi:local .
+[+] Building 31.3s (31/31) FINISHED
+=> => naming to docker.io/library/gyrifi:local
+
+$ ticket index consistency check
+tickets consistent
+$ git diff --check
+diff whitespace: clean
+```
+
+**Follow-ups discovered**
+
+GRF-226 remains required for availability protection but is now independent and address-keyed. Application authentication may be reconsidered only when an ADR 0002 revisit trigger occurs; it is not an untracked implementation gap.

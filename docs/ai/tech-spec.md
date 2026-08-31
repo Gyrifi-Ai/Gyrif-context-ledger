@@ -18,7 +18,7 @@ Status: extracted from source. Every identifier, path, and default below appears
 | Package manager | pnpm | 11.15.1 |
 | Target adapter | Qdrant REST | — |
 | Optional inference | `llama-server` over loopback HTTP | `ghcr.io/ggml-org/llama.cpp:server` |
-| Distribution | one shipping Docker image; local Compose stack on loopback | `ubuntu:24.04` base |
+| Distribution | one shipping Docker image; trusted VM/VPC deployment, local Compose on loopback | `ubuntu:24.04` base |
 
 Go direct dependency list is exactly one module. Frontend runtime dependency list is exactly `react` and `react-dom`. Adding to either requires an ADR.
 
@@ -48,7 +48,11 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 
 `compose.yaml` is the supported local launch: `docker compose up --build` starts the `gyrifi` application image, a pinned `qdrant/qdrant:v1.13.4` target, and a short-lived pinned `curlimages/curl:8.12.1` initializer. The initializer waits for Qdrant, then creates collection `gyrifi` with `{ "vectors": { "size": 3, "distance": "Cosine" } }` only if it is absent; it never replaces an existing collection.
 
-`gyrifi` receives `GYRIFI_QDRANT_URL=http://qdrant:6333` and `GYRIFI_QDRANT_COLLECTION=gyrifi`. Its `8080` port is published as `127.0.0.1:8080` only. Named `gyrifi-data` and `qdrant-data` volumes persist both stores across `docker compose down`; `docker compose down --volumes` is the explicit destructive local reset. This is local-only until GRF-220 authenticates the runtime.
+`gyrifi` receives `GYRIFI_QDRANT_URL=http://qdrant:6333` and `GYRIFI_QDRANT_COLLECTION=gyrifi`. Its `8080` port is published as `127.0.0.1:8080` only. Named `gyrifi-data` and `qdrant-data` volumes persist both stores across `docker compose down`; `docker compose down --volumes` is the explicit destructive local reset.
+
+### Trust boundary
+
+ADR 0002 deliberately provides no application authentication or authorisation. Every client admitted to the application listener can invoke every route, and approval `actor` values are caller assertions. Supported company deployments enforce admission at a VM, private VPC, VPN, service mesh, firewall, or authenticated reverse proxy and terminate TLS before traffic crosses an untrusted segment. Public-internet exposure is unsupported. Forwarded client addresses are trusted only from explicitly configured proxies.
 
 ### Configuration (`internal/config/config.go`)
 
@@ -143,7 +147,7 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 
 Unknown paths under `/api/` or `/events/` return `404 NOT_FOUND`. Everything else falls through to the embedded Studio file server, which serves `index.html` for unmatched paths (SPA fallback).
 
-`/healthz`, `/readyz`, and `/metrics` are excluded from SPA fallback. `/metrics` is deliberately not registered on the application listener: it is the sole route on the separate loopback-only `GYRIFI_METRICS_ADDRESS` listener, where it returns Prometheus text format 0.0.4. This avoids exposing operational data through the application/auth surface and remains valid after GRF-220.
+`/healthz`, `/readyz`, and `/metrics` are excluded from SPA fallback. `/metrics` is deliberately not registered on the application listener: it is the sole route on the separate loopback-only `GYRIFI_METRICS_ADDRESS` listener, where it returns Prometheus text format 0.0.4. This avoids exposing operational data through the application surface.
 
 | Readiness reason | Condition |
 |---|---|
@@ -928,9 +932,6 @@ The e2e package is intentionally outside the root pnpm workspace and owns its lo
 
 | Gap | Ticket |
 |---|---|
-| No Proposal cancellation, so claims are permanent | GRF-212 |
-| List endpoints have no pagination, filtering, or bounds | GRF-214 |
-| No authentication or authorisation anywhere | GRF-220 |
 | `Change.baseFingerprint` is always `""`; no async preparation phase | GRF-221 |
 | No retention budget, quota, or backup command | GRF-222 |
 | Qdrant adapter is only tested against a fake, never a live instance | GRF-231 |

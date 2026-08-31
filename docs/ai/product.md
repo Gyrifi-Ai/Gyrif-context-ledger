@@ -15,6 +15,8 @@ Gyrifi is **not**:
 - a multi-tenant SaaS control plane,
 - a replicated system (one Gyrifi process owns one `/data` repository).
 
+Gyrifi is deployed inside a trusted company VM, private VPC, VPN, service mesh, or authenticated reverse proxy. It has no application-level authentication or authorisation; every admitted caller has full governance authority. Public-internet exposure is unsupported. See [ADR 0002](../adr/0002-authentication-model.md).
+
 ---
 
 ## 2. Domain model
@@ -97,7 +99,7 @@ Qdrant `Preview` fidelity is always `FAST` — it is a declared overlay summary,
 
 Recorded only when a **current passing** check exists for the Proposal's exact hash. Stores `actor` (defaults to `local-user`) and the Proposal hash. Unique on `(proposal_id, proposal_hash, actor)`.
 
-There is **no authentication or authorisation** today — any caller can approve as any actor (GRF-220).
+There is no application authentication. Under ADR 0002, the deployment boundary admits trusted callers and `actor` remains caller-asserted attribution rather than a verified identity.
 
 ### Release and ReleaseIntent
 
@@ -266,7 +268,6 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 
 | Gap | Ticket |
 |---|---|
-| No authentication; anyone can approve and release | GRF-220 |
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
 | No retention limits, quotas, or backup command | GRF-222 |
 | Ledgers and Changes are create-only — a mistaken ingestion is permanent | GRF-215 |

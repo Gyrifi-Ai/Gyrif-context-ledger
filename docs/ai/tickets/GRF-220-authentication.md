@@ -14,6 +14,10 @@
 
 Add authentication and authorisation. The runtime currently has **none**: any client that can reach port 8080 can create Changes, approve Proposals, release to Qdrant, and roll back history.
 
+## Resolution — superseded by ADR 0002
+
+**Closed 2026-09-01 without implementation.** [ADR 0002](../../adr/0002-authentication-model.md) records the owner-approved decision that Gyrifi is a local-first system deployed inside a company's controlled VM, private VPC, VPN, service mesh, or authenticated reverse proxy. Application-managed users, sessions, and ingestion tokens are intentionally out of scope. The acceptance criteria below are retained as the rejected design record and are not claimed as implemented.
+
 > **Write an ADR before writing code.** This ticket changes the product's trust model. Record the decision in `docs/adr/0002-authentication-model.md` and get it reviewed before implementation.
 
 ## Context
@@ -142,4 +146,4 @@ An ingestion token must **never** be able to approve or release. That separation
 
 ## Definition of done
 
-ADR merged, all acceptance criteria checked, quality gate green, INDEX status updated, phase log entry written.
+ADR 0002 accepted, the trusted-boundary contract reflected in current documentation, every unimplemented criterion recorded as an explicit deviation in the Phase 3 log, quality gate green, and INDEX status updated.

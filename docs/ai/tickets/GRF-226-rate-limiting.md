@@ -7,12 +7,12 @@
 | Epic | Security |
 | Priority | Medium |
 | Size | M |
-| Depends on | GRF-220 |
+| Depends on | — |
 | Blocks | — |
 
 ## Summary
 
-Bound the request rate a single client can impose. Explicitly deferred by GRF-220 ("Rate limiting — worth a follow-up ticket"); this is that ticket.
+Bound the request rate a single trusted-network client can impose. ADR 0002 delegates admission and identity to the deployment boundary, so limiting remains availability protection rather than an authentication control.
 
 ## Context
 
@@ -22,16 +22,14 @@ Why it matters here specifically:
 
 - **Ingestion is the intended high-volume path.** An automated producer with a retry loop and no backoff can saturate the runtime. Because SQLite is configured with `SetMaxOpenConns(1)`, write contention does not degrade gracefully — it serialises, and a flood of writes starves the operator's read requests. Studio becomes unusable exactly when someone needs to look at what is happening.
 - **Evaluation is expensive.** Each call runs an LLM inference. A loop calling `POST .../evaluation` will pin CPU and make every other evaluation time out.
-- **After GRF-220 there is a login endpoint.** Unthrottled password verification is an online brute-force target, and Argon2id verification is deliberately expensive — which makes the login endpoint an amplification vector against the runtime itself.
-
-That last point is why this depends on GRF-220 rather than preceding it.
+- **The deployment boundary is trusted, not infallible.** A compromised or runaway internal workload can still starve operators, so every admitted client is limited by validated client address.
 
 ## Scope
 
 ### In scope
 
-- A token-bucket limiter keyed by authenticated principal, falling back to client address.
-- Per-class limits, with a stricter class for authentication and evaluation.
+- A token-bucket limiter keyed by validated client address.
+- Per-class limits, with a stricter class for evaluation/release operations.
 - Standard rate-limit response headers.
 - Studio handling of `429`.
 
@@ -46,10 +44,9 @@ That last point is why this depends on GRF-220 rather than preceding it.
 
 | Class | Routes | Suggested default | Keyed by |
 |---|---|---|---|
-| `auth` | `POST /api/v1/auth/login` | 5 / minute, burst 5 | client address |
-| `expensive` | `POST .../evaluation`, `POST .../release`, `POST .../rollback` | 10 / minute, burst 3 | principal |
-| `ingest` | `POST .../changes` | 100 / second, burst 200 | principal (token) |
-| `read` | all `GET` | 200 / second, burst 400 | principal |
+| `expensive` | `POST .../evaluation`, `POST .../release`, `POST .../rollback` | 10 / minute, burst 3 | client address |
+| `ingest` | `POST .../changes` | 100 / second, burst 200 | client address |
+| `read` | all `GET` | 200 / second, burst 400 | client address |
 | `exempt` | `/healthz`, `/readyz` | unlimited | — |
 
 Defaults are starting points, not commandments. Tune them against a realistic ingestion run and record the final values in the phase log.
@@ -58,8 +55,8 @@ Defaults are starting points, not commandments. Tune them against a realistic in
 
 **Mechanism**
 
-- [ ] A limiter middleware in `runtime/internal/interfaces/http/ratelimit.go`, applied after authentication so the principal is available as the key.
-- [ ] Keying: ingestion token id or operator session id when authenticated; otherwise the client address.
+- [ ] A limiter middleware in `runtime/internal/interfaces/http/ratelimit.go`, applied before the body cap and handler.
+- [ ] Keying uses the validated client address for every limited route.
 - [ ] Client address is derived correctly: use `RemoteAddr` by default, and honour `X-Forwarded-For` **only** when `GYRIFI_TRUSTED_PROXIES` is configured and the immediate peer matches. Blindly trusting `X-Forwarded-For` lets any client bypass the limiter by forging a header — this is the classic mistake and a test must cover it.
 - [ ] Buckets are evicted after an idle period so memory cannot grow unboundedly from unique keys. Verified by a test that creates many keys and asserts the map shrinks.
 - [ ] Eviction and refill are lock-cheap and race-clean under `-race`.
@@ -70,11 +67,11 @@ Defaults are starting points, not commandments. Tune them against a realistic in
 - [ ] Exceeding a limit returns `429` with the standard error envelope and code `RESOURCE_EXHAUSTED`, plus a `Retry-After` header in seconds.
 - [ ] Responses carry `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` on every limited route, not only on rejection.
 - [ ] The error message states the class and the limit, and never reveals another principal's usage.
-- [ ] A `429` is logged at `warn` with the key **hashed or truncated**, never the raw token or session id.
+- [ ] A `429` is logged at `warn` with the client key **hashed or truncated**, never the raw forwarded header.
 
 **Configuration**
 
-- [ ] Each class is configurable: `GYRIFI_RATELIMIT_AUTH`, `_EXPENSIVE`, `_INGEST`, `_READ`, in the form `<rate>/<period>:<burst>` (e.g. `100/1s:200`).
+- [ ] Each class is configurable: `GYRIFI_RATELIMIT_EXPENSIVE`, `_INGEST`, `_READ`, in the form `<rate>/<period>:<burst>` (e.g. `100/1s:200`).
 - [ ] `GYRIFI_RATELIMIT_ENABLED` (default `true`). Disabling logs a warning at startup.
 - [ ] Invalid configuration fails startup with a clear message, consistent with the existing config validation.
 
@@ -82,7 +79,6 @@ Defaults are starting points, not commandments. Tune them against a realistic in
 
 - [ ] A throttled ingestion client receives `429` and, on retry after `Retry-After`, succeeds — verified end to end.
 - [ ] **Rate limiting never causes a partial governance operation.** A `429` is returned before any handler work begins; no Change is written, no intent is created. Assert no side effects after a rejected release.
-- [ ] Login throttling is per client address and does not lock out an account — an attacker must not be able to deny service to a legitimate operator by exhausting their limit. This is why the `auth` class is address-keyed, not username-keyed.
 
 **Studio**
 
@@ -95,7 +91,7 @@ Defaults are starting points, not commandments. Tune them against a realistic in
 
 - A per-key token bucket needs only a timestamp and a float; refill lazily on access rather than with a background ticker. This avoids a goroutine per key.
 - Sharding the key map by hash reduces lock contention if a single mutex proves hot. Measure before adding complexity.
-- Order matters: request id → recovery → logging → auth → rate limit → body cap → handler. Rate limiting must be after auth (to key by principal) and before the body cap (so a flood of large bodies is rejected cheaply).
+- Order matters: request id → recovery → logging → rate limit → body cap → handler. Rate limiting precedes the body cap so a flood of large bodies is rejected cheaply.
 - Do not rate-limit `/events/v1` per message; limit *connection establishment* instead. A long-lived SSE connection is one request.
 - The `Retry-After` value should be the bucket's actual time-to-token, not a fixed constant.
 
@@ -104,7 +100,7 @@ Defaults are starting points, not commandments. Tune them against a realistic in
 - `runtime/internal/interfaces/http/ratelimit_test.go`:
   - burst is allowed, the next request is rejected, and it succeeds again after the refill interval (fake clock),
   - each class applies to its own routes with its own limits,
-  - keys are isolated: one principal's exhaustion does not affect another,
+  - keys are isolated: one client address's exhaustion does not affect another,
   - `X-Forwarded-For` is ignored when the peer is not a trusted proxy, and honoured when it is,
   - idle buckets are evicted,
   - `/healthz` and `/readyz` are never limited,

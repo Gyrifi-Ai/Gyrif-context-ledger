@@ -292,7 +292,6 @@ func (server *Server) proposalDetail(writer http.ResponseWriter, request *http.R
 	server.writeJSON(writer, http.StatusOK, value)
 }
 func (server *Server) proposalChecks(writer http.ResponseWriter, request *http.Request) {
-	// TODO(GRF-220): protect evidence reads with the same authorisation as Change reads.
 	items, err := server.engine.ListCheckResults(request.Context(), request.PathValue("ledgerID"), request.PathValue("proposalID"))
 	if err != nil {
 		server.writeEngineError(writer, err)

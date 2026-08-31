@@ -269,7 +269,7 @@ Node and Go are **build-stage only**. The final image contains one Go binary plu
 
 ### Local Compose launch
 
-`compose.yaml` is development-only composition, not a second shipping artifact. It starts the built Gyrifi image, a pinned Qdrant target, and an idempotent collection initializer. The only published port is `127.0.0.1:8080`; both Gyrifi and Qdrant use named Docker volumes. `.vscode/launch.json` runs `docker compose up --build --remove-orphans` from the workspace root through the Run and Debug control. Do not change this binding to all interfaces before GRF-220 adds authentication.
+`compose.yaml` is development-only composition, not a second shipping artifact. It starts the built Gyrifi image, a pinned Qdrant target, and an idempotent collection initializer. The only published port is `127.0.0.1:8080`; both Gyrifi and Qdrant use named Docker volumes. `.vscode/launch.json` runs `docker compose up --build --remove-orphans` from the workspace root through the Run and Debug control. Keep the local binding on loopback; company VM/VPC deployments may use a private interface only with the admission controls required by ADR 0002.
 
 ---
 

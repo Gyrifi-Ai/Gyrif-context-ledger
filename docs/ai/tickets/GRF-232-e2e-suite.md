@@ -70,7 +70,7 @@ GRF-240 qualification additionally exercises populated Changes and server-disabl
 ## Implementation notes
 
 - **Gemma:** inference is optional and the model file is large. Run the suite with `GYRIFI_INFERENCE_ENABLED=false` by default and assert that the evidence panel correctly reports deterministic-only evaluation. Add a separate, non-required job that enables inference with an externally provisioned model path if one is available. Do not download a model in the default CI path.
-- If GRF-220 has landed, seed an operator and an ingestion token via the CLI in a compose init step, and cover the login flow plus one `403` assertion for an ingestion token attempting to approve.
+- ADR 0002 superseded application authentication, so the suite exercises the trusted-boundary API directly and does not seed credentials.
 - Reset strategy: prefer per-test isolation via unique Ledger and collection names over cross-test database truncation.
 - Keep the number of tests small. Each one is expensive; each one should fail for a reason that matters.
 - Verify Qdrant contents with `fetch` against its REST API from within the test, not with a client library.

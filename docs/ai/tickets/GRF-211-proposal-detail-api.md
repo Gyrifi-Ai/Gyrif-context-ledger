@@ -96,7 +96,7 @@ Newest first. `current` is `proposalHash === proposal.hash`. `evidence` is the s
   ```
   and call it from both `LoadProposalDetail` and `ReleaseProposal`. `ReleaseProposal` keeps its own error wrapping but must use the same booleans and message strings.
 - Do **not** add a `status` transition here. Proposal statuses `REVIEWED`/`APPROVED` remain unused; changing them is a separate decision.
-- **Evidence redaction:** the deterministic evidence blob is the full effective proposed state, which contains every desired value in the proposal. That is the same data the caller already submitted and can read via `GET /changes`, so exposing it introduces no new disclosure *today*. Once GRF-220 lands, evidence reads must be behind the same authorisation as change reads — add a `TODO(GRF-220)` comment at the handler and note it in the phase log.
+- **Evidence redaction:** the deterministic evidence blob is the full effective proposed state, which contains every desired value in the proposal. That is the same data an admitted caller can read via `GET /changes`. ADR 0002 superseded GRF-220's application-auth design; the deployment boundary protects both surfaces.
 - Keep response assembly in the handler thin; the Engine returns the struct.
 
 ## Test plan

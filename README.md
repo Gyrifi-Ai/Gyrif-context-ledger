@@ -55,7 +55,7 @@ Open <http://127.0.0.1:8080>. The same Go server serves Studio at `/`, the API a
 
 Gyrifi and Qdrant data persist in named Docker volumes. Stop the stack with `docker compose down`. To delete all local governance and target data, use `docker compose down --volumes`.
 
-The Compose port is bound to `127.0.0.1` only. Until GRF-220 adds authentication, this local Compose configuration is not a production deployment mechanism.
+The Compose port is bound to `127.0.0.1` only. Gyrifi intentionally has no application login or API authentication: company deployments must restrict access through a VM, private VPC, VPN, service mesh, firewall, or authenticated reverse proxy. Public-internet exposure is unsupported, and approval actor names are caller-asserted rather than cryptographically verified. See [ADR 0002](docs/adr/0002-authentication-model.md).
 
 The application image runs as a non-root user, exposes only `8080`, runs SQLite migrations at startup, and persists Gyrifi state under `/data`.
 

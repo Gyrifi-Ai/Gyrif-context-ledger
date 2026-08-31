@@ -18,7 +18,7 @@ Make the supported local product launch a single VS Code Run and Debug action or
 
 The shipping Docker image already packages the Go runtime and compiled Studio, but a person currently has to build it manually and provide a separately configured Qdrant endpoint. That is an unnecessary barrier for local evaluation and makes the first run look broken when the default collection does not exist.
 
-This ticket is intentionally local-only. GRF-220 has not landed, so no unauthenticated service may be exposed beyond `127.0.0.1`.
+This ticket is intentionally local-only. ADR 0002 keeps the Compose binding on `127.0.0.1`; company VM/VPC deployments require an external trusted-network boundary.
 
 ## Scope
 
@@ -44,7 +44,7 @@ This ticket is intentionally local-only. GRF-220 has not landed, so no unauthent
 - [x] Gyrifi state and Qdrant state survive `docker compose down` and restart through named volumes.
 - [x] The collection initializer waits for Qdrant readiness, preserves an existing `gyrifi` collection, and creates it as a 3-dimensional cosine collection only when absent.
 - [x] The Compose file pins all external image versions and does not introduce an application dependency.
-- [x] Documentation states that this is local-only until GRF-220 authenticates the runtime, and gives the shutdown/reset commands.
+- [x] Documentation states that Compose is loopback-only, company deployments require ADR 0002 admission controls, and gives the shutdown/reset commands.
 
 ## Test plan
 

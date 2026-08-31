@@ -78,13 +78,13 @@ Goal: make a shared deployment defensible.
 
 | ID | Title | Size | Depends on |
 |---|---|---|---|
-| [GRF-220](GRF-220-authentication.md) | Ingestion tokens and browser session auth | XL | — |
+| [GRF-220](GRF-220-authentication.md) | Trusted deployment boundary decision | XL | — |
 | [GRF-221](GRF-221-change-preparation.md) | Asynchronous Change preparation and base fingerprint | L | — |
 | [GRF-222](GRF-222-retention-backup.md) | Retention budgets, quotas, and backup command | L | — |
 | [GRF-223](GRF-223-build-metadata.md) | Build metadata and version consistency | S | — |
 | [GRF-224](GRF-224-health-and-metrics.md) | Health, readiness, and operational metrics | M | — |
 | [GRF-225](GRF-225-inference-supervision.md) | Inference process supervision | M | — |
-| [GRF-226](GRF-226-rate-limiting.md) | Request rate limiting and abuse controls | M | GRF-220 |
+| [GRF-226](GRF-226-rate-limiting.md) | Request rate limiting and abuse controls | M | — |
 | [GRF-227](GRF-227-local-docker-launch.md) | Local Docker launch | M | — |
 
 ## Phase 4 — Qualification
@@ -107,10 +107,10 @@ GRF-233 → GRF-223 → GRF-201 → GRF-202 → GRF-204 → GRF-203 → GRF-209 
        → GRF-210 → GRF-211 → GRF-206 → GRF-207 → GRF-213 → GRF-208
        → GRF-212 → GRF-215 → GRF-214 → GRF-224 → GRF-225
        → GRF-230 → GRF-231 → GRF-232
-       → GRF-221 → GRF-222 → GRF-220 → GRF-226
+       → GRF-221 → GRF-222 → GRF-226
 ```
 
-Rationale: CI and version metadata first so everything after is verified. Tokens and the component library unblock every screen, and GRF-209 lands immediately after them so every subsequent screen is built on a shell that fails visibly. The two API tickets that Phase 1 screens hard-depend on (GRF-211, GRF-213) land just before the screens that need them. GRF-215 follows GRF-212 because withdrawal and cancellation share the claim-release mechanics. Auth is last because it changes every request path and is best done against a stable surface; GRF-226 follows it because it keys limits by authenticated principal.
+Rationale: CI and version metadata first so everything after is verified. Tokens and the component library unblock every screen, and GRF-209 lands immediately after them so every subsequent screen is built on a shell that fails visibly. The two API tickets that Phase 1 screens hard-depend on (GRF-211, GRF-213) land just before the screens that need them. GRF-215 follows GRF-212 because withdrawal and cancellation share the claim-release mechanics. ADR 0002 closed GRF-220 without application auth; GRF-226 now keys limits by validated client address.
 
 ## Sizes
 
@@ -143,15 +143,15 @@ Update this table when a ticket is completed, and write the corresponding entry 
 | GRF-213 | Done | 2026-08-31 | phase-2.md |
 | GRF-214 | Done | 2026-09-01 | phase-2.md |
 | GRF-215 | Not started | — | — |
-| GRF-220 | Not started | — | — |
+| GRF-220 | Done | 2026-09-01 | phase-3.md |
 | GRF-221 | Not started | — | — |
 | GRF-222 | Not started | — | — |
-| GRF-223 | Done | 2026-08-31 | b09a8d0 |
-| GRF-224 | Done | 2026-08-31 | Health/readiness, async dependency status, and loopback Prometheus metrics |
+| GRF-223 | Done | 2026-08-31 | phase-3.md |
+| GRF-224 | Done | 2026-08-31 | phase-3.md |
 | GRF-225 | Not started | — | — |
 | GRF-226 | Not started | — | — |
 | GRF-227 | Done | 2026-08-17 | phase-3.md |
 | GRF-230 | Done | 2026-08-31 | phase-4.md |
 | GRF-231 | Not started | — | — |
 | GRF-232 | Done | 2026-08-31 | phase-4.md |
-| GRF-233 | Done | 2026-08-31 | b01c3cc |
+| GRF-233 | Done | 2026-08-31 | phase-4.md |
