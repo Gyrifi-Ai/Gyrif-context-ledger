@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
@@ -34,6 +36,47 @@ func TestReadUsesConfiguredCollectionAndAPIKey(t *testing.T) {
 	}
 	if !value.Exists || value.Fingerprint == "" {
 		t.Fatalf("unexpected value: %#v", value)
+	}
+}
+
+func TestRequestClassifiesTargetFailures(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		want   error
+	}{
+		{name: "not found", status: http.StatusNotFound, want: targets.ErrNotFound},
+		{name: "semantic", status: http.StatusBadRequest, want: targets.ErrSemantic},
+		{name: "authentication", status: http.StatusUnauthorized, want: targets.ErrAuthentication},
+		{name: "unavailable", status: http.StatusServiceUnavailable, want: targets.ErrUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) { writer.WriteHeader(test.status) }))
+			defer server.Close()
+			adapter, err := New(server.URL, "context", "never-log-this-key")
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = adapter.Health(context.Background())
+			if !errors.Is(err, test.want) || strings.Contains(err.Error(), "never-log-this-key") {
+				t.Fatalf("classified error = %v", err)
+			}
+		})
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	_ = listener.Close()
+	adapter, err := New("http://"+address, "context", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.Health(context.Background()); !errors.Is(err, targets.ErrUnavailable) {
+		t.Fatalf("transport error = %v", err)
 	}
 }
 

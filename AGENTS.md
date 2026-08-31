@@ -137,7 +137,7 @@ diff <(ls GRF-*.md | grep -oE 'GRF-[0-9]+' | sort) \
   && echo "tickets consistent"
 ```
 
-The workflow in `.github/workflows/ci.yml` enforces the Runtime, Studio, coverage, and image portions on every push and pull request. Its integration and e2e extension points remain disabled until their owning ticket enables them. Running the full local gate above first is still your job.
+The workflow in `.github/workflows/ci.yml` enforces Runtime, Studio, coverage, Qdrant integration, and image qualification on every push and pull request. Qdrant integration runs twice against pinned secured Qdrant 1.13.4 with `-race`; the e2e extension point remains disabled. Running the full local gate above first is still your job.
 
 If a step fails for a reason unrelated to your change, say so explicitly in your summary. Do not silently skip it, and do not "fix" it by weakening the check.
 

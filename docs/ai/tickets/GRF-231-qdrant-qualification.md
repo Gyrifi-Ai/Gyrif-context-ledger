@@ -46,41 +46,41 @@ The release path's drift detection and rollback depend entirely on this adapter 
 
 **Harness**
 
-- [ ] Tests live in `runtime/internal/targets/qdrant/integration_test.go` behind `//go:build integration`.
-- [ ] They are skipped unless `GYRIFI_TEST_QDRANT_URL` is set, so `go test ./...` on a laptop stays green.
-- [ ] Each test creates and drops a uniquely named collection; tests do not share state and can run in parallel.
-- [ ] Teardown runs even on failure.
-- [ ] The Qdrant version under test is logged and pinned in CI.
+- [x] Tests live in `runtime/internal/targets/qdrant/integration_test.go` behind `//go:build integration`.
+- [x] They are skipped unless `GYRIFI_TEST_QDRANT_URL` is set, so `go test ./...` on a laptop stays green.
+- [x] Each test creates and drops a uniquely named collection; tests do not share state and can run in parallel.
+- [x] Teardown runs even on failure.
+- [x] The Qdrant version under test is logged and pinned in CI.
 
 **Correctness**
 
-- [ ] Round-trip: upsert a vector with a payload, read it back, and assert the adapter's `Fingerprint` of the read value equals the fingerprint of the written value.
-- [ ] The above is asserted for a `Cosine` collection with a **non-unit-length** input vector — this is the case where Qdrant normalises and where the 1e-6 tolerance is actually load-bearing. If the tolerance is insufficient, that is a bug to fix in this ticket.
-- [ ] The same round-trip for `Dot` and `Euclid` collections, where no normalisation occurs.
-- [ ] Payload key ordering differences between write and read do not change the fingerprint.
-- [ ] Payload values of every JSON type (string, number, bool, null, nested object, array) round-trip identically.
-- [ ] A `DELETE` of an existing point removes it; `Preview`/read then reports absence.
-- [ ] A `DELETE` of an absent point is not an error.
-- [ ] Re-applying an identical `PUT` leaves the fingerprint unchanged.
+- [x] Round-trip: upsert a vector with a payload, read it back, and assert the adapter's `Fingerprint` of the read value equals the fingerprint of the written value.
+- [x] The above is asserted for a `Cosine` collection with a **non-unit-length** input vector — this is the case where Qdrant normalises and where the 1e-6 tolerance is actually load-bearing. If the tolerance is insufficient, that is a bug to fix in this ticket.
+- [x] The same round-trip for `Dot` and `Euclid` collections, where no normalisation occurs.
+- [x] Payload key ordering differences between write and read do not change the fingerprint.
+- [x] Payload values of every JSON type (string, number, bool, null, nested object, array) round-trip identically.
+- [x] A `DELETE` of an existing point removes it; `Preview`/read then reports absence.
+- [x] A `DELETE` of an absent point is not an error.
+- [x] Re-applying an identical `PUT` leaves the fingerprint unchanged.
 
 **Failure modes**
 
-- [ ] A collection that does not exist produces a classified error, not a generic 500 propagated to the caller.
-- [ ] A vector with the wrong dimension produces a **semantic** rejection distinguishable from a transport failure — this is the signal GRF-221 relies on to mark a Change `INVALID`.
-- [ ] An unreachable Qdrant produces a retryable/unavailable classification.
-- [ ] A wrong or missing `api-key` against a secured instance produces an authentication error, and the key never appears in an error message or log.
-- [ ] Drift: mutate a point directly via the Qdrant API, then run the release verification path and assert the mismatch is detected and reported with the unit id.
-- [ ] Partial batch failure: construct a batch where one point is invalid and assert the adapter's reported outcome matches what actually landed in Qdrant. Whatever the behaviour is, document it — silent partial application is the worst possible outcome and must at minimum be visible.
+- [x] A collection that does not exist produces a classified error, not a generic 500 propagated to the caller.
+- [x] A vector with the wrong dimension produces a **semantic** rejection distinguishable from a transport failure — this is the signal GRF-221 relies on to mark a Change `INVALID`.
+- [x] An unreachable Qdrant produces a retryable/unavailable classification.
+- [x] A wrong or missing `api-key` against a secured instance produces an authentication error, and the key never appears in an error message or log.
+- [x] Drift: mutate a point directly via the Qdrant API, then run the release verification path and assert the mismatch is detected and reported with the unit id.
+- [x] Partial batch failure: construct a batch where one point is invalid and assert the adapter's reported outcome matches what actually landed in Qdrant. Whatever the behaviour is, document it — silent partial application is the worst possible outcome and must at minimum be visible.
 
 **Integration with the release path**
 
-- [ ] At least one test drives the full `Engine` release against real Qdrant: ledger → change → proposal → evaluation → approval → release → verify, then a rollback, asserting the collection returns to its prior state.
-- [ ] Before-image retention is verified by inspecting the object store after the release.
+- [x] At least one test drives the full `Engine` release against real Qdrant: ledger → change → proposal → evaluation → approval → release → verify, then a rollback, asserting the collection returns to its prior state.
+- [x] Before-image retention is verified by inspecting the object store after the release.
 
 **CI**
 
-- [ ] CI (GRF-233) runs the integration job with a pinned `qdrant/qdrant` service container and `GYRIFI_TEST_QDRANT_URL` set.
-- [ ] The integration job is required, not advisory.
+- [x] CI (GRF-233) runs the integration job with a pinned `qdrant/qdrant` service container and `GYRIFI_TEST_QDRANT_URL` set.
+- [x] The integration job is required, not advisory.
 
 ## Implementation notes
 

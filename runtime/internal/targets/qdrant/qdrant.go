@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,7 +62,7 @@ func (adapter *Adapter) request(ctx context.Context, method, path string, body a
 	}
 	response, err := adapter.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("Qdrant request failed: %w", err)
+		return nil, fmt.Errorf("%w: Qdrant request failed: %v", targets.ErrUnavailable, err)
 	}
 	defer response.Body.Close()
 	value, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
@@ -69,19 +70,23 @@ func (adapter *Adapter) request(ctx context.Context, method, path string, body a
 		return nil, err
 	}
 	if response.StatusCode == http.StatusNotFound {
-		return nil, targetsErrNotFound
+		return nil, targets.ErrNotFound
+	}
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("%w: Qdrant returned status %d", targets.ErrAuthentication, response.StatusCode)
+	}
+	if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusConflict || response.StatusCode == http.StatusUnprocessableEntity {
+		return nil, fmt.Errorf("%w: Qdrant returned status %d", targets.ErrSemantic, response.StatusCode)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("Qdrant returned status %d", response.StatusCode)
+		return nil, fmt.Errorf("%w: Qdrant returned status %d", targets.ErrUnavailable, response.StatusCode)
 	}
 	return value, nil
 }
 
-var targetsErrNotFound = errors.New("target value not found")
-
 func (adapter *Adapter) Read(ctx context.Context, unit string) (targets.Value, error) {
 	body, err := adapter.request(ctx, http.MethodGet, "/points/"+url.PathEscape(unit), nil)
-	if errors.Is(err, targetsErrNotFound) {
+	if errors.Is(err, targets.ErrNotFound) {
 		return targets.Value{Unit: unit, Exists: false}, nil
 	}
 	if err != nil {
@@ -194,7 +199,20 @@ func (adapter *Adapter) Apply(ctx context.Context, plan targets.Plan) error {
 				return err
 			}
 		case ledger.ChangeDelete:
-			if _, err := adapter.request(ctx, http.MethodPost, "/points/delete?wait=true", map[string]any{"points": []string{operation.Unit}}); err != nil {
+			pointID := any(operation.Unit)
+			if numericID, err := strconv.ParseUint(operation.Unit, 10, 64); err == nil {
+				pointID = numericID
+			}
+			if current.Exists {
+				var point struct {
+					ID json.RawMessage `json:"id"`
+				}
+				if err := json.Unmarshal(current.Value, &point); err != nil || len(point.ID) == 0 {
+					return fmt.Errorf("decode Qdrant point ID %s", operation.Unit)
+				}
+				pointID = point.ID
+			}
+			if _, err := adapter.request(ctx, http.MethodPost, "/points/delete?wait=true", map[string]any{"points": []any{pointID}}); err != nil {
 				return err
 			}
 		default:

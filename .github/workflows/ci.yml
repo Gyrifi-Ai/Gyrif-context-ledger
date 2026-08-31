@@ -155,18 +155,35 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # GRF-231 enables this job with pinned Qdrant, integration build tags, and the
-  # race detector. Once enabled, repository settings must make it a required check.
-  # integration:
-  #   name: Qdrant integration
-  #   runs-on: ubuntu-24.04
-  #   services:
-  #     qdrant:
-  #       image: qdrant/qdrant:v1.13.4
-  #       ports:
-  #         - 6333:6333
-  #   steps:
-  #     - run: echo "Enabled by GRF-231"
+  integration:
+    name: Qdrant integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: runtime
+    services:
+      qdrant:
+        image: qdrant/qdrant@sha256:318c11b72aaab96b36e9662ad244de3cabd0653a1b942d4e8191f18296c81af0 # v1.13.4
+        env:
+          QDRANT__SERVICE__API_KEY: gyrifi-integration-key
+        ports:
+          - 6333:6333
+    env:
+      GYRIFI_TEST_QDRANT_URL: http://127.0.0.1:6333
+      GYRIFI_TEST_QDRANT_API_KEY: gyrifi-integration-key
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: runtime/go.mod
+          cache-dependency-path: runtime/go.sum
+      - name: Test adapter against Qdrant twice
+        run: |
+          go test -tags=integration ./internal/targets/qdrant -race -count=1 -v
+          go test -tags=integration ./internal/targets/qdrant -race -count=1 -v
 
   # GRF-232 supplied the isolated Playwright suite. Per GRF-233's extension-point
   # contract, CI enablement remains disabled here until separately activated; once

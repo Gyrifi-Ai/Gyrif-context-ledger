@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | [GRF-233](../tickets/GRF-233-ci-pipeline.md) | CI pipeline | M | — | Done |
 | [GRF-230](../tickets/GRF-230-studio-tests.md) | Studio component and integration test suite | L | GRF-202 | Done |
-| [GRF-231](../tickets/GRF-231-qdrant-qualification.md) | Qdrant integration qualification | L | — | Not started |
+| [GRF-231](../tickets/GRF-231-qdrant-qualification.md) | Qdrant integration qualification | L | — | Done |
 | [GRF-232](../tickets/GRF-232-e2e-suite.md) | Browser end-to-end qualification | L | GRF-205 … GRF-208 | Done |
 
 ## Phase-level notes
@@ -34,10 +34,10 @@ The four together mean the audit trail can be trusted end to end. Any one missin
 
 ## Exit criteria
 
-- [ ] All four tickets complete.
+- [x] All four tickets complete.
 - [ ] CI runs the full gate plus integration and e2e as required checks.
 - [ ] Frontend coverage thresholds met and enforced.
-- [ ] The Qdrant adapter is verified against a pinned real Qdrant, including the cosine normalisation tolerance and partial-failure behaviour.
+- [x] The Qdrant adapter is verified against a pinned real Qdrant, including the cosine normalisation tolerance and partial-failure behaviour.
 - [ ] The built Docker image is verified to complete a full release and rollback and to persist across a restart.
 - [ ] Three consecutive clean runs of the e2e suite pass without flakiness.
 
@@ -448,3 +448,133 @@ $ git diff --check
 
 - GRF-233 must run `pnpm install --ignore-workspace --frozen-lockfile`, install Chromium with the direct entry point, invoke `pnpm --ignore-workspace test`, and upload `e2e/test-results/` on failure so the existing suite becomes a blocking check.
 - An optional externally provisioned Gemma job can reuse this harness after CI has a model source; the required path must remain model-free.
+
+### GRF-231 — Qdrant integration qualification
+
+| | |
+|---|---|
+| Completed | 2026-09-01 |
+| Commit / PR | Uncommitted workspace change |
+| Deviated from ticket | No |
+
+**What was built**
+
+The Qdrant adapter now has a build-tagged qualification suite against real, secured Qdrant 1.13.4. It verifies metric-specific vector behavior, complete JSON payload round trips, idempotency, deletes, classified failures, drift, visible partial application, and a full Engine release/before-image/forward-rollback flow. Integration testing exposed and fixed numeric point deletion: Qdrant rejects a logical numeric unit serialized as a JSON string, so the adapter now preserves or reconstructs the point ID's JSON type.
+
+CI now starts an immutable Qdrant 1.13.4 service and runs the integration suite twice under the race detector as a normal failure-enforcing job. Browser E2E CI remains disabled exactly as required by the GRF-233 extension-point decision.
+
+**Files added**
+
+- `runtime/internal/targets/qdrant/integration_test.go` — real-service harness, isolated collection lifecycle, behavior qualification, and Engine release/rollback coverage
+
+**Files changed**
+
+- `runtime/internal/targets/target.go` — stable not-found, semantic, unavailable, and authentication classifications
+- `runtime/internal/targets/qdrant/qdrant.go` — classified REST failures and numeric/UUID-correct delete IDs
+- `runtime/internal/targets/qdrant/qdrant_test.go` — fast classification and credential non-disclosure coverage
+- `.github/workflows/ci.yml` — required secured-Qdrant integration job pinned by digest; E2E remains disabled
+- `AGENTS.md` — current workflow enforcement statement
+- `docs/ai/tech-spec.md` — verified version, metric/payload findings, partial-Plan semantics, classifications, invocation, CI, tests, and gap closure
+- `docs/ai/repo-structure.md` — integration test and workflow responsibilities
+- `docs/ai/tickets/GRF-231-qdrant-qualification.md` and `INDEX.md` — acceptance and completion bookkeeping
+- `docs/ai/phases/phase-4.md` — phase status, exit criteria, and this completion record
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```go
+var (
+	ErrNotFound       = errors.New("target resource not found")
+	ErrSemantic       = errors.New("target rejected the operation")
+	ErrUnavailable    = errors.New("target is unavailable")
+	ErrAuthentication = errors.New("target authentication failed")
+)
+```
+
+Qdrant REST classification is now observable through `errors.Is`: 404 collection failures map to `targets.ErrNotFound`; 400/409/422 responses map to `targets.ErrSemantic`; 401/403 map to `targets.ErrAuthentication`; transport and other non-success responses map to `targets.ErrUnavailable`. API keys and response bodies never enter these error messages.
+
+```text
+integration build tag: integration
+GYRIFI_TEST_QDRANT_URL=http://127.0.0.1:6333
+GYRIFI_TEST_QDRANT_API_KEY=gyrifi-integration-key
+CI job name: Qdrant integration
+CI image: qdrant/qdrant@sha256:318c11b72aaab96b36e9662ad244de3cabd0653a1b942d4e8191f18296c81af0 (v1.13.4)
+```
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Use the existing REST adapter plus standard-library harness helpers | Qualification must exercise the production wire path without introducing a second client implementation | Add a Qdrant Go client dependency for setup/assertions | It would test a different stack and violate the ticket's no-client-library instruction |
+| Secure the CI service and use a fixed non-production test key | Authentication and non-disclosure are continuously exercised, not conditionally skipped in CI | Run an unsecured service and test auth only locally | The required job would leave a stated failure mode unqualified |
+| Keep cosine direction tolerance at `1e-6` | Real Qdrant normalisation of `[3,4,0]` passed while payload drift remained detectable | Loosen tolerance when adding integration tests | No empirical failure justified weakening verification |
+| Classify statuses with exported target sentinels | GRF-221 can distinguish invalid Change content from retryable infrastructure without importing Qdrant | Parse adapter error strings | Text parsing is unstable and risks turning infrastructure errors into governance decisions |
+| Document sequential partial application rather than claim batch atomicity | A valid first point remains when a later wrong-dimension point is rejected; the returned semantic error makes the partial outcome visible and Engine enters recovery | Attempt compensating writes inside `Apply` | Compensation can fail and would forge a stronger atomicity guarantee than Qdrant provides |
+
+**Deviations from the ticket**
+
+None. Every acceptance criterion was exercised against Qdrant 1.13.4, including two consecutive clean race-enabled runs. `docs/ai/product.md` already had no Qdrant-fake gap row, so no product text required removal; the stale technical gap was removed from `tech-spec.md` §14.
+
+**Traps for future work**
+
+- Qdrant numeric point IDs must be JSON numbers in delete selectors. The string `"1"` is treated as an invalid UUID and returns HTTP 400.
+- The adapter's Plan is not one Qdrant batch: each operation is a separate synchronous request. Earlier operations can land before a later semantic rejection; Release recovery is the owning safety mechanism.
+- The integration file defines `TestMain`; when the URL is configured, it waits for Qdrant, logs the live version, and sweeps stale `gyrifi_it_*` collections before tests. Keep every active test collection unique and cleanup-owned.
+- Cosine read fingerprints differ bytewise from pre-write desired values because Qdrant normalises vectors. Release verification must continue comparing vector direction, not desired/read hash equality.
+
+**Tests added**
+
+- `runtime/internal/targets/qdrant/integration_test.go` — Cosine/Dot/Euclid and all JSON payload types; identical PUT; existing/absent DELETE; missing collection, wrong dimension, unreachable service, and auth classifications; drift mismatch; partial Plan outcome; complete release, retained before-image, rollback, and final target value
+- `runtime/internal/targets/qdrant/qdrant_test.go` — fake-server status classification, transport classification, and API-key exclusion from errors
+
+**Docs updated**
+
+- `docs/ai/tech-spec.md` §§9, 12, 13, and 14 — real Qdrant evidence, invocation, CI, and gap closure
+- `docs/ai/repo-structure.md` §§1 and 4 — package and workflow structure
+- `AGENTS.md` §5 — enabled integration gate and disabled E2E extension
+- `docs/ai/tickets/GRF-231-qdrant-qualification.md`, `INDEX.md`, and this file — completion records
+
+**Verification**
+
+```text
+$ test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests (cached)
+
+$ GYRIFI_TEST_QDRANT_URL=http://127.0.0.1:16333 GYRIFI_TEST_QDRANT_API_KEY=gyrifi-integration-key go test -tags=integration ./internal/targets/qdrant -race -count=1 -v
+2026/09/01 04:05:39 Qdrant integration version: 1.13.4
+--- PASS: TestIntegrationRoundTripMetricsAndPayloadTypes (Cosine, Dot, Euclid)
+--- PASS: TestIntegrationDeleteExistingAndAbsent
+--- PASS: TestIntegrationFailureClassifications
+--- PASS: TestIntegrationDriftAndPartialPlanFailure
+--- PASS: TestIntegrationEngineReleaseAndRollback
+PASS
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant 1.962s
+
+$ <same integration command, second consecutive run>
+2026/09/01 04:05:41 Qdrant integration version: 1.13.4
+PASS
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant 1.970s
+
+$ pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Already up to date
+Test Files  48 passed (48)
+Tests  153 passed (153)
+✓ 1868 modules transformed.
+✓ built in 796ms
+
+$ docker build -t gyrifi:local .
+[+] Building 30.7s (31/31) FINISHED
+=> [runtime-build 8/8] RUN CGO_ENABLED=0 go test ./... && CGO_ENABLED=0 go build ... 27.0s
+=> => naming to docker.io/library/gyrifi:local
+
+$ ticket index consistency check
+tickets consistent
+```
+
+**Follow-ups discovered**
+
+Named vectors, sparse vectors, and Qdrant multitenancy remain intentionally unsupported. Integration tests did not reveal a defect requiring a new ticket. Browser E2E CI remains disabled per the owner's explicit GRF-233 direction.

@@ -3,9 +3,17 @@ package targets
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
+)
+
+var (
+	ErrNotFound       = errors.New("target resource not found")
+	ErrSemantic       = errors.New("target rejected the operation")
+	ErrUnavailable    = errors.New("target is unavailable")
+	ErrAuthentication = errors.New("target authentication failed")
 )
 
 type Capabilities struct {

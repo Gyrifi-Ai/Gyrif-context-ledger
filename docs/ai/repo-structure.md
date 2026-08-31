@@ -18,7 +18,7 @@ gyrif-context-ledger/
 ├── pnpm-lock.yaml
 ├── .dockerignore / .gitignore
 ├── .github/
-│   └── workflows/ci.yml       # push/PR Runtime, Studio, coverage, and image quality gate
+│   └── workflows/ci.yml       # push/PR Runtime, Studio, Qdrant integration, coverage, and image gate
 ├── .vscode/
 │   └── launch.json            # Run and Debug entry point for the local Compose stack
 ├── docs/
@@ -81,7 +81,8 @@ runtime/
 │   │   ├── target.go                #   TargetAdapter interface, Plan, Operation, Value, Preview, Capabilities
 │   │   └── qdrant/
 │   │       ├── qdrant.go            #   the only adapter
-│   │       └── qdrant_test.go
+│   │       ├── qdrant_test.go       #   fast HTTP-fake protocol and classification tests
+│   │       └── integration_test.go  #   integration-tagged real Qdrant qualification
 │   ├── inference/
 │   │   ├── provider.go              #   Provider interface, EvaluationRequest/Result, Finding
 │   │   ├── llamacpp.go              #   StartLlamaServer, child process supervision, HTTP provider
@@ -231,7 +232,7 @@ Test files are co-located as `*.test.ts` or `*.test.tsx`; only shared test infra
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs on pushes and pull requests with workflow-level `contents: read` permission and ref-scoped cancellation. Runtime and Studio execute independently; the image job starts only after both pass. Every external action is pinned to a full commit SHA.
+`.github/workflows/ci.yml` runs on pushes and pull requests with workflow-level `contents: read` permission and ref-scoped cancellation. Runtime, Studio, and secured Qdrant 1.13.4 integration execute independently; the image job starts only after Runtime and Studio pass. Every external action is pinned to a full commit SHA and the integration service is pinned by image digest. Browser e2e CI remains disabled.
 
 The Runtime job uses Go 1.24 from `runtime/go.mod` and enforces gofmt without rewriting files, a clean `go mod tidy`, `go vet`, race-enabled tests, and `go build`. The Studio job pins Node 24 and pnpm 11.15.1, installs the root workspace with `--frozen-lockfile`, and invokes the direct-entry `typecheck`, `test`, `coverage`, and `build` scripts. The image job uses Buildx cache, accepts `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, smoke-tests the loaded image through the system status endpoint, and uploads a one-day Docker image artifact.
 

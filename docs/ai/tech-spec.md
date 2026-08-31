@@ -723,6 +723,13 @@ type TargetAdapter interface {
 }
 
 type HealthChecker interface { Health(context.Context) error }
+
+var (
+    ErrNotFound       = errors.New("target resource not found")
+    ErrSemantic       = errors.New("target rejected the operation")
+    ErrUnavailable    = errors.New("target is unavailable")
+    ErrAuthentication = errors.New("target authentication failed")
+)
 ```
 
 ### Qdrant adapter (`internal/targets/qdrant/qdrant.go`)
@@ -739,9 +746,15 @@ type HealthChecker interface { Health(context.Context) error }
 | Apply `PUT` | `PUT /points?wait=true` |
 | Apply `DELETE` | `POST /points/delete?wait=true` |
 
+Qdrant failures preserve a target classification through `errors.Is`: missing collections are `ErrNotFound`; 400/409/422 operation rejections are `ErrSemantic`; 401/403 responses are `ErrAuthentication`; transport and other non-2xx responses are `ErrUnavailable`. Response bodies and API keys are not included in adapter errors. Point deletion sends numeric units as JSON numbers and UUID units as strings; when the point exists, its returned `id` representation is reused.
+
 **Normalisation.** Both target reads and desired values are reduced to the canonical logical point `{id, vector, payload}` before fingerprinting. Extra Qdrant response fields never affect identity.
 
-**Cosine collections.** Qdrant normalises vectors on write for `Cosine` distance, so a byte-identical fingerprint comparison would always fail. `Verify` compares vector **direction** with a dot-product tolerance of `1e-6` when the collection metric is `Cosine`; otherwise it compares strictly. Semantic disagreements are accumulated into `VerificationError.Mismatches`; read/network failures remain ordinary errors so recovery can distinguish a mismatch response from target unavailability. Only collections with a single unnamed vector config are supported — named multi-vector collections are rejected explicitly rather than verified with the wrong metric.
+**Verified against Qdrant 1.13.4.** Real-service integration tests confirm that `Cosine` normalises the non-unit vector `[3,4,0]` on write while preserving its direction. The existing dot-product tolerance of `1e-6` accepts that server-normalised value without accepting payload drift, so the tolerance remains unchanged. `Dot` and `Euclid` preserve vector magnitude. Payload key reordering and every JSON payload value kind (string, number, boolean, null, nested object, and array) survive round-trip normalisation without semantic drift. Identical PUT is idempotent; numeric-ID deletion requires a JSON number rather than the string form of the logical unit.
+
+`Verify` compares vector **direction** with the `1e-6` tolerance only for `Cosine`; otherwise it compares values strictly. Semantic disagreements are accumulated into `VerificationError.Mismatches`; read/network failures remain classified ordinary errors so recovery can distinguish mismatch from target unavailability. Only collections with a single unnamed vector config are supported — named multi-vector collections are rejected explicitly rather than verified with the wrong metric.
+
+**Partial plans.** The adapter applies Plan operations sequentially as one `wait=true` request per point; Qdrant 1.13.4 does not receive one atomic batch from Gyrifi. If an earlier valid point lands and a later wrong-dimension point is rejected, `Apply` returns `ErrSemantic`, the earlier point remains, and the invalid point is absent. This visible partial outcome is why capabilities advertise `AtomicApply: false` and why Engine Release failure enters `RECOVERY_REQUIRED` rather than pretending the Plan rolled back.
 
 **Capabilities today:** `{AtomicApply: false, ExactPreview: false, ConditionalWrite: true, Batch: true, Restore: true}`. Sparse in-place release is advertised as **recoverable**, never as globally atomic. `Preview` fidelity is always `FAST`.
 
@@ -883,6 +896,7 @@ The Releases page loads Releases, Proposals, and Release Intents as one workspac
 | `runtime/tests/release_recovery_test.go` | Intent list/detail and scoping; before-image presence; retry success, mismatch, and unavailability; explicit abandonment; release guard and repeated-call behavior |
 | `runtime/internal/ledger/invariants_test.go` | Proposal hash determinism and order sensitivity; approval staleness after re-hash |
 | `runtime/internal/targets/qdrant/qdrant_test.go` | collection path construction, `api-key` header, cosine vector equivalence, and structured verification mismatches |
+| `runtime/internal/targets/qdrant/integration_test.go` (`integration` tag) | Qdrant 1.13.4 metric/payload round trips, deletes/idempotency, classified failures/authentication, drift, partial Plans, and full Engine release/before-image/rollback |
 | `runtime/internal/inference/llamacpp_test.go` | structured-output requirement, free-form rejection |
 | `runtime/internal/inference/supervisor_test.go` | fake-child restart/backoff lifecycle, restart cap/reset, cancellation, repeated-cycle cleanup, and startup stderr diagnostics |
 | `runtime/tests/inference_availability_test.go` | inference process health/status, stable evaluation 503, and no CheckResult persistence during infrastructure outage |
@@ -911,11 +925,20 @@ Large model downloads are never part of tests.
 
 ## 13. Quality gate
 
-`.github/workflows/ci.yml` enforces the Runtime, Studio, coverage, and shipping-image portions on pushes and pull requests. It grants only `contents: read`, cancels superseded runs for the same ref, and pins every external action to an immutable commit SHA. Runtime and Studio run in parallel; the image job depends on both and exports its smoke-tested `gyrifi:ci` image as a one-day artifact.
+`.github/workflows/ci.yml` enforces Runtime, Studio, Qdrant integration, coverage, and shipping-image qualification on pushes and pull requests. It grants only `contents: read`, cancels superseded runs for the same ref, and pins every external action and the Qdrant service to an immutable SHA/digest. Runtime, Studio, and Qdrant integration run in parallel; the image job depends on Runtime and Studio and exports its smoke-tested `gyrifi:ci` image as a one-day artifact.
 
-The Runtime job reads Go 1.24 from `runtime/go.mod`, fails on unformatted files or a dirty `go mod tidy`, then runs `go vet ./...`, `go test ./... -race`, and `go build ./...`. The Studio job pins Node 24 and pnpm 11.15.1, performs a frozen root-workspace install, and calls the direct-entry package scripts for typechecking, tests, coverage, and build. The image job passes `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, uses Buildx GHA caching, polls the embedded Runtime rather than sleeping for a fixed startup interval, and requires the reported version to equal the injected value.
+The Runtime job reads Go 1.24 from `runtime/go.mod`, fails on unformatted files or a dirty `go mod tidy`, then runs `go vet ./...`, `go test ./... -race`, and `go build ./...`. The Studio job pins Node 24 and pnpm 11.15.1, performs a frozen root-workspace install, and calls the direct-entry package scripts for typechecking, tests, coverage, and build. The Qdrant integration job starts secured Qdrant 1.13.4, logs the live version, and runs the build-tagged package twice with `-race`; it is a normal non-advisory workflow job, so any failure fails CI. The image job passes `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, uses Buildx GHA caching, polls the embedded Runtime rather than sleeping for a fixed startup interval, and requires the reported version to equal the injected value.
 
-Integration and e2e job definitions remain commented extension points. GRF-231 owns enabling pinned-Qdrant integration as a required check. Browser CI enablement remains disabled under GRF-233's extension-point contract; the local e2e command below remains part of the complete developer gate.
+Browser CI enablement remains a commented disabled extension point under GRF-233's contract; GRF-231 enables only Qdrant integration. The local e2e command below remains part of the complete developer gate.
+
+The tagged integration package skips when `GYRIFI_TEST_QDRANT_URL` is absent. Against a running secured service, the stable local invocation is:
+
+```sh
+cd runtime
+GYRIFI_TEST_QDRANT_URL=http://127.0.0.1:16333 \
+GYRIFI_TEST_QDRANT_API_KEY=gyrifi-integration-key \
+go test -tags=integration ./internal/targets/qdrant -race -count=1 -v
+```
 
 Every change must pass:
 
@@ -949,6 +972,5 @@ The e2e package is intentionally outside the root pnpm workspace and owns its lo
 |---|---|
 | `Change.baseFingerprint` is always `""`; no async preparation phase | GRF-221 |
 | No retention budget, quota, or backup command | GRF-222 |
-| Qdrant adapter is only tested against a fake, never a live instance | GRF-231 |
 | No `DELETE`/withdraw/archive route for any entity; `routes()` registers none | GRF-215 |
 | No rate limiting; `SetMaxOpenConns(1)` makes write floods starve reads | GRF-226 |
