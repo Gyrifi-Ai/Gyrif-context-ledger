@@ -301,6 +301,24 @@ func (repository *SQLite) SaveCheckResult(ctx context.Context, value ledger.Chec
 	}
 	return tx.Commit()
 }
+func (repository *SQLite) ListCheckResults(ctx context.Context, proposalID string) ([]ledger.CheckResult, error) {
+	rows, err := repository.db.QueryContext(ctx, `SELECT id,proposal_id,proposal_hash,kind,passed,summary,evidence,created_at FROM checks WHERE proposal_id=? ORDER BY created_at DESC, id DESC`, proposalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]ledger.CheckResult, 0)
+	for rows.Next() {
+		var item ledger.CheckResult
+		var created string
+		if err := rows.Scan(&item.ID, &item.ProposalID, &item.ProposalHash, &item.Kind, &item.Passed, &item.Summary, &item.Evidence, &created); err != nil {
+			return nil, err
+		}
+		item.CreatedAt = parseTime(created)
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
 func (repository *SQLite) HasPassingCheck(ctx context.Context, id, hash string) (bool, error) {
 	var count int
 	err := repository.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM checks WHERE proposal_id=? AND proposal_hash=? AND passed=1`, id, hash).Scan(&count)
@@ -319,6 +337,24 @@ func (repository *SQLite) SaveApproval(ctx context.Context, value ledger.Approva
 		return err
 	}
 	return tx.Commit()
+}
+func (repository *SQLite) ListApprovals(ctx context.Context, proposalID string) ([]ledger.Approval, error) {
+	rows, err := repository.db.QueryContext(ctx, `SELECT id,proposal_id,proposal_hash,actor,created_at FROM approvals WHERE proposal_id=? ORDER BY created_at DESC, id DESC`, proposalID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]ledger.Approval, 0)
+	for rows.Next() {
+		var item ledger.Approval
+		var created string
+		if err := rows.Scan(&item.ID, &item.ProposalID, &item.ProposalHash, &item.Actor, &created); err != nil {
+			return nil, err
+		}
+		item.CreatedAt = parseTime(created)
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 func (repository *SQLite) HasApproval(ctx context.Context, id, hash string) (bool, error) {
 	var count int

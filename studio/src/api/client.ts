@@ -1,4 +1,4 @@
-import type { Change, Ledger, Proposal, Release, SystemStatus } from "./types";
+import type { Approval, Change, CheckResult, Ledger, Proposal, ProposalDetail, Release, SystemStatus } from "./types";
 
 export type ApiErrorKind = "transport" | "http";
 
@@ -69,6 +69,9 @@ export const api = {
   createChange: (ledgerId: string, input: { unit: string; action: "PUT" | "DELETE"; desired?: unknown; idempotencyKey: string }) => request<Change>(`/api/v1/ledgers/${ledgerId}/changes`, { method: "POST", body: JSON.stringify(input) }),
   proposals: (ledgerId: string, init?: RequestInit) => request<{ items: Proposal[] }>(`/api/v1/ledgers/${ledgerId}/proposals`, init),
   createProposal: (ledgerId: string, input: { title: string; changeIds: string[] }) => request<Proposal>(`/api/v1/ledgers/${ledgerId}/proposals`, { method: "POST", body: JSON.stringify(input) }),
+  proposal: (ledgerId: string, proposalId: string, init?: RequestInit) => request<ProposalDetail>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}`, init),
+  proposalChecks: (ledgerId: string, proposalId: string, init?: RequestInit) => request<{ items: CheckResult[] }>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/checks`, init),
+  proposalApprovals: (ledgerId: string, proposalId: string, init?: RequestInit) => request<{ items: Approval[] }>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/approvals`, init),
   evaluate: (ledgerId: string, proposalId: string, criteria: string) => request<{ passed: boolean; summary: string }>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/evaluation`, { method: "POST", body: JSON.stringify({ criteria }) }),
   approve: (ledgerId: string, proposalId: string) => request<void>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/approvals`, { method: "POST", body: JSON.stringify({ actor: "local-user" }) }),
   release: (ledgerId: string, proposalId: string) => request<Release>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/release`, { method: "POST" }),

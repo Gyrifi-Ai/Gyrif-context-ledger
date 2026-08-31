@@ -56,12 +56,12 @@ func (engine *Engine) ApproveProposal(ctx context.Context, ledgerID, proposalID,
 	if err != nil {
 		return wrap(CodeNotFound, "Proposal was not found.", err)
 	}
-	passing, err := engine.repository.HasPassingCheck(ctx, proposal.ID, proposal.Hash)
+	gate, err := engine.evaluateApprovalGate(ctx, proposal)
 	if err != nil {
 		return wrap(CodeInternal, "Could not verify evaluation evidence.", err)
 	}
-	if !passing {
-		return wrap(CodeConflict, "A current passing evaluation is required before approval.", ledger.ErrReleaseNotReady)
+	if !gate.Enabled {
+		return wrap(CodeConflict, gate.Reason, ledger.ErrReleaseNotReady)
 	}
 	id, err := ledger.NewID("apr")
 	if err != nil {

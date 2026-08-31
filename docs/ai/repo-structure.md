@@ -58,12 +58,14 @@ runtime/
 │   │   ├── events_test.go           #   delivery, slow-subscriber, unsubscribe concurrency
 │   │   ├── changes.go               #   CreateChange + idempotency
 │   │   ├── proposals.go             #   CreateProposal, ApproveProposal
+│   │   ├── proposal_detail.go        #   detail/evidence reads + server-authoritative gates
 │   │   ├── evaluation.go            #   EvaluateProposal
 │   │   ├── releases.go              #   ReleaseProposal, RecoverReleases
 │   │   └── rollback.go              #   CreateRollbackProposal
 │   ├── repository/                  # Gyrifi-owned persistence only
 │   │   ├── repository.go            #   Repository interface + sentinel errors
 │   │   ├── sqlite.go                #   OpenSQLite, pragmas, all SQL, transactions
+│   │   ├── sqlite_test.go            #   check/approval ordering and empty-list contracts
 │   │   └── objects.go               #   ObjectStore: sha256 CAS, 2-char shard, temp+fsync+rename
 │   ├── targets/
 │   │   ├── target.go                #   TargetAdapter interface, Plan, Operation, Value, Preview, Capabilities
@@ -84,7 +86,8 @@ runtime/
 │   ├── 001_initial.sql              # full schema
 │   └── migrations.go                # //go:embed + ordered application
 └── tests/
-    └── change_flow_test.go          # end-to-end governance flow against fakes
+    ├── change_flow_test.go          # end-to-end governance flow against fakes
+    └── proposal_detail_test.go      # detail gates, evidence, scoping, and HTTP contracts
 ```
 
 ### Layering rules — hard

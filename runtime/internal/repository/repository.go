@@ -24,8 +24,10 @@ type Repository interface {
 	LoadProposal(context.Context, string, string) (ledger.Proposal, error)
 	ListProposals(context.Context, string) ([]ledger.Proposal, error)
 	SaveCheckResult(context.Context, ledger.CheckResult) error
+	ListCheckResults(context.Context, string) ([]ledger.CheckResult, error)
 	HasPassingCheck(context.Context, string, string) (bool, error)
 	SaveApproval(context.Context, ledger.Approval) error
+	ListApprovals(context.Context, string) ([]ledger.Approval, error)
 	HasApproval(context.Context, string, string) (bool, error)
 	CurrentHead(context.Context, string) (ledger.Head, error)
 	SaveReleaseIntent(context.Context, ledger.ReleaseIntent) error

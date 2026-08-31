@@ -68,12 +68,12 @@ The unique constraint on `proposal_changes.change_id` guarantees a Change belong
 | Status | Meaning |
 |---|---|
 | `DRAFT` | Created, no evidence yet |
-| `REVIEWED` | Reserved; not currently written by the Engine |
-| `APPROVED` | Reserved; not currently written by the Engine |
+| `REVIEWED` | The latest saved evaluation passed |
+| `APPROVED` | An approval was saved for the current Proposal hash |
 | `RELEASED` | Set by `FinalizeRelease` |
-| `BLOCKED` | Reserved |
+| `BLOCKED` | The latest saved evaluation failed |
 
-Proposals are created as `DRAFT` and move straight to `RELEASED`. Studio derives review readiness from user actions, not from these statuses.
+Proposal status is a display summary, not release authority. Release gates query current hash-bound passing evidence and approvals directly, plus the current Ledger HEAD; a status value alone never authorises a release.
 
 ### Evaluation and evidence
 
@@ -246,7 +246,6 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 
 | Gap | Ticket |
 |---|---|
-| No Proposal detail view; evidence and findings cannot be read back | GRF-211 |
 | Proposals cannot be cancelled; claimed Changes are stuck forever | GRF-212 |
 | `RECOVERY_REQUIRED` intents are invisible and unresolvable | GRF-213 |
 | List endpoints are unbounded and unfiltered | GRF-214 |

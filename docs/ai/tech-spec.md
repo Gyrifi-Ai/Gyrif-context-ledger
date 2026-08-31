@@ -120,6 +120,9 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 | POST | `/api/v1/ledgers/{ledgerID}/changes` | **202** | `{ "unit", "action", "desired", "idempotencyKey" }` | `Change` |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals` | 200 | — | `{ "items": Proposal[] }` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals` | 201 | `{ "title", "changeIds":[…] }` | `Proposal` |
+| GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}` | 200 | — | `ProposalDetail` |
+| GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/checks` | 200 | — | `{ "items": CheckResult[] }` (newest first) |
+| GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | 200 | — | `{ "items": Approval[] }` (newest first) |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation` | 200 | `{ "criteria" }` | `{ "passed", "summary", "previewFidelity", "findings"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | **204** | `{ "actor" }` | — |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/release` | 201 | — | `Release` |
@@ -229,7 +232,31 @@ type ReleaseIntent struct {
     Plan      []byte
     CreatedAt time.Time
 }
+
+type ActionGate struct {
+    Enabled bool   `json:"enabled"`
+    Reason  string `json:"reason"`
+}
+
+type ProposalGates struct {
+    HasCurrentPassingCheck bool       `json:"hasCurrentPassingCheck"`
+    HasCurrentApproval     bool       `json:"hasCurrentApproval"`
+    BaseMatchesHead        bool       `json:"baseMatchesHead"`
+    Releasable             bool       `json:"releasable"`
+    Reason                 string     `json:"reason"`
+    ApprovalAction         ActionGate `json:"approvalAction"`
+    ReleaseAction          ActionGate `json:"releaseAction"`
+}
+
+type ProposalDetail struct {
+    Proposal             ledger.Proposal `json:"proposal"`
+    Changes              []ledger.Change `json:"changes"`
+    CurrentHeadReleaseID string          `json:"currentHeadReleaseId"`
+    Gates                ProposalGates   `json:"gates"`
+}
 ```
+
+The read-API `CheckResult` exposes `id`, `proposalHash`, `kind`, `passed`, `summary`, `createdAt`, and `current`. Valid stored evidence is emitted as decoded JSON under `evidence`; malformed or absent blobs omit it and set `evidenceUnavailable: true`. The read-API `Approval` exposes `id`, `proposalHash`, `actor`, `createdAt`, and `current`. `current` means the stored `proposalHash` equals the Proposal's current hash.
 
 ### Enumerations
 
@@ -240,7 +267,7 @@ type ReleaseIntent struct {
 | `ProposalStatus` | `DRAFT`, `REVIEWED`, `APPROVED`, `RELEASED`, `BLOCKED` |
 | `ReleaseIntentStatus` | `READY`, `APPLYING`, `VERIFYING`, `FINALIZED`, `RECOVERY_REQUIRED` |
 
-`Proposal.status` is only ever written as `DRAFT` or `RELEASED` today. `Change.status` is only ever written as `READY` or `RELEASED`.
+`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, and `RELEASED` after finalization. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, and HEAD predicates. `Change.status` is only ever written as `READY` or `RELEASED`.
 
 ---
 
@@ -286,6 +313,9 @@ func (e *Engine) CreateChange(ctx, ledgerID string, r CreateChangeRequest) (ledg
 func (e *Engine) ListChanges(ctx, ledgerID string) ([]ledger.Change, error)
 func (e *Engine) CreateProposal(ctx, ledgerID string, r CreateProposalRequest) (ledger.Proposal, error)
 func (e *Engine) ListProposals(ctx, ledgerID string) ([]ledger.Proposal, error)
+func (e *Engine) LoadProposalDetail(ctx, ledgerID, proposalID string) (ProposalDetail, error)
+func (e *Engine) ListCheckResults(ctx, ledgerID, proposalID string) ([]CheckResult, error)
+func (e *Engine) ListApprovals(ctx, ledgerID, proposalID string) ([]Approval, error)
 func (e *Engine) EvaluateProposal(ctx, ledgerID, proposalID, criteria string) (EvaluationResponse, error)
 func (e *Engine) ApproveProposal(ctx, ledgerID, proposalID, actor string) error
 func (e *Engine) ReleaseProposal(ctx, ledgerID, proposalID string) (ledger.Release, error)
@@ -326,6 +356,12 @@ func (e *Engine) Close() error
 - Requires `HasPassingCheck(proposalID, proposal.Hash)`.
 - Empty actor defaults to `local-user`.
 
+**`LoadProposalDetail`**
+- Loads the Proposal through `(ledgerID, proposalID)`, so a cross-Ledger ID is `NOT_FOUND`.
+- Returns ordered Changes, current HEAD, and server-authoritative approval/release action gates.
+- The release gate and `ReleaseProposal` share `evaluateGates`; missing passing evidence, missing approval, and moved HEAD therefore return identical reason strings.
+- Gate booleans read current hash-bound evidence and approval rows; Proposal status is not a gate predicate.
+
 **`ReleaseProposal`** — see [product.md §3 step 5](product.md).
 
 **`CreateRollbackProposal`** — see [product.md §4](product.md). Note the synthetic idempotency key format: `rollback:{releases[0].ID}:{targetReleaseID}:{unit}` where `releases[0]` is the current HEAD release.
@@ -346,8 +382,10 @@ type Repository interface {
     LoadProposal(ctx, ledgerID, proposalID string) (ledger.Proposal, error)
     ListProposals(ctx, ledgerID string) ([]ledger.Proposal, error)
     SaveCheckResult(context.Context, ledger.CheckResult) error
+    ListCheckResults(ctx, proposalID string) ([]ledger.CheckResult, error)
     HasPassingCheck(ctx, proposalID, proposalHash string) (bool, error)
     SaveApproval(context.Context, ledger.Approval) error
+    ListApprovals(ctx, proposalID string) ([]ledger.Approval, error)
     HasApproval(ctx, proposalID, proposalHash string) (bool, error)
     CurrentHead(ctx, ledgerID string) (ledger.Head, error)
     SaveReleaseIntent(context.Context, ledger.ReleaseIntent) error
@@ -624,7 +662,9 @@ function subscribeToRequestHealth(listener: (health: { reachable: true } | { rea
 
 `request` always sets `Content-Type: application/json`. A rejected `fetch` throws a `transport` `ApiError` with status `0` and publishes an unreachable request-health event; an intentional `AbortError` is passed through without changing reachability. Any HTTP response first publishes reachable, then a non-2xx response throws an `http` `ApiError` preserving `body.error.code`, `body.error.message`, and `X-Request-ID` when present. Malformed error envelopes use `code: "UNKNOWN"` and `Request failed ({status})`. A `204` resolves `undefined`. Read methods accept an optional `RequestInit` so callers can supply an `AbortSignal`. All paths are relative; Vite proxies `/api` and `/events` to `127.0.0.1:18080` in development, and production is same-origin.
 
-`api` methods: `status`, `ledgers`, `createLedger`, `changes`, `createChange`, `proposals`, `createProposal`, `evaluate`, `approve`, `release`, `releases`, `rollback`.
+`api` methods: `status`, `ledgers`, `createLedger`, `changes`, `createChange`, `proposals`, `createProposal`, `proposal`, `proposalChecks`, `proposalApprovals`, `evaluate`, `approve`, `release`, `releases`, `rollback`.
+
+`ProposalDetail.gates` contains aggregate release predicates plus `approvalAction` and `releaseAction` `{ enabled, reason }` values. Feature code renders these values verbatim and never derives governance permissions from Proposal status.
 
 `studio/src/app/use-async.ts` owns the dependency-free query and mutation state primitives:
 
@@ -681,10 +721,12 @@ State composition: `Providers` nests reachability around the AppState context `{
 | `runtime/internal/engine/events_test.go` | broker delivery, full-buffer drops, idempotent unsubscribe, and concurrent publish/unsubscribe safety |
 | `runtime/internal/interfaces/http/events_test.go` | SSE connected frame, domain forwarding, Ledger filtering, flushing, and context cancellation |
 | `runtime/tests/change_flow_test.go` | full Change → Proposal → Evaluation → Approval → Release and event sequence; idempotent re-submission; rollback; apply/verify failure and recovery events |
+| `runtime/internal/repository/sqlite_test.go` | CheckResult and Approval newest-first ordering plus non-null empty lists |
+| `runtime/tests/proposal_detail_test.go` | detail and action gates, release/approval reason anti-drift, moved HEAD, stale/malformed evidence, cross-Ledger isolation, and HTTP serialization |
 | `runtime/internal/ledger/invariants_test.go` | Proposal hash determinism and order sensitivity; approval staleness after re-hash |
 | `runtime/internal/targets/qdrant/qdrant_test.go` | collection path construction, `api-key` header, cosine vector equivalence |
 | `runtime/internal/inference/llamacpp_test.go` | structured-output requirement, free-form rejection |
-| `studio/src/api/client.test.ts` | versioned endpoint path, structured/request-ID error mapping, transport versus HTTP reachability |
+| `studio/src/api/client.test.ts` | versioned endpoint paths including Proposal detail/evidence, structured/request-ID error mapping, transport versus HTTP reachability |
 | `studio/src/api/events.test.ts` | stream state, bounded CLOSED retry, manual reconnect, timer/source teardown, typed named-event parsing and dispatch |
 | `studio/src/app/error-boundary.test.tsx` | fallback/reset contract and once-per-error logging |
 | `studio/src/app/reachability.test.ts` | exact bounded reachability backoff schedule |
@@ -718,7 +760,6 @@ docker build -t gyrifi:dev .
 
 | Gap | Ticket |
 |---|---|
-| No `GET` for a single Proposal, its checks, or its approvals | GRF-211 |
 | No Proposal cancellation, so claims are permanent | GRF-212 |
 | No API for listing or resolving `RECOVERY_REQUIRED` intents | GRF-213 |
 | List endpoints have no pagination, filtering, or bounds | GRF-214 |

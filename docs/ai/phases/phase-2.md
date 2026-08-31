@@ -9,7 +9,7 @@
 | ID | Title | Size | Depends on | Status |
 |---|---|---|---|---|
 | [GRF-210](../tickets/GRF-210-event-stream.md) | Real domain event stream | M | — | Done |
-| [GRF-211](../tickets/GRF-211-proposal-detail-api.md) | Proposal detail and evidence read API | M | — | Not started |
+| [GRF-211](../tickets/GRF-211-proposal-detail-api.md) | Proposal detail and evidence read API | M | — | Done |
 | [GRF-212](../tickets/GRF-212-proposal-cancellation.md) | Proposal cancellation and claim release | M | — | Not started |
 | [GRF-213](../tickets/GRF-213-release-intent-api.md) | Release intent inspection and recovery API | L | — | Not started |
 | [GRF-214](../tickets/GRF-214-pagination.md) | Pagination and filtering for list endpoints | M | — | Not started |
@@ -185,4 +185,150 @@ tickets consistent
 
 - A sampled debug metric can expose `Broker.Dropped()` if operators need slow-consumer visibility; no per-event log belongs on the governance request path.
 - A future cross-process or replay requirement needs a different architecture and an ADR. This broker intentionally supports only the product's single-replica, refetch-hint contract.
+
+### GRF-211 — Proposal detail and evidence read API
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | Yes — owner-approved per-action gate extension; stale status documentation corrected to match source |
+
+**What was built**
+
+Three Ledger-scoped read endpoints now return one Proposal with its ordered Changes and authoritative gates, all stored evaluation evidence, and all approvals. The Engine computes aggregate release readiness and separate approval/release action gates from current hash-bound evidence, approval, and HEAD state. The mutation methods share those predicates and exact disabled reasons, so Studio can render the server response without recreating governance logic. Valid evidence is emitted as JSON; malformed blobs remain readable metadata with `evidenceUnavailable: true`.
+
+**Files added**
+
+- `runtime/internal/engine/proposal_detail.go` — detail response types, approval/release action gates, shared predicates, evidence conversion, and scoped read methods.
+- `runtime/internal/repository/sqlite_test.go` — newest-first checks/approvals and non-null empty-list tests.
+- `runtime/tests/proposal_detail_test.go` — gate anti-drift, moved HEAD, evidence, scoping, secret-field, and HTTP response tests.
+
+**Files changed**
+
+- `runtime/internal/repository/repository.go`, `runtime/internal/repository/sqlite.go` — stored CheckResult and Approval list contracts and SQL.
+- `runtime/internal/engine/proposals.go`, `runtime/internal/engine/releases.go` — shared approval and release gate evaluation; granular release-disabled messages.
+- `runtime/internal/interfaces/http/server.go` — three GET routes and thin handlers, including the required GRF-220 evidence-authorisation note.
+- `studio/src/api/types.ts`, `studio/src/api/client.ts`, `studio/src/api/client.test.ts` — response types, methods, and exact path coverage.
+- `docs/ai/product.md`, `docs/ai/repo-structure.md`, `docs/ai/tech-spec.md`, `docs/ai/tickets/INDEX.md`, `docs/ai/phases/phase-2.md` — current behavior, contracts, tree, and status.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```go
+func (repository *SQLite) ListCheckResults(ctx context.Context, proposalID string) ([]ledger.CheckResult, error)
+func (repository *SQLite) ListApprovals(ctx context.Context, proposalID string) ([]ledger.Approval, error)
+
+type ActionGate struct {
+		Enabled bool   `json:"enabled"`
+		Reason  string `json:"reason"`
+}
+
+type ProposalGates struct {
+		HasCurrentPassingCheck bool       `json:"hasCurrentPassingCheck"`
+		HasCurrentApproval     bool       `json:"hasCurrentApproval"`
+		BaseMatchesHead        bool       `json:"baseMatchesHead"`
+		Releasable             bool       `json:"releasable"`
+		Reason                 string     `json:"reason"`
+		ApprovalAction         ActionGate `json:"approvalAction"`
+		ReleaseAction          ActionGate `json:"releaseAction"`
+}
+
+func (e *Engine) LoadProposalDetail(ctx context.Context, ledgerID, proposalID string) (ProposalDetail, error)
+func (e *Engine) ListCheckResults(ctx context.Context, ledgerID, proposalID string) ([]CheckResult, error)
+func (e *Engine) ListApprovals(ctx context.Context, ledgerID, proposalID string) ([]Approval, error)
+```
+
+```ts
+type ActionGate = { enabled: boolean; reason: string };
+type ProposalGates = {
+	hasCurrentPassingCheck: boolean;
+	hasCurrentApproval: boolean;
+	baseMatchesHead: boolean;
+	releasable: boolean;
+	reason: string;
+	approvalAction: ActionGate;
+	releaseAction: ActionGate;
+};
+
+proposal: (ledgerId: string, proposalId: string, init?: RequestInit) => request<ProposalDetail>(...)
+proposalChecks: (ledgerId: string, proposalId: string, init?: RequestInit) => request<{ items: CheckResult[] }>(...)
+proposalApprovals: (ledgerId: string, proposalId: string, init?: RequestInit) => request<{ items: Approval[] }>(...)
+```
+
+The endpoints are:
+
+- `GET /api/v1/ledgers/{ledgerID}/proposals/{proposalID}`
+- `GET /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/checks`
+- `GET /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals`
+
+All three first load the Proposal by both Ledger and Proposal ID. A Proposal owned by another Ledger therefore returns `404 NOT_FOUND` without exposing its existence or dependent rows.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Return server-computed `approvalAction` and `releaseAction` gates in addition to the ticket's aggregate fields | Owner-approved prerequisite for GRF-207; each button receives its own authoritative reason | Let Studio infer approval from `hasCurrentPassingCheck` or Proposal status | Browser governance logic can drift and is forbidden by the architecture |
+| Share `evaluateApprovalGate` with `ApproveProposal`, and `evaluateGates` with `ReleaseProposal` | The read and mutation paths use the same predicates and message constants | Duplicate conditions in the read method | Tests might catch current drift but could not prevent later divergence |
+| Use granular release reasons with evaluation before approval before moved HEAD precedence | The response can explain the next blocking condition and the mutation returns the identical text | Keep the former combined evidence-and-approval error | It cannot distinguish the ticket's required pre-evaluation and post-evaluation states |
+| Scope in the Engine by loading `(ledgerID, proposalID)` before repository evidence reads | Repository list signatures intentionally accept only Proposal ID, while the API must prevent cross-Ledger reads | Add Ledger ID to ticket-specified Repository methods | That would violate the explicit repository contract without improving the unique Proposal-ID query |
+| Decode evidence into `json.RawMessage` only after `json.Valid` | Preserves arbitrary JSON shapes without remarshal or base64 encoding | Return ledger `[]byte` directly | `encoding/json` would expose base64 instead of the stored evidence document |
+| Order by `created_at DESC, id DESC` | Meets newest-first and gives deterministic ordering for timestamp ties | Add an approvals index/migration | The ticket expressly forbids schema changes; the current dataset and query do not require one |
+
+**Deviations from the ticket**
+
+- Per owner decision, `ProposalGates` extends the specified five aggregate fields with `approvalAction` and `releaseAction` `{ enabled, reason }` values. This is additive and required so GRF-207 never derives whether either mutation is allowed.
+- The ticket note says `REVIEWED`/`APPROVED` remain unused, but current `SaveCheckResult` writes `REVIEWED` or `BLOCKED` and `SaveApproval` writes `APPROVED`. Ground-truth precedence makes source authoritative. This ticket did not add, remove, or change those transitions; it corrected `product.md` and `tech-spec.md` to describe them and kept gates independent of status.
+- No acceptance criterion was omitted. No schema change or dependency was added.
+
+**Traps for future work**
+
+- Do not serialize `ledger.CheckResult` directly from the read endpoint: its `[]byte` evidence becomes base64. Keep the Engine read model and malformed-evidence fallback.
+- Proposal status is a display summary. It can be overwritten by later evaluations and must never replace current hash-bound evidence/approval checks.
+- Gate reason precedence is observable API behavior: missing current passing evaluation, then missing current approval, then moved HEAD.
+- Approval and release controls in GRF-207 must consume `approvalAction` and `releaseAction` verbatim; even deriving `enabled` from the aggregate booleans duplicates a governance decision.
+- The evidence handler carries `TODO(GRF-220)` because evidence reads must receive the same authorisation as Change reads when authentication lands.
+
+**Tests added**
+
+- Repository tests persist out-of-order checks and approvals, assert newest-first deterministic reads, and verify empty results serialize from non-nil slices.
+- Proposal detail integration tests cover pre-evaluation, evaluated, approved, and moved-HEAD gates; exact parity with `ApproveProposal`/`ReleaseProposal` errors; stale current flags; valid and malformed evidence; newest-first approvals; cross-Ledger Engine and HTTP `NOT_FOUND`; decoded JSON; and continued omission of Change idempotency fields.
+- Studio client tests assert all three exact endpoint paths.
+
+**Docs updated**
+
+- `docs/ai/tech-spec.md` §3 / §4 / §6 / §7 / §11 / §12 / §14 — endpoints, read types, Engine/Repository/client contracts, tests, and closed gap.
+- `docs/ai/product.md` §2 / §7 — source-accurate Proposal status behavior and closed detail gap.
+- `docs/ai/repo-structure.md` §2 — new Engine and test files.
+- `docs/ai/tickets/INDEX.md` — GRF-211 marked Done.
+- `docs/ai/phases/phase-2.md` — ticket table and this record.
+
+**Verification**
+
+```
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine           1.640s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http 2.043s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository       2.611s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/tests                     3.388s
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files  8 passed (8)
+Tests       26 passed (26)
+✓ 1868 modules transformed.
+✓ built in 1.08s
+
+$ docker build -t gyrifi:local .
+[+] Building 33.1s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+```
+
+**Follow-ups discovered**
+
+None beyond the ticketed GRF-220 authorisation requirement and GRF-207 consumer.
 

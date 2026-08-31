@@ -52,6 +52,9 @@ func (server *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/changes", server.createChange)
 	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/proposals", server.listProposals)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals", server.createProposal)
+	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/proposals/{proposalID}", server.proposalDetail)
+	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/checks", server.proposalChecks)
+	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals", server.proposalApprovals)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation", server.evaluateProposal)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals", server.approveProposal)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/release", server.releaseProposal)
@@ -184,6 +187,31 @@ func (server *Server) createProposal(writer http.ResponseWriter, request *http.R
 		return
 	}
 	server.writeJSON(writer, http.StatusCreated, value)
+}
+func (server *Server) proposalDetail(writer http.ResponseWriter, request *http.Request) {
+	value, err := server.engine.LoadProposalDetail(request.Context(), request.PathValue("ledgerID"), request.PathValue("proposalID"))
+	if err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, value)
+}
+func (server *Server) proposalChecks(writer http.ResponseWriter, request *http.Request) {
+	// TODO(GRF-220): protect evidence reads with the same authorisation as Change reads.
+	items, err := server.engine.ListCheckResults(request.Context(), request.PathValue("ledgerID"), request.PathValue("proposalID"))
+	if err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, map[string]any{"items": items})
+}
+func (server *Server) proposalApprovals(writer http.ResponseWriter, request *http.Request) {
+	items, err := server.engine.ListApprovals(request.Context(), request.PathValue("ledgerID"), request.PathValue("proposalID"))
+	if err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, map[string]any{"items": items})
 }
 func (server *Server) evaluateProposal(writer http.ResponseWriter, request *http.Request) {
 	var input struct {

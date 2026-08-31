@@ -11,6 +11,21 @@ describe("API client", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/ledgers", expect.any(Object));
   });
 
+  it("uses the proposal detail and evidence endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api.proposal("ldg one", "pr/one");
+    await api.proposalChecks("ldg one", "pr/one");
+    await api.proposalApprovals("ldg one", "pr/one");
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/ledgers/ldg one/proposals/pr/one",
+      "/api/v1/ledgers/ldg one/proposals/pr/one/checks",
+      "/api/v1/ledgers/ldg one/proposals/pr/one/approvals",
+    ]);
+  });
+
   it("maps structured API errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "CONFLICT", message: "blocked" } }), { status: 409, headers: { "X-Request-ID": "req-123" } })));
     const error = await api.createLedger({ name: "duplicate" }).catch((value: unknown) => value);

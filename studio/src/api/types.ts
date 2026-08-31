@@ -29,6 +29,48 @@ export type Proposal = {
   createdAt: string;
 };
 
+export type ActionGate = {
+  enabled: boolean;
+  reason: string;
+};
+
+export type ProposalGates = {
+  hasCurrentPassingCheck: boolean;
+  hasCurrentApproval: boolean;
+  baseMatchesHead: boolean;
+  releasable: boolean;
+  reason: string;
+  approvalAction: ActionGate;
+  releaseAction: ActionGate;
+};
+
+export type ProposalDetail = {
+  proposal: Proposal;
+  changes: Change[];
+  currentHeadReleaseId: string;
+  gates: ProposalGates;
+};
+
+export type CheckResult = {
+  id: string;
+  proposalHash: string;
+  kind: string;
+  passed: boolean;
+  summary: string;
+  evidence?: unknown;
+  evidenceUnavailable?: boolean;
+  createdAt: string;
+  current: boolean;
+};
+
+export type Approval = {
+  id: string;
+  proposalHash: string;
+  actor: string;
+  createdAt: string;
+  current: boolean;
+};
+
 export type Release = {
   id: string;
   ledgerId: string;

@@ -17,23 +17,16 @@ func (engine *Engine) ReleaseProposal(ctx context.Context, ledgerID, proposalID 
 	if err != nil {
 		return ledger.Release{}, wrap(CodeNotFound, "Proposal was not found.", err)
 	}
-	passing, err := engine.repository.HasPassingCheck(ctx, proposal.ID, proposal.Hash)
+	gates, headReleaseID, err := engine.evaluateGates(ctx, proposal)
 	if err != nil {
-		return ledger.Release{}, wrap(CodeInternal, "Could not verify checks.", err)
+		return ledger.Release{}, err
 	}
-	approved, err := engine.repository.HasApproval(ctx, proposal.ID, proposal.Hash)
-	if err != nil {
-		return ledger.Release{}, wrap(CodeInternal, "Could not verify approvals.", err)
-	}
-	if !passing || !approved {
-		return ledger.Release{}, wrap(CodeConflict, "Current passing evidence and approval are required.", ledger.ErrReleaseNotReady)
-	}
-	head, err := engine.repository.CurrentHead(ctx, ledgerID)
-	if err != nil {
-		return ledger.Release{}, wrap(CodeInternal, "Could not load HEAD.", err)
-	}
-	if head.ReleaseID != proposal.BaseReleaseID {
-		return ledger.Release{}, wrap(CodeConflict, "Ledger HEAD moved after this Proposal was created.", ledger.ErrConflict)
+	if !gates.Releasable {
+		cause := error(ledger.ErrReleaseNotReady)
+		if !gates.BaseMatchesHead && gates.HasCurrentPassingCheck && gates.HasCurrentApproval {
+			cause = ledger.ErrConflict
+		}
+		return ledger.Release{}, wrap(CodeConflict, gates.Reason, cause)
 	}
 	changes, err := engine.repository.LoadChanges(ctx, ledgerID, proposal.ChangeIDs)
 	if err != nil {
@@ -67,7 +60,7 @@ func (engine *Engine) ReleaseProposal(ctx context.Context, ledgerID, proposalID 
 	if err != nil {
 		return ledger.Release{}, err
 	}
-	intent := ledger.ReleaseIntent{ID: intentID, LedgerID: ledgerID, ProposalID: proposal.ID, ProposalHash: proposal.Hash, ParentID: head.ReleaseID, Status: ledger.IntentReady, Plan: planBytes, CreatedAt: time.Now().UTC()}
+	intent := ledger.ReleaseIntent{ID: intentID, LedgerID: ledgerID, ProposalID: proposal.ID, ProposalHash: proposal.Hash, ParentID: headReleaseID, Status: ledger.IntentReady, Plan: planBytes, CreatedAt: time.Now().UTC()}
 	if err := engine.repository.SaveReleaseIntent(ctx, intent); err != nil {
 		return ledger.Release{}, wrap(CodeInternal, "Could not persist Release Intent.", err)
 	}
