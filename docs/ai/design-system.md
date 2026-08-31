@@ -439,7 +439,9 @@ Native `<dialog>` with backdrop `rgb(6 8 12 / 0.72)`. Required for **Release** a
 
 ## 5. Page designs
 
-### 5.1 Ledgers
+### 5.1 Ledgers — implemented by GRF-205
+
+The implemented page uses the shared `PageHeader`, a one/two/three-column card grid at the 900 px and 1440 px viewport boundaries, isolated READY-Change and Release counts, and the shared right-hand `Drawer` for creation. Selection and successful creation announce "Now governing {name}" inline for three seconds; duplicate-name conflicts remain attached to the name field.
 
 ```
 LEDGERS

@@ -155,6 +155,7 @@
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
+  --color-border-accent: var(--border-accent);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-success: var(--success);
@@ -200,6 +201,24 @@
 
 .gy-is-refetching {
   opacity: 0.6;
+}
+
+.gy-ledger-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 56.25rem) {
+  .gy-ledger-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 90rem) {
+  .gy-ledger-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

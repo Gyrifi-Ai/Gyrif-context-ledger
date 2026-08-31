@@ -13,7 +13,7 @@
 | [GRF-202](../tickets/GRF-202-ui-library.md) | UI primitive and pattern library | L | GRF-201 | Done |
 | [GRF-203](../tickets/GRF-203-application-shell.md) | Application shell, navigation, real runtime status | M | GRF-202 | Done |
 | [GRF-204](../tickets/GRF-204-async-data-layer.md) | Async data layer | M | — | Done |
-| [GRF-205](../tickets/GRF-205-ledgers-page.md) | Ledgers page redesign | M | GRF-203, GRF-204 | Not started |
+| [GRF-205](../tickets/GRF-205-ledgers-page.md) | Ledgers page redesign | M | GRF-203, GRF-204 | Done |
 | [GRF-206](../tickets/GRF-206-changes-page.md) | Changes inbox redesign | L | GRF-203, GRF-204 | Not started |
 | [GRF-207](../tickets/GRF-207-proposals-workspace.md) | Proposals review workspace | XL | GRF-203, GRF-204, GRF-211 | Not started |
 | [GRF-208](../tickets/GRF-208-releases-timeline.md) | Releases timeline and rollback flow | L | GRF-203, GRF-204, GRF-213 | Not started |
@@ -655,3 +655,118 @@ Manual browser verification against a live Runtime: the stream and HTTP probe re
 
 - GRF-230 should add jsdom integration coverage for banner rendering, visibility changes, and mutation-button gating through the rendered provider tree.
 - GRF-210 must add domain-event parsing and dispatch to the existing shared stream; reconnect invalidation is already wired.
+
+### GRF-205 — Ledgers page redesign
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | No |
+
+**What was built**
+
+The Ledgers page changed from a two-column card/form surface with no operational signal into a responsive governance index. Every visible ledger now has an isolated READY-Change count, Release count, copyable ID, active marker, and keyboard-native selection; creation lives in a right-hand drawer with both API fields, boundary validation, exact duplicate-name feedback, and deterministic focus restoration. Loading, empty, HTTP error, unavailable, refetching, and populated states are all explicit.
+
+**Files added**
+
+- `studio/src/features/ledgers/ledgers-page.logic.ts` — name/description limits, boundary validation, and READY count helper kept outside the Fast Refresh component module.
+- `studio/src/features/ledgers/ledgers-page.test.tsx` — rendering-state, count fallback, conflict placement, validation, and READY-count regressions.
+
+**Files changed**
+
+- `studio/src/features/ledgers/ledgers-page.tsx` — responsive cards, per-card count reads, active selection, inline confirmation, and create drawer.
+- `studio/src/app/shell.tsx` — lets the Ledgers page own its `PageHeader` so the primary action occupies the header action slot; other route headers are unchanged.
+- `studio/src/styles.css` — exact 900/1440 viewport grid breakpoints and a Tailwind alias for the semantic accent-border token.
+- `studio/src/ui/layout/drawer.tsx` — explicit Escape key close path for native-dialog consistency.
+- `docs/ai/design-system.md`, `docs/ai/tickets/INDEX.md` — implemented design and ticket status.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+No HTTP or global AppState contract changed. The page continues to consume:
+
+```ts
+api.ledgers(init?: RequestInit): Promise<{ items: Ledger[] }>;
+api.changes(ledgerId: string, init?: RequestInit): Promise<{ items: Change[] }>;
+api.releases(ledgerId: string, init?: RequestInit): Promise<{ items: Release[] }>;
+api.createLedger(input: { name: string; description?: string }): Promise<Ledger>;
+
+AppState.setLedgerId(id: string): void;
+AppState.refreshLedgers(): Promise<void>;
+```
+
+Local page helpers introduced for testable boundary behavior:
+
+```ts
+const ledgerNameMaxLength = 120;
+const ledgerDescriptionMaxLength = 500;
+function validateLedgerForm(name: string, description: string): { name?: string; description?: string };
+function countReadyChanges(changes: Change[]): number;
+```
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Each `LedgerCard` owns two `useQuery` calls | Hooks remain structurally valid, requests start concurrently after the card mounts, and one failed count becomes `—` without affecting its sibling or card | Build count hooks in the parent map | Hook count would change with the ledger list and violate the Rules of Hooks |
+| Keep the ID copy control outside the card's select button | `HashChip` is itself a button | Nest `HashChip` in a full-card button | Nested interactive controls are invalid HTML and ambiguous for keyboard users |
+| Let Ledgers own its `PageHeader` while Shell owns the other route headers | The create drawer state and trigger ref remain local, and `+ New ledger` occupies the specified action slot | Add action state or callbacks to global AppState | The drawer is page-local UI, not global application state |
+| Use named CSS grid breakpoints | The ticket requires exact 900 px and 1440 px viewport transitions | Standard Tailwind `md`/`xl` columns | Their breakpoint values do not match the acceptance contract |
+| Keep zero new test dependencies | GRF-230 owns the DOM integration harness and the ticket forbids dependencies | Add jsdom/Testing Library for this page only | It would pre-empt a later ticket and violate dependency scope |
+
+**Deviations from the ticket**
+
+None. The dependency-free Node test suite verifies each render branch and pure boundary behavior but cannot synthesize browser focus/click transitions; those criteria were additionally exercised manually in the integrated browser. GRF-230 and GRF-232 remain responsible for automated DOM and end-to-end interaction coverage.
+
+**Traps for future work**
+
+- Per-card `api.changes` calls can currently return HTTP 500 for ledgers containing a DELETE Change because SQLite scans nullable `desired` into a non-nullable value. Count isolation correctly renders `—`; the owner-approved GRF-206 prerequisite fix will restore the count.
+- Keep pure exports out of React component modules. Exporting the validation/count helpers from `ledgers-page.tsx` caused Vite to invalidate Fast Refresh until they moved to `ledgers-page.logic.ts`.
+- The integrated browser did not close the native `<dialog>` through its default cancel path. The shared Drawer therefore handles `Escape` on keydown, updates controlled state, and lets its effect call `close()`; removing that handler breaks the documented keyboard path in this environment.
+- The provider and page intentionally issue separate ledger-list reads: the provider owns navigation/switcher state, while the page owns loading, retry, and reconnect rendering. Do not couple page rendering to provider internals.
+
+**Tests added**
+
+- `studio/src/features/ledgers/ledgers-page.test.tsx` — three-card loading geometry, populated cards/counts/active semantics, empty action, HTTP error Retry surface, field-local conflict message, isolated count failure, trim/length validation, and exact READY filtering.
+
+**Docs updated**
+
+- `docs/ai/design-system.md` §5.1 — marked implemented and recorded the shipped interactions and breakpoints.
+- `docs/ai/tickets/INDEX.md` — GRF-205 marked Done.
+- `docs/ai/phases/phase-1.md` — ticket table and this completion record.
+
+**Verification**
+
+```
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference       (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger          (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant  (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/tests                    (cached)
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files  8 passed (8)
+Tests       23 passed (23)
+✓ 1868 modules transformed.
+✓ built in 1.03s
+
+$ docker build -t gyrifi:local .
+[+] Building 32.1s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+
+$ cd docs/ai/tickets && diff <ticket files> <INDEX status rows>
+tickets consistent
+```
+
+Manual browser verification used a live Runtime and screenshots at 1440, 1180, 900, and 480 CSS-pixel widths. Computed grids were 3, 2, 2, and 1 columns respectively. The browser also verified: name focus on open; Escape close and focus restoration to `New ledger`; exact field-local `409` message; successful description persistence, drawer close, active-ledger switch, list/count refetch, and header-trigger focus; three-second `role="status"` removal; and card-button selection without route navigation.
+
+**Follow-ups discovered**
+
+- A combined `GET /api/v1/ledgers?include=counts` contract may be warranted if ledger cardinality makes the current two requests per visible card uncomfortable; do not add it without a ticket.
+- GRF-230 should directly exercise Drawer focus transitions and the three-second confirmation under fake timers once its DOM harness exists. GRF-232 should retain the four-width screenshot path.
