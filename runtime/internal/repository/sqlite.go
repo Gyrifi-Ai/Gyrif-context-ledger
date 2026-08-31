@@ -17,8 +17,9 @@ import (
 )
 
 type SQLite struct {
-	db      *sql.DB
-	objects *ObjectStore
+	db                 *sql.DB
+	objects            *ObjectStore
+	expectedMigrations []string
 }
 
 func OpenSQLite(ctx context.Context, path, objectPath string) (*SQLite, error) {
@@ -39,56 +40,89 @@ func OpenSQLite(ctx context.Context, path, objectPath string) (*SQLite, error) {
 		return nil, err
 	}
 	repository := &SQLite{db: db, objects: objects}
-	if err := repository.migrate(ctx); err != nil {
+	migrationCount, err := repository.migrate(ctx)
+	if err != nil {
 		db.Close()
 		return nil, err
 	}
+	repository.expectedMigrations = migrationCount
 	return repository, nil
 }
 
-func (repository *SQLite) migrate(ctx context.Context) error {
+func (repository *SQLite) migrate(ctx context.Context) ([]string, error) {
 	if _, err := repository.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)`); err != nil {
-		return fmt.Errorf("prepare migrations: %w", err)
+		return nil, fmt.Errorf("prepare migrations: %w", err)
 	}
 	entries, err := fs.ReadDir(migrations.Files, ".")
 	if err != nil {
-		return fmt.Errorf("list migrations: %w", err)
+		return nil, fmt.Errorf("list migrations: %w", err)
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	versions := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
 		}
+		versions = append(versions, entry.Name())
 		var exists int
 		if err := repository.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version=?`, entry.Name()).Scan(&exists); err != nil {
-			return fmt.Errorf("check migration %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("check migration %s: %w", entry.Name(), err)
 		}
 		if exists != 0 {
 			continue
 		}
 		contents, err := migrations.Files.ReadFile(entry.Name())
 		if err != nil {
-			return fmt.Errorf("read migration %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("read migration %s: %w", entry.Name(), err)
 		}
 		tx, err := repository.db.BeginTx(ctx, nil)
 		if err != nil {
-			return fmt.Errorf("begin migration %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("begin migration %s: %w", entry.Name(), err)
 		}
 		if _, err = tx.ExecContext(ctx, string(contents)); err == nil {
 			_, err = tx.ExecContext(ctx, `INSERT INTO schema_migrations(version, applied_at) VALUES(?, ?)`, entry.Name(), formatTime(time.Now()))
 		}
 		if err != nil {
 			tx.Rollback()
-			return fmt.Errorf("apply migration %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("apply migration %s: %w", entry.Name(), err)
 		}
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit migration %s: %w", entry.Name(), err)
+			return nil, fmt.Errorf("commit migration %s: %w", entry.Name(), err)
 		}
 	}
-	return nil
+	return versions, nil
 }
 
 func (repository *SQLite) Close() error { return repository.db.Close() }
+func (repository *SQLite) Readiness(ctx context.Context) (bool, error) {
+	if len(repository.expectedMigrations) == 0 {
+		return false, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(repository.expectedMigrations)), ",")
+	args := make([]any, len(repository.expectedMigrations))
+	for index, version := range repository.expectedMigrations {
+		args[index] = version
+	}
+	var applied int
+	if err := repository.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations WHERE version IN (`+placeholders+`)`, args...).Scan(&applied); err != nil {
+		return false, err
+	}
+	return applied == len(repository.expectedMigrations), nil
+}
+func (repository *SQLite) DatabaseStats(ctx context.Context) (OperationalStats, error) {
+	var stats OperationalStats
+	if err := repository.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM release_intents WHERE status=?),
+		(SELECT COUNT(*) FROM changes WHERE status IN (?,?))`,
+		ledger.IntentRecoveryRequired, ledger.ChangeAccepted, ledger.ChangeReady,
+	).Scan(&stats.UnresolvedIntents, &stats.PendingChanges); err != nil {
+		return OperationalStats{}, err
+	}
+	return stats, nil
+}
+func (repository *SQLite) ObjectStoreBytes(ctx context.Context) (int64, error) {
+	return repository.objects.Size(ctx)
+}
 func formatTime(value time.Time) string { return value.UTC().Format(time.RFC3339Nano) }
 func parseTime(value string) time.Time {
 	parsed, _ := time.Parse(time.RFC3339Nano, value)

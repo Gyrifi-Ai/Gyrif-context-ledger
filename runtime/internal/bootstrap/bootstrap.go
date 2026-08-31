@@ -66,7 +66,8 @@ func Run(ctx context.Context, args []string) error {
 		provider = llama.Provider
 		defer func() { _ = llama.Stop() }()
 	}
-	application := engine.New(repo, target, provider)
+	metrics := httpinterface.NewMetrics()
+	application := engine.New(repo, target, provider, metrics)
 	defer func() {
 		if !applicationClosed {
 			_ = application.Close()
@@ -80,25 +81,44 @@ func Run(ctx context.Context, args []string) error {
 	if err := application.RecoverReleases(ctx); err != nil {
 		logger.Error("release recovery needs attention", "error", err)
 	}
-	api := httpinterface.New(application, logger)
+	api := httpinterface.New(application, logger, metrics)
+	defer api.Close()
 	server := &http.Server{Addr: settings.HTTPAddress, Handler: api.Handler(), BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
-	errChannel := make(chan error, 1)
+	metricsServer := &http.Server{Addr: settings.MetricsAddress, Handler: api.MetricsHandler(), BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
+	type serverError struct {
+		name string
+		err  error
+	}
+	errChannel := make(chan serverError, 2)
 	go func() {
 		logger.Info("Gyrifi started", "build", buildinfo.String(), "address", settings.HTTPAddress, "data_directory", settings.DataDirectory, "inference", application.InferenceName())
-		errChannel <- server.ListenAndServe()
+		errChannel <- serverError{name: "HTTP", err: server.ListenAndServe()}
+	}()
+	go func() {
+		logger.Info("Gyrifi metrics started", "address", settings.MetricsAddress)
+		errChannel <- serverError{name: "metrics", err: metricsServer.ListenAndServe()}
 	}()
 	select {
 	case <-ctx.Done():
+		api.SetShuttingDown()
+		if settings.DrainDelay > 0 {
+			time.Sleep(settings.DrainDelay)
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("shutdown HTTP server: %w", err)
 		}
+		if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown metrics server: %w", err)
+		}
 		return nil
-	case err := <-errChannel:
-		if err == http.ErrServerClosed {
+	case result := <-errChannel:
+		_ = server.Close()
+		_ = metricsServer.Close()
+		if result.err == http.ErrServerClosed {
 			return nil
 		}
-		return err
+		return fmt.Errorf("serve %s: %w", result.name, result.err)
 	}
 }

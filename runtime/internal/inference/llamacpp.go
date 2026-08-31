@@ -24,6 +24,21 @@ func NewLlamaCppProvider(endpoint, model string) *LlamaCppProvider {
 	return &LlamaCppProvider{endpoint: strings.TrimRight(endpoint, "/"), model: model, client: &http.Client{Timeout: 2 * time.Minute}}
 }
 func (provider *LlamaCppProvider) Name() string { return "llamacpp" }
+func (provider *LlamaCppProvider) Health(ctx context.Context) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, provider.endpoint+"/health", nil)
+	if err != nil {
+		return err
+	}
+	response, err := provider.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("llama-server health: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("llama-server health returned status %d", response.StatusCode)
+	}
+	return nil
+}
 func (provider *LlamaCppProvider) Evaluate(ctx context.Context, request EvaluationRequest) (EvaluationResult, error) {
 	prompt := fmt.Sprintf("You are a context-governance evaluator. Evaluate the supplied proposed state against the criteria. Return only JSON with passed (boolean), summary (string), and findings (array of {severity,message,unit}). Proposal hash: %s\nCriteria: %s\nContext: %s", request.ProposalHash, request.Criteria, string(request.Context))
 	payload := map[string]any{"model": provider.model, "messages": []map[string]string{{"role": "user", "content": prompt}}, "temperature": 0, "response_format": map[string]string{"type": "json_object"}}

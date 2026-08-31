@@ -75,6 +75,7 @@ func (engine *Engine) CreateChange(ctx context.Context, ledgerID string, request
 		}
 		return ledger.Change{}, wrap(CodeInternal, "Could not durably accept the Change.", err)
 	}
+	engine.metrics.ChangeAccepted()
 	engine.publish(EventChangeAccepted, ledgerID, value.ID)
 	return value, nil
 }

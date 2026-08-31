@@ -90,5 +90,10 @@ func (engine *Engine) CreateRollbackProposal(ctx context.Context, ledgerID, targ
 		}
 		changeIDs = append(changeIDs, change.ID)
 	}
-	return engine.CreateProposal(ctx, ledgerID, CreateProposalRequest{Title: "Restore state from " + targetReleaseID, ChangeIDs: changeIDs})
+	proposal, err := engine.CreateProposal(ctx, ledgerID, CreateProposalRequest{Title: "Restore state from " + targetReleaseID, ChangeIDs: changeIDs})
+	if err != nil {
+		return ledger.Proposal{}, err
+	}
+	engine.metrics.RollbackCreated()
+	return proposal, nil
 }

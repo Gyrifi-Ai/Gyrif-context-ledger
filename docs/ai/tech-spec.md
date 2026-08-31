@@ -40,9 +40,9 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 8. `engine.New(repo, target, provider)` — `provider` is a nil interface when inference is disabled.
 9. `cli.Run(ctx, args, application, os.Stdout)` — **if it handled application-backed or invalid args, return here; the HTTP server never starts.**
 10. `application.RecoverReleases(ctx)` — logs and continues on error.
-11. Construct `httpinterface.New(application, logger)`. HTTP reads the process-wide linker-injected `buildinfo` values directly.
-12. `http.Server{BaseContext: signal context, ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and `ListenAndServe`. Cancelling the process context cancels long-lived SSE request contexts before graceful shutdown waits for active connections.
-13. On `ctx.Done()`: `server.Shutdown` with a 10s timeout; deferred closes stop llama-server and the repository.
+11. Construct one lock-cheap metrics collector, pass it to `engine.New` as the domain sink, then construct `httpinterface.New(application, logger, metrics)`. HTTP reads the process-wide linker-injected `buildinfo` values directly.
+12. Start the application `http.Server{BaseContext: signal context, ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and a second metrics-only server on `GYRIFI_METRICS_ADDRESS`. Cancelling the process context cancels long-lived SSE request contexts before graceful shutdown waits for active connections.
+13. On `ctx.Done()`: atomically mark readiness as `shutting_down`, wait `GYRIFI_DRAIN_DELAY`, then shut down both listeners with a shared 10s timeout. Deferred closes cancel in-flight background health probes, stop llama-server, and close the repository.
 
 ### Local Docker Compose contract
 
@@ -55,6 +55,8 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 | Env var | Default | Validation |
 |---|---|---|
 | `GYRIFI_HTTP_ADDRESS` | `:8080` | — |
+| `GYRIFI_METRICS_ADDRESS` | `127.0.0.1:9090` | must be a loopback host and valid port |
+| `GYRIFI_DRAIN_DELAY` | `0s` | non-negative Go duration |
 | `GYRIFI_DATA_DIR` | `/data` | — |
 | `GYRIFI_SQLITE_PATH` | `{DATA_DIR}/state.db` | — |
 | `GYRIFI_OBJECTS_PATH` | `{DATA_DIR}/objects` | — |
@@ -114,7 +116,9 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 
 | Method | Path | Success | Request body | Response body |
 |---|---|---|---|---|
-| GET | `/api/v1/system/status` | 200 | — | `{ "status":"ok", "version":"dev", "commit":"unknown", "buildDate":"unknown", "inference":"disabled"\|"llamacpp" }` |
+| GET | `/healthz` | 200 | — | `ok` (`text/plain`; no locks or dependency reads) |
+| GET | `/readyz` | 200 / 503 | — | `{ "ready":true }` or `{ "ready":false, "reasons":[…] }` |
+| GET | `/api/v1/system/status` | 200 | — | `{ "status":"ok", "version":"dev", "commit":"unknown", "buildDate":"unknown", "inference":"disabled"\|"llamacpp", "health": SystemHealth }` |
 | GET | `/api/v1/adapters` | 200 | — | `{ "items":[{ "id":"qdrant", "name":"Qdrant", "capabilities": Capabilities }] }` |
 | GET | `/api/v1/ledgers` | 200 | — | `{ "items": Ledger[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers` | 201 | `{ "name", "description" }` | `Ledger` |
@@ -138,6 +142,26 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 | GET | `/events/v1` | 200 | — | `text/event-stream` |
 
 Unknown paths under `/api/` or `/events/` return `404 NOT_FOUND`. Everything else falls through to the embedded Studio file server, which serves `index.html` for unmatched paths (SPA fallback).
+
+`/healthz`, `/readyz`, and `/metrics` are excluded from SPA fallback. `/metrics` is deliberately not registered on the application listener: it is the sole route on the separate loopback-only `GYRIFI_METRICS_ADDRESS` listener, where it returns Prometheus text format 0.0.4. This avoids exposing operational data through the application/auth surface and remains valid after GRF-220.
+
+| Readiness reason | Condition |
+|---|---|
+| `database_unreachable` | The bounded one-second schema query failed or timed out |
+| `migrations_incomplete` | At least one migration embedded in this binary is absent from `schema_migrations` |
+| `shutting_down` | Graceful shutdown began; this is set before the configurable drain delay |
+
+Readiness never probes Qdrant, inference, the object store, or Release Intents. In particular, `RECOVERY_REQUIRED` remains ready so operators can inspect and resolve it through the API.
+
+`SystemHealth` is `{ "database":"ok|unreachable", "target":"ok|unreachable|unknown", "inference":"ok|disabled|unhealthy", "unresolvedIntents": number }`. Status reads return immediately from an atomic cache and trigger at most one asynchronous refresh after 15 seconds. The refresh has a five-second context and includes database operational counts, object bytes, Qdrant collection health, and configured inference health. `unresolvedIntents` counts only `RECOVERY_REQUIRED` rows.
+
+The metrics listener emits:
+
+- counters: `gyrifi_http_requests_total{method,path_template,status}`, `gyrifi_changes_accepted_total`, `gyrifi_proposals_created_total`, `gyrifi_evaluations_total{passed}`, `gyrifi_releases_total{outcome}`, `gyrifi_rollbacks_total`, `gyrifi_target_requests_total{operation,outcome}`;
+- gauges: `gyrifi_unresolved_intents`, `gyrifi_object_store_bytes`, `gyrifi_pending_changes`, `gyrifi_build_info{version,commit}`;
+- histogram: `gyrifi_http_request_duration_seconds{path_template}` with 5 ms through 10 s buckets.
+
+`path_template` comes from Go's matched `Request.Pattern` with the method removed; unmatched requests use the literal `unmatched`. Resource IDs and raw paths never become labels. `gyrifi_changes_accepted_total` intentionally has no Ledger label because Ledger cardinality is unbounded. HTTP and domain counters use atomics; `sync.Map` is used only to allocate bounded label tuples.
 
 The Ledger, Change, Proposal, and Release list endpoints use opaque newest-first keyset pagination. `limit` defaults to 50 and must be from 1 through 200; `cursor` is an opaque value returned as `nextCursor`, and malformed values return `INVALID_ARGUMENT` with `The cursor is not valid.` `nextCursor` is omitted at exhaustion. Change lists accept `status` and `action=PUT|DELETE`; Proposal lists accept `status`. Filters combine in SQL with bound parameters. Existing callers without query parameters now receive the first 50 rows rather than the full history.
 
@@ -339,7 +363,7 @@ Object store hashes are **different**: `sha256(kind || 0x00 || value)`, prefixed
 ## 6. Engine API
 
 ```go
-func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider) *Engine
+func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider, sinks ...MetricSink) *Engine
 
 func (e *Engine) CreateLedger(ctx, name, description string) (ledger.Ledger, error)
 func (e *Engine) ListLedgers(ctx context.Context, request ListRequest) (ListPage[ledger.Ledger], error)
@@ -365,6 +389,8 @@ func (e *Engine) Events() *Broker
 func (e *Engine) TargetCapabilities() targets.Capabilities
 func (e *Engine) InferenceName() string   // "disabled" when provider is nil
 func (e *Engine) Close() error
+func (e *Engine) Readiness(ctx context.Context) (bool, error)
+func (e *Engine) ProbeHealth(ctx context.Context) SystemHealth
 ```
 
 `Engine` holds a `releaseMu sync.Mutex`. `ReleaseProposal` and `RecoverReleases` both take it — release work is serialised process-wide.
@@ -424,6 +450,9 @@ Before gate evaluation, `ReleaseProposal` rejects a Ledger with any `RECOVERY_RE
 
 ```go
 type Repository interface {
+    Readiness(context.Context) (bool, error)
+    DatabaseStats(context.Context) (OperationalStats, error)
+    ObjectStoreBytes(context.Context) (int64, error)
     CreateLedger(context.Context, ledger.Ledger) error
     ListLedgers(context.Context, ListOptions) (Page[ledger.Ledger], error)
     FindChangeByIdempotencyKey(ctx, ledgerID, key string) (ledger.Change, error)
@@ -684,6 +713,8 @@ type TargetAdapter interface {
     Restore(context.Context, Plan) error
     Capabilities() Capabilities
 }
+
+type HealthChecker interface { Health(context.Context) error }
 ```
 
 ### Qdrant adapter (`internal/targets/qdrant/qdrant.go`)
@@ -731,6 +762,8 @@ type Provider interface {
     Evaluate(context.Context, EvaluationRequest) (EvaluationResult, error)
     Name() string
 }
+
+type HealthChecker interface { Health(context.Context) error }
 ```
 
 `inference.StartLlamaServer(ctx, executable, modelPath, port)`:
@@ -887,7 +920,7 @@ pnpm --ignore-workspace test
 
 Studio tests run in jsdom through Vitest with globals disabled, jest-dom matchers, CSS processing, Testing Library, and `userEvent`. `pnpm coverage` invokes the direct Vitest entry point with `--coverage`; V8 enforces global minimums of **80% statements** and **75% branches** across `src/`. GRF-233 must invoke this existing command in CI rather than duplicating its thresholds in workflow YAML.
 
-The e2e package is intentionally outside the root pnpm workspace and owns its lockfile. Its direct-entry Playwright command builds `gyrifi:e2e` from the repository Dockerfile, starts pinned Qdrant plus the built image on loopback, waits for `/api/v1/system/status`, and runs Chromium with one worker. Every test recreates named volumes, chooses a unique collection, and creates its own Ledger. Failure traces and screenshots are retained under `e2e/test-results/`; `pnpm --ignore-workspace test:repeat` executes every journey three times for stability qualification. Inference is disabled and the suite asserts deterministic-only evidence; no model is downloaded.
+The e2e package is intentionally outside the root pnpm workspace and owns its lockfile. Its direct-entry Playwright command builds `gyrifi:e2e` from the repository Dockerfile, starts pinned Qdrant plus the built image on loopback, waits for `/readyz`, and runs Chromium with one worker. Every test recreates named volumes, chooses a unique collection, and creates its own Ledger. Failure traces and screenshots are retained under `e2e/test-results/`; `pnpm --ignore-workspace test:repeat` executes every journey three times for stability qualification. Inference is disabled and the suite asserts deterministic-only evidence; no model is downloaded.
 
 ---
 
@@ -902,6 +935,5 @@ The e2e package is intentionally outside the root pnpm workspace and owns its lo
 | No retention budget, quota, or backup command | GRF-222 |
 | Qdrant adapter is only tested against a fake, never a live instance | GRF-231 |
 | No `DELETE`/withdraw/archive route for any entity; `routes()` registers none | GRF-215 |
-| No `/healthz` or `/readyz`; no metrics of any kind | GRF-224 |
 | `llama-server` is never `Wait()`ed on and its `Stdout`/`Stderr` are `nil` | GRF-225 |
 | No rate limiting; `SetMaxOpenConns(1)` makes write floods starve reads | GRF-226 |

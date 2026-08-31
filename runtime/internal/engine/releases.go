@@ -77,6 +77,7 @@ func (engine *Engine) ReleaseProposal(ctx context.Context, ledgerID, proposalID 
 		return ledger.Release{}, err
 	}
 	if err := engine.target.Apply(ctx, plan); err != nil {
+		engine.metrics.ReleaseCompleted("failure")
 		marked := engine.markRecoveryRequired(ctx, intent)
 		engine.publish(EventReleaseFailed, ledgerID, intent.ID)
 		if marked {
@@ -85,9 +86,11 @@ func (engine *Engine) ReleaseProposal(ctx context.Context, ledgerID, proposalID 
 		return ledger.Release{}, wrap(CodeUnavailable, "Target apply failed; recovery is required.", err)
 	}
 	if err := engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentVerifying); err != nil {
+		engine.metrics.ReleaseCompleted("failure")
 		return ledger.Release{}, err
 	}
 	if err := engine.target.Verify(ctx, plan); err != nil {
+		engine.metrics.ReleaseCompleted("failure")
 		marked := engine.markRecoveryRequired(ctx, intent)
 		engine.publish(EventReleaseFailed, ledgerID, intent.ID)
 		if marked {
@@ -112,8 +115,10 @@ func (engine *Engine) finalizeIntent(ctx context.Context, intent ledger.ReleaseI
 		return ledger.Release{}, err
 	}
 	if err := engine.repository.FinalizeRelease(ctx, intent, value); err != nil {
+		engine.metrics.ReleaseCompleted("failure")
 		return ledger.Release{}, wrap(CodeConflict, "Target applied, but HEAD finalization requires recovery.", err)
 	}
+	engine.metrics.ReleaseCompleted("success")
 	engine.publish(EventReleaseCompleted, intent.LedgerID, value.ID)
 	return value, nil
 }

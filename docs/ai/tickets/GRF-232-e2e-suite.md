@@ -43,7 +43,7 @@ Unit and integration tests cover the parts. This covers the product.
 - [x] Scripts use the direct-entry-point form required by the `:` in the workspace path (e.g. `node node_modules/@playwright/test/cli.js test`).
 - [x] A `docker compose` file in `e2e/` brings up the built `gyrifi` image plus a pinned `qdrant/qdrant`, with a named volume for `/data`.
 - [x] The suite builds the image from the repository `Dockerfile`; it never tests a stale or published image.
-- [x] Playwright waits on `/api/v1/system/status` returning healthy before starting.
+- [x] Playwright waits on `/readyz` returning `{"ready":true}` before starting.
 - [x] Traces and screenshots are captured on failure and retained as CI artefacts.
 - [x] Each test creates its own Ledger and Qdrant collection; tests do not depend on execution order.
 

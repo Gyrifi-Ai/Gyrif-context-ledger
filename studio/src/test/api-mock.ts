@@ -101,7 +101,7 @@ async function route(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
 
 export function resetApiMock(): void {
   Object.values(mockApi).forEach((mock) => mock.mockReset());
-  mockApi.status.mockResolvedValue({ status: "ok", version: "test", commit: "test-commit", buildDate: "2026-09-01T00:00:00Z", inference: "disabled" });
+  mockApi.status.mockResolvedValue({ status: "ok", version: "test", commit: "test-commit", buildDate: "2026-09-01T00:00:00Z", inference: "disabled", health: { database: "ok", target: "unknown", inference: "disabled", unresolvedIntents: 0 } });
   mockApi.ledgers.mockResolvedValue({ items: [] });
   mockApi.changes.mockResolvedValue({ items: [] });
   mockApi.proposals.mockResolvedValue({ items: [] });

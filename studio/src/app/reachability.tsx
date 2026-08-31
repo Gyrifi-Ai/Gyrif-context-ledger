@@ -11,6 +11,7 @@ export type RuntimeHealth = {
   commit?: string;
   buildDate?: string;
   inference?: string;
+  dependencies?: SystemStatus["health"];
 };
 
 type Reachability = {
@@ -69,6 +70,7 @@ export function ReachabilityProvider({ children }: { children: ReactNode }) {
         commit: status.commit,
         buildDate: status.buildDate,
         inference: status.inference,
+        dependencies: status.health,
       });
       schedule(connectedPollDelay);
     } catch (error) {

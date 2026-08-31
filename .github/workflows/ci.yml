@@ -128,9 +128,9 @@ jobs:
           }
           trap cleanup EXIT
 
-          response=""
+          ready=""
           for attempt in {1..30}; do
-            if response="$(curl --fail --silent --show-error http://127.0.0.1:18080/api/v1/system/status 2>/dev/null)"; then
+            if ready="$(curl --fail --silent --show-error http://127.0.0.1:18080/readyz 2>/dev/null)"; then
               break
             fi
             if [[ "${attempt}" -eq 30 ]]; then
@@ -141,6 +141,8 @@ jobs:
             sleep 1
           done
 
+          jq -e '.ready == true' <<<"${ready}"
+          response="$(curl --fail --silent --show-error http://127.0.0.1:18080/api/v1/system/status)"
           jq -e --arg version "${EXPECTED_VERSION}" '.status == "ok" and .version == $version' <<<"${response}"
       - name: Export image artifact
         shell: bash

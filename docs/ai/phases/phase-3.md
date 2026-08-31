@@ -11,7 +11,7 @@
 | [GRF-223](../tickets/GRF-223-build-metadata.md) | Build metadata and version consistency | S | — | Done |
 | [GRF-221](../tickets/GRF-221-change-preparation.md) | Asynchronous Change preparation and base fingerprint | L | — | Not started |
 | [GRF-222](../tickets/GRF-222-retention-backup.md) | Retention budgets, quotas, and backup command | L | — | Not started |
-| [GRF-224](../tickets/GRF-224-health-and-metrics.md) | Health, readiness, and operational metrics | M | — | Not started |
+| [GRF-224](../tickets/GRF-224-health-and-metrics.md) | Health, readiness, and operational metrics | M | — | Done |
 | [GRF-225](../tickets/GRF-225-inference-supervision.md) | Inference process supervision | M | — | Not started |
 | [GRF-220](../tickets/GRF-220-authentication.md) | Ingestion tokens and browser session auth | XL | — | Not started |
 | [GRF-226](../tickets/GRF-226-rate-limiting.md) | Request rate limiting and abuse controls | M | GRF-220 | Not started |
@@ -325,3 +325,182 @@ Image    completed  success
 **Follow-ups discovered**
 
 None.
+
+### GRF-224 — Health, readiness, and operational metrics
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Uncommitted workspace change |
+| Deviated from ticket | Yes — the accepted-Change counter deliberately has no Ledger label |
+
+**What was built**
+
+The Runtime now exposes lock-free process liveness, bounded SQLite/migration readiness, asynchronously cached dependency health, and a standard-library Prometheus surface. Graceful shutdown marks the process unready before an optional drain delay and closes both the application and metrics listeners. Recovery-required Release Intents remain visible in status and metrics without making the only recovery API unready.
+
+**Files added**
+
+- `runtime/internal/config/config_test.go` — operational configuration defaults and invalid-bind/duration coverage
+- `runtime/internal/engine/health.go` — readiness delegation and dependency/operational health snapshots
+- `runtime/internal/engine/metrics.go` — domain metric sink and metered target adapter
+- `runtime/internal/interfaces/http/health.go` — liveness, readiness, shutdown flag, and asynchronous health cache
+- `runtime/internal/interfaces/http/health_test.go` — readiness failures, recovery anti-regression, gauges, and nonblocking cache tests
+- `runtime/internal/interfaces/http/metrics.go` — atomic Prometheus collector and metrics-only handler
+- `runtime/internal/interfaces/http/metrics_test.go` — format, bounded labels, domain outcome, route, and concurrency coverage
+
+**Files changed**
+
+- `.github/workflows/ci.yml` — image smoke test now waits for `/readyz` before asserting build identity
+- `e2e/tests/harness.ts` — built-image readiness now requires `{"ready":true}` from `/readyz`
+- `runtime/internal/bootstrap/bootstrap.go` — shared collector, dual listeners, unready/drain/shutdown order, and health-worker cleanup
+- `runtime/internal/config/config.go` — loopback metrics address and non-negative drain delay configuration
+- `runtime/internal/engine/{engine,changes,proposals,evaluation,releases,rollback}.go` — optional metric sink wiring and durable domain-outcome counters
+- `runtime/internal/repository/{repository,sqlite,objects}.go` — exact-migration readiness and operational DB/object-store probes
+- `runtime/internal/targets/{target,qdrant/qdrant}.go` — optional target health contract and Qdrant collection probe
+- `runtime/internal/inference/{provider,llamacpp}.go` — optional provider health contract and llama.cpp health probe
+- `runtime/internal/interfaces/http/server.go` — health/status routes, path-template request instrumentation, and operational-route SPA exclusions
+- `studio/src/api/types.ts`, `studio/src/app/reachability.tsx`, `studio/src/app/reachability-provider.test.tsx`, and `studio/src/test/api-mock.ts` — enriched status health transport and fixtures
+- `README.md`, `docs/ai/{product,repo-structure,tech-spec}.md`, `docs/ai/tickets/{GRF-224-health-and-metrics,GRF-232-e2e-suite,GRF-233-ci-pipeline,INDEX}.md`, and this file — operational contracts, closed gap, polling references, and completion bookkeeping
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```go
+// runtime/internal/engine/engine.go
+func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider, sinks ...MetricSink) *Engine
+
+// runtime/internal/engine/health.go
+type SystemHealth struct {
+	Database          string
+	Target            string
+	Inference         string
+	UnresolvedIntents int64
+	PendingChanges    int64
+	ObjectStoreBytes  int64
+}
+func (engine *Engine) Readiness(ctx context.Context) (bool, error)
+func (engine *Engine) ProbeHealth(ctx context.Context) SystemHealth
+
+// runtime/internal/engine/metrics.go
+type MetricSink interface {
+	ChangeAccepted()
+	ProposalCreated()
+	EvaluationCompleted(bool)
+	ReleaseCompleted(string)
+	RollbackCreated()
+	TargetRequest(operation, outcome string)
+}
+
+// runtime/internal/repository/repository.go additions
+type OperationalStats struct {
+	UnresolvedIntents int64
+	PendingChanges    int64
+}
+Readiness(context.Context) (bool, error)
+DatabaseStats(context.Context) (OperationalStats, error)
+ObjectStoreBytes(context.Context) (int64, error)
+
+// runtime/internal/targets/target.go and runtime/internal/inference/provider.go
+type HealthChecker interface {
+	Health(context.Context) error
+}
+
+// runtime/internal/interfaces/http/server.go and metrics.go
+func New(application *engine.Engine, logger *slog.Logger, collectors ...*Metrics) *Server
+func NewMetrics() *Metrics
+func (server *Server) SetShuttingDown()
+func (server *Server) MetricsHandler() http.Handler
+```
+
+`GET /healthz` returns text `ok`. `GET /readyz` returns `{"ready":true}` or HTTP 503 with `database_unreachable`, `migrations_incomplete`, or `shutting_down`. `GET /api/v1/system/status` adds `health.database`, `health.target`, `health.inference`, and `health.unresolvedIntents`. The separate `GYRIFI_METRICS_ADDRESS` listener serves only `GET /metrics` as Prometheus text 0.0.4; `GYRIFI_DRAIN_DELAY` controls the interval between becoming unready and listener shutdown.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Keep `/healthz` independent of Engine, repository, locks, and health caches | Liveness must answer even while SQLite is locked or broken | Reuse readiness or status | Dependency failure would cause an orchestrator to kill a live, diagnosable process |
+| Readiness checks only SQLite plus the exact embedded migration names | These are the minimum conditions for every request to use the local ledger correctly | Include Qdrant, inference, or unresolved Intents | Those affect specific operations; draining the recovery API would worsen an incident |
+| Refresh dependency and operational health asynchronously every 15 seconds | Status and metrics remain bounded when Qdrant or inference hangs | Probe synchronously on every scrape/request | External dependencies would control operator endpoint latency and duplicate probes |
+| Bind metrics to a separate loopback-only listener, default `127.0.0.1:9090` | Operational data stays off the application/auth surface and is safe before GRF-220 | Serve `/metrics` on `:8080` | It would be unauthenticated network exposure now and require auth middleware later |
+| Drop the Ledger label from accepted Changes | A deployment can create unbounded Ledgers, so even IDs are unsafe cardinality | Emit Ledger name or ID | Names may be sensitive and both names and IDs are unbounded |
+| Count durable outcomes in Engine and meter target calls through an adapter | Counters reflect committed domain facts, including internal callers | Increment in HTTP handlers | Retries, idempotent reads, and non-HTTP callers would produce incorrect totals |
+
+**Deviations from the ticket**
+
+The counter list named `gyrifi_changes_accepted_total{ledger}`. The implemented metric is deliberately `gyrifi_changes_accepted_total` with no label because Ledger count is unbounded; this follows the ticket's later instruction to drop that label when deployments can have many Ledgers. No other acceptance criterion deviated.
+
+**Traps for future work**
+
+- Go method-aware `Request.Pattern` contains both method and route; strip the method before using it as `path_template`, otherwise the method is represented twice.
+- The health cache owns background goroutines. Cancel and join them before closing the repository or race-enabled shutdown tests can observe probes against a closed database.
+- Metrics must count durable outcomes, not method entry. Idempotent Change retries and failed rollback construction must not increment domain counters.
+- `/metrics` must remain absent from the application listener; its explicit JSON 404 prevents the SPA fallback from returning healthy-looking HTML.
+- `RECOVERY_REQUIRED` belongs in status and `gyrifi_unresolved_intents`, never readiness.
+
+**Tests added**
+
+- `runtime/internal/config/config_test.go` — loopback-only metrics binding, defaults, custom drain duration, and invalid configuration
+- `runtime/internal/interfaces/http/health_test.go` — no-DB liveness, bounded DB and migration failures, shutdown, recovery-required readiness, exact gauges, and nonblocking cached dependency probes
+- `runtime/internal/interfaces/http/metrics_test.go` — Prometheus headers/escaping, every route template, ID-cardinality exclusion, real success/failure/rollback flows, and concurrent race safety
+
+**Docs updated**
+
+- `docs/ai/product.md` §7 — removed the missing-observability gap
+- `docs/ai/tech-spec.md` §§2–3, §6–§7, and §14 — lifecycle, configuration, endpoints, metrics, health contracts, E2E readiness, and closed gap
+- `docs/ai/repo-structure.md` §2 — new config, Engine, and HTTP health/metrics files
+- `README.md` §Quick start and §Configuration — probes, loopback scraping, and operational environment keys
+- `docs/ai/tickets/GRF-224-health-and-metrics.md` — acceptance results
+- `docs/ai/tickets/GRF-232-e2e-suite.md` and `GRF-233-ci-pipeline.md` — readiness polling now targets `/readyz`
+- `docs/ai/tickets/INDEX.md` and this file — ticket completion status and implementation record
+
+**Verification**
+
+```
+$ test -z "$(gofmt -l .)"
+runtime format: clean
+$ go vet ./...
+runtime vet: passed
+$ go test ./... -race
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/config 1.475s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine 1.978s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http 4.167s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository 3.503s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant 4.100s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests 6.107s
+$ go build ./...
+runtime build: passed
+
+$ pnpm install --frozen-lockfile
+Already up to date
+Done in 196ms using pnpm v11.15.1
+$ pnpm typecheck
+$ pnpm test
+Test Files  48 passed (48)
+Tests  152 passed (152)
+$ pnpm coverage
+Test Files  48 passed (48)
+Tests  152 passed (152)
+All files | 86% Stmts | 84.4% Branch | 71.61% Funcs | 86% Lines
+$ pnpm build
+✓ 1868 modules transformed.
+✓ built in 808ms
+
+$ docker build -t gyrifi:local .
+[+] Building 33.5s (31/31) FINISHED
+=> => naming to docker.io/library/gyrifi:local
+
+$ node node_modules/@playwright/test/cli.js test --list
+Total: 2 tests in 1 file
+
+$ ticket index consistency check
+tickets consistent
+$ git diff --check
+diff whitespace: clean
+```
+
+**Follow-ups discovered**
+
+GRF-220 must continue exempting `/healthz` and must not move metrics onto the application listener. GRF-226 must exempt `/healthz` from rate limiting. Both are already explicit acceptance criteria in their existing tickets; no new ticket was required.

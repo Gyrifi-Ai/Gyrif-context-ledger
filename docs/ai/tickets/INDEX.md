@@ -147,7 +147,7 @@ Update this table when a ticket is completed, and write the corresponding entry 
 | GRF-221 | Not started | — | — |
 | GRF-222 | Not started | — | — |
 | GRF-223 | Done | 2026-08-31 | b09a8d0 |
-| GRF-224 | Not started | — | — |
+| GRF-224 | Done | 2026-08-31 | Health/readiness, async dependency status, and loopback Prometheus metrics |
 | GRF-225 | Not started | — | — |
 | GRF-226 | Not started | — | — |
 | GRF-227 | Done | 2026-08-17 | phase-3.md |

@@ -68,3 +68,7 @@ type TargetAdapter interface {
 	Restore(context.Context, Plan) error
 	Capabilities() Capabilities
 }
+
+type HealthChecker interface {
+	Health(context.Context) error
+}

@@ -112,6 +112,12 @@ export type SystemStatus = {
   commit: string;
   buildDate: string;
   inference: string;
+  health: {
+    database: "ok" | "unreachable";
+    target: "ok" | "unreachable" | "unknown";
+    inference: "ok" | "disabled" | "unhealthy";
+    unresolvedIntents: number;
+  };
 };
 
 export type EventKind =

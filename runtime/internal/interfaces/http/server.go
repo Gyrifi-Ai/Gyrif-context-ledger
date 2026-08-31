@@ -24,10 +24,13 @@ import (
 var studio embed.FS
 
 type Server struct {
-	engine   *engine.Engine
-	logger   *slog.Logger
-	requests atomic.Uint64
-	handler  http.Handler
+	engine       *engine.Engine
+	logger       *slog.Logger
+	metrics      *Metrics
+	health       *healthCache
+	requests     atomic.Uint64
+	shuttingDown atomic.Bool
+	handler      http.Handler
 }
 type apiError struct {
 	Error struct {
@@ -36,15 +39,23 @@ type apiError struct {
 	} `json:"error"`
 }
 
-func New(application *engine.Engine, logger *slog.Logger) *Server {
-	server := &Server{engine: application, logger: logger}
+func New(application *engine.Engine, logger *slog.Logger, collectors ...*Metrics) *Server {
+	metrics := NewMetrics()
+	if len(collectors) > 0 && collectors[0] != nil {
+		metrics = collectors[0]
+	}
+	server := &Server{engine: application, logger: logger, metrics: metrics}
+	server.health = newHealthCache(application)
 	mux := http.NewServeMux()
 	server.routes(mux)
 	server.handler = server.middleware(mux)
 	return server
 }
 func (server *Server) Handler() http.Handler { return server.handler }
+func (server *Server) Close()                { server.health.close() }
 func (server *Server) routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /healthz", server.healthz)
+	mux.HandleFunc("GET /readyz", server.readyz)
 	mux.HandleFunc("GET /api/v1/system/status", server.status)
 	mux.HandleFunc("GET /api/v1/adapters", server.adapters)
 	mux.HandleFunc("GET /api/v1/ledgers", server.listLedgers)
@@ -76,9 +87,51 @@ func (server *Server) middleware(next http.Handler) http.Handler {
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
 		writer.Header().Set("Referrer-Policy", "no-referrer")
 		start := time.Now()
-		next.ServeHTTP(writer, request)
-		server.logger.InfoContext(request.Context(), "http request", "request_id", requestID, "method", request.Method, "path", request.URL.Path, "duration", time.Since(start))
+		captured := &statusWriter{ResponseWriter: writer}
+		next.ServeHTTP(captured, request)
+		duration := time.Since(start)
+		status := captured.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		method := request.Method
+		if method != http.MethodGet && method != http.MethodPost {
+			method = "OTHER"
+		}
+		pattern := request.Pattern
+		if _, pathPattern, found := strings.Cut(pattern, " "); found {
+			pattern = pathPattern
+		}
+		server.metrics.observeHTTP(method, pattern, status, duration)
+		server.logger.InfoContext(request.Context(), "http request", "request_id", requestID, "method", request.Method, "path", request.URL.Path, "status", status, "duration", duration)
 	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (writer *statusWriter) WriteHeader(status int) {
+	if writer.status != 0 {
+		return
+	}
+	writer.status = status
+	writer.ResponseWriter.WriteHeader(status)
+}
+func (writer *statusWriter) Write(value []byte) (int, error) {
+	if writer.status == 0 {
+		writer.status = http.StatusOK
+	}
+	return writer.ResponseWriter.Write(value)
+}
+func (writer *statusWriter) Flush() {
+	if writer.status == 0 {
+		writer.status = http.StatusOK
+	}
+	if flusher, ok := writer.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 func (server *Server) decode(writer http.ResponseWriter, request *http.Request, value any) bool {
 	request.Body = http.MaxBytesReader(writer, request.Body, 4<<20)
@@ -135,7 +188,11 @@ func (server *Server) parseListRequest(writer http.ResponseWriter, request *http
 	return result, true
 }
 func (server *Server) status(writer http.ResponseWriter, _ *http.Request) {
-	server.writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "version": buildinfo.Version, "commit": buildinfo.Commit, "buildDate": buildinfo.Date, "inference": server.engine.InferenceName()})
+	health := server.health.current()
+	server.writeJSON(writer, http.StatusOK, map[string]any{
+		"status": "ok", "version": buildinfo.Version, "commit": buildinfo.Commit, "buildDate": buildinfo.Date, "inference": server.engine.InferenceName(),
+		"health": map[string]any{"database": health.Database, "target": health.Target, "inference": health.Inference, "unresolvedIntents": health.UnresolvedIntents},
+	})
 }
 func (server *Server) adapters(writer http.ResponseWriter, _ *http.Request) {
 	server.writeJSON(writer, http.StatusOK, map[string]any{"items": []any{map[string]any{"id": "qdrant", "name": "Qdrant", "capabilities": server.engine.TargetCapabilities()}}})
@@ -411,7 +468,7 @@ func (server *Server) studioHandler() http.Handler {
 	}
 	files := http.FileServer(http.FS(contents))
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if strings.HasPrefix(request.URL.Path, "/api/") || strings.HasPrefix(request.URL.Path, "/events/") {
+		if strings.HasPrefix(request.URL.Path, "/api/") || strings.HasPrefix(request.URL.Path, "/events/") || request.URL.Path == "/healthz" || request.URL.Path == "/readyz" || request.URL.Path == "/metrics" {
 			server.writeError(writer, engine.CodeNotFound, "Endpoint was not found.", http.StatusNotFound)
 			return
 		}

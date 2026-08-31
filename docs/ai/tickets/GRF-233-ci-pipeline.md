@@ -78,7 +78,7 @@ Nothing enforces it. A commit that fails `go vet` merges silently.
 
 - [x] `docker build` uses the repository `Dockerfile` through Buildx with GitHub Actions layer caching.
 - [x] Build args wired for GRF-223: `VERSION` from the tag or 12-character SHA, `COMMIT` from `github.sha`, `BUILD_DATE` from the run timestamp.
-- [x] The built image is smoke-tested by polling `/api/v1/system/status` for at most 30 seconds and requiring its version to equal the injected value before cleanup.
+- [x] The built image is smoke-tested by polling `/readyz` for at most 30 seconds, then requiring `/api/v1/system/status` to report the injected version before cleanup.
 - [x] The image is loaded for smoke testing, exported as `gyrifi-ci-image`, and retained for one day.
 
 **Hygiene**
@@ -100,7 +100,7 @@ Nothing enforces it. A commit that fails `go vet` merges silently.
 - Keep everything in one workflow file. Splitting across files before there is a reason makes the pipeline harder to reason about.
 - Run `gofmt -l` on `runtime/` only; there is no Go elsewhere.
 - Use `docker/build-push-action` with `push: false` and `load: true` for the smoke test, plus `cache-from`/`cache-to` of type `gha`.
-- The smoke test should use the container's own healthiness rather than a fixed sleep: poll the status endpoint in a bounded loop.
+- The smoke test should use the container's own readiness rather than a fixed sleep: poll `/readyz` in a bounded loop.
 - Do not add a linter beyond `go vet` in this ticket. Introducing `golangci-lint` is a separate decision with its own configuration debate.
 - Do not add commit-message or PR-title checks.
 

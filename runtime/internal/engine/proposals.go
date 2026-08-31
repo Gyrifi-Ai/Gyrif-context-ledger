@@ -50,6 +50,7 @@ func (engine *Engine) CreateProposal(ctx context.Context, ledgerID string, reque
 	if err := engine.repository.InsertProposal(ctx, value); err != nil {
 		return ledger.Proposal{}, wrap(CodeConflict, "One or more Changes are already in another active Proposal.", err)
 	}
+	engine.metrics.ProposalCreated()
 	engine.publish(EventProposalCreated, ledgerID, value.ID)
 	return value, nil
 }

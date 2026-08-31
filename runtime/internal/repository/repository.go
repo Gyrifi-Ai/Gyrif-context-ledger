@@ -30,7 +30,15 @@ type Page[T any] struct {
 	HasMore bool
 }
 
+type OperationalStats struct {
+	UnresolvedIntents int64
+	PendingChanges    int64
+}
+
 type Repository interface {
+	Readiness(context.Context) (bool, error)
+	DatabaseStats(context.Context) (OperationalStats, error)
+	ObjectStoreBytes(context.Context) (int64, error)
 	CreateLedger(context.Context, ledger.Ledger) error
 	ListLedgers(context.Context, ListOptions) (Page[ledger.Ledger], error)
 	FindChangeByIdempotencyKey(context.Context, string, string) (ledger.Change, error)

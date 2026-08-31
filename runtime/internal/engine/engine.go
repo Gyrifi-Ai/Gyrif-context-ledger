@@ -44,15 +44,25 @@ func PublicError(err error) (ErrorCode, string) {
 }
 
 type Engine struct {
-	repository repository.Repository
-	target     targets.TargetAdapter
-	inference  inference.Provider
-	releaseMu  sync.Mutex
-	events     *Broker
+	repository   repository.Repository
+	target       targets.TargetAdapter
+	targetHealth any
+	inference    inference.Provider
+	metrics      MetricSink
+	releaseMu    sync.Mutex
+	events       *Broker
 }
 
-func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider) *Engine {
-	return &Engine{repository: repo, target: target, inference: provider, events: &Broker{}}
+func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider, sinks ...MetricSink) *Engine {
+	var metrics MetricSink = discardMetrics{}
+	if len(sinks) > 0 && sinks[0] != nil {
+		metrics = sinks[0]
+	}
+	metered := target
+	if target != nil {
+		metered = &meteredTarget{target: target, metrics: metrics}
+	}
+	return &Engine{repository: repo, target: metered, targetHealth: target, inference: provider, metrics: metrics, events: &Broker{}}
 }
 func (engine *Engine) InferenceName() string {
 	if engine.inference == nil {

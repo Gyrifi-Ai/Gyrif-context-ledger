@@ -29,3 +29,7 @@ type Provider interface {
 	Evaluate(context.Context, EvaluationRequest) (EvaluationResult, error)
 	Name() string
 }
+
+type HealthChecker interface {
+	Health(context.Context) error
+}

@@ -48,7 +48,9 @@ runtime/
 ├── internal/
 │   ├── buildinfo/                   # linker-injected Version, Commit, Date + stable String
 │   ├── bootstrap/bootstrap.go       # composition root + lifecycle
-│   ├── config/config.go             # env → Config, loaded exactly once
+│   ├── config/
+│   │   ├── config.go                # env → Config, loaded exactly once
+│   │   └── config_test.go           # operational listener/drain validation
 │   ├── ledger/                      # PURE domain. no I/O, ever.
 │   │   ├── ledger.go                #   Ledger, Head
 │   │   ├── change.go                #   Change, ChangeAction, ChangeStatus
@@ -59,6 +61,8 @@ runtime/
 │   │   └── invariants_test.go
 │   ├── engine/                      # application facade. one Engine, shared by HTTP and CLI.
 │   │   ├── engine.go                #   Engine struct, ErrorCode, Error, wrap, PublicError, list methods
+│   │   ├── health.go                #   readiness and dependency/operational health snapshot
+│   │   ├── metrics.go               #   domain metric sink and metered target adapter
 │   │   ├── events.go                #   typed advisory events + non-blocking in-process Broker
 │   │   ├── events_test.go           #   delivery, slow-subscriber, unsubscribe concurrency
 │   │   ├── changes.go               #   CreateChange + idempotency
@@ -86,6 +90,10 @@ runtime/
 │       ├── cli/cli.go               #   doctor, version
 │       └── http/
 │           ├── server.go            #   routes, middleware, encoding, SSE, SPA fallback
+│           ├── health.go             #   lock-free liveness, bounded readiness, async health cache
+│           ├── health_test.go        #   failure reasons, shutdown, recovery and cache semantics
+│           ├── metrics.go            #   atomic Prometheus collector + metrics-only handler
+│           ├── metrics_test.go       #   format, bounded labels, domain outcomes, races
 │           ├── events_test.go       #   SSE forwarding, Ledger filtering, cancellation
 │           └── static/              #   embedded Studio assets (index.html fallback in git)
 ├── migrations/
