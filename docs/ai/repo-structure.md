@@ -138,17 +138,21 @@ studio/
     ├── styles.css              # Tailwind v4 entry: @theme tokens (design-system palette) + base layer
     ├── lib/utils.ts            # cn() — clsx + tailwind-merge
     ├── app/
-    │   ├── bootstrap.tsx       # createRoot + StrictMode + Providers + Shell
-    │   ├── providers.tsx       # AppState context: selected Ledger, ledger list, refresh handle; id persisted locally
+    │   ├── bootstrap.tsx       # createRoot + StrictMode + Providers + root ErrorBoundary + Shell
+    │   ├── error-boundary.tsx  # resettable root/section React render boundary
+    │   ├── providers.tsx       # Reachability + AppState providers; selected Ledger id persisted locally
+    │   ├── reachability.tsx    # Runtime polling, request health, stream state, reconnect invalidation
+    │   ├── reachability-banner.tsx # persistent application-level transport failure surface
     │   ├── router.tsx          # hash routing: Route union + useRoute()
-    │   └── shell.tsx           # maps Route → page component
     │   ├── use-async.ts        # dependency-free useQuery/useMutation lifecycle primitives
-    │   └── use-ledger-events.ts # optional EventSource invalidation hook (enabled by GRF-210)
+    │   ├── use-ledger-events.ts # registers active-query invalidation for stream reconnect/domain events
+    │   └── shell.tsx           # maps Route → section-boundary-wrapped page component
     ├── api/
     │   ├── types.ts            # the API contract types (mirror of Go JSON tags)
     │   ├── client.ts           # request<T>() + the `api` object
     │   ├── client.test.ts
-    │   └── events.ts           # subscribeToEvents() over EventSource
+    │   ├── events.ts           # stateful EventSource subscription with bounded CLOSED retries
+    │   └── events.test.ts      # stream state, retry ceiling, manual reconnect, teardown
     ├── components/ui/          # shadcn/ui components (button, card, badge, input, textarea, label,
     │                           #  table, dialog, checkbox, separator, skeleton, tooltip)
     ├── ui/                     # VISUAL ONLY. must not know about ledgers/changes/etc.
@@ -158,7 +162,7 @@ studio/
     │   └── feedback/           # loading skeleton, empty/error states, AsyncBoundary query state renderer
     ├── features/               # ALL domain-aware UI
     │   ├── shared/status.ts    # domain status → badge tone mapping (design-system §2.2)
-    │   ├── shell/              # Ledger switcher, HEAD chip, navigation, and server-status poller
+    │   ├── shell/              # Ledger switcher, HEAD chip, navigation, and shared connection status
     │   ├── ledgers/ledgers-page.tsx
     │   ├── changes/changes-page.tsx
     │   ├── proposals/proposals-page.tsx

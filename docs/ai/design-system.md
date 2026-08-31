@@ -404,6 +404,8 @@ Centred, `--space-7` vertical padding, 32 px muted icon, title `--text-md --weig
 
 Renders a rose-toned inline block: bold `title`, the server message verbatim in `--font-mono --text-xs`, and a `Retry` button. Used wherever a request can fail. **Every fetch in the app must have a visible error path** — silent `catch` blocks are forbidden.
 
+Implemented resilience usage: `ErrorState` accepts a caller-owned action label and disabled reason. The root React error boundary combines it with `CodeBlock` for a full-page reset surface; each routed page has a section boundary so navigation survives a page render failure. Runtime transport failures do not masquerade as page HTTP errors: they render the persistent global banner defined in §6.
+
 ### 4.7 `Skeleton` (`ui/feedback/skeleton.tsx`) — new
 
 ```ts
@@ -557,6 +559,8 @@ Every data surface implements **five** states. A page is not done until all five
 | Populated | The normal case. |
 
 Action buttons additionally implement `idle → loading → success/error`. Success for a mutating action means the affected surface refetches and a 3 s inline confirmation appears near the action — not a floating toast as the only signal.
+
+Runtime reachability is a mandatory application-level state across all five surface states. A rejected `fetch` renders a persistent danger banner below the topbar reading "Cannot reach the Gyrifi runtime. Displayed data may be out of date." Existing data remains visible and dimmed; unresolved content keeps its matching skeleton. Every mutation is disabled with the banner text as its reason until any request succeeds. An HTTP response, including `503`, means the Runtime is reachable and stays a page/action error rather than triggering the banner.
 
 ---
 

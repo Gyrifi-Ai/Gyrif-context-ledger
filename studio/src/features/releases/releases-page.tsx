@@ -32,7 +32,7 @@ export function ReleasesPage() {
         <span className="text-sm text-muted-foreground">{releasesQuery.data?.length ?? 0} releases</span>
       </CardHeader>
       <CardContent className="pt-6">
-        {rollbackMutation.error && <div className="mb-4"><ErrorState title="Unable to create rollback Proposal" message={rollbackMutation.error.message} onRetry={() => { if (lastReleaseId) void rollbackMutation.run(lastReleaseId); }} /></div>}
+        {rollbackMutation.error && <div className="mb-4"><ErrorState title="Unable to create rollback Proposal" message={rollbackMutation.error.message} onRetry={() => { if (lastReleaseId) void rollbackMutation.run(lastReleaseId); }} retryDisabled={rollbackMutation.blocked} retryTitle={rollbackMutation.disabledReason} /></div>}
         <AsyncBoundary query={releasesQuery} empty={<EmptyState title="No Releases yet" description="Approved Proposals become immutable Releases here." />}>
           {(items: Release[]) => (
           <ol className="relative ml-2 space-y-8 border-l border-border pb-2">
@@ -48,7 +48,7 @@ export function ReleasesPage() {
                   <h3 className="mt-1 font-mono text-sm font-medium">{release.id}</h3>
                   <code className="mt-1 block text-xs text-muted-foreground">{release.hash}</code>
                   <p className="mt-1.5 text-sm text-muted-foreground">Proposal {release.proposalId}</p>
-                  {!head && <Button variant="destructive" size="sm" className="mt-3" loading={rollbackMutation.pending} onClick={() => rollback(release.id)}>Create rollback Proposal</Button>}
+                  {!head && <Button variant="destructive" size="sm" className="mt-3" loading={rollbackMutation.pending} disabled={rollbackMutation.blocked} title={rollbackMutation.disabledReason} onClick={() => rollback(release.id)}>Create rollback Proposal</Button>}
                 </li>
               );
             })}

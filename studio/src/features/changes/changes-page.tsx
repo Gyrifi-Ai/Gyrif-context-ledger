@@ -109,8 +109,8 @@ export function ChangesPage() {
               <Label htmlFor="change-desired">JSON value</Label>
               <Textarea id="change-desired" value={desired} onChange={(event) => setDesired(event.target.value)} rows={8} spellCheck={false} />
             </div>
-            {createMutation.error && <ErrorState title="Unable to accept Change" message={createMutation.error.message} onRetry={() => void createMutation.run({ changeUnit: unit, changeDesired: desired })} />}
-            <Button type="submit" className="w-full" loading={createMutation.pending}>Accept Change</Button>
+            {createMutation.error && <ErrorState title="Unable to accept Change" message={createMutation.error.message} onRetry={() => void createMutation.run({ changeUnit: unit, changeDesired: desired })} retryDisabled={createMutation.blocked} retryTitle={createMutation.disabledReason} />}
+            <Button type="submit" className="w-full" loading={createMutation.pending} disabled={createMutation.blocked} title={createMutation.disabledReason}>Accept Change</Button>
           </form>
         </CardContent>
       </Card>

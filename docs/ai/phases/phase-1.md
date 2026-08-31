@@ -17,7 +17,7 @@
 | [GRF-206](../tickets/GRF-206-changes-page.md) | Changes inbox redesign | L | GRF-203, GRF-204 | Not started |
 | [GRF-207](../tickets/GRF-207-proposals-workspace.md) | Proposals review workspace | XL | GRF-203, GRF-204, GRF-211 | Not started |
 | [GRF-208](../tickets/GRF-208-releases-timeline.md) | Releases timeline and rollback flow | L | GRF-203, GRF-204, GRF-213 | Not started |
-| [GRF-209](../tickets/GRF-209-studio-resilience.md) | Studio resilience: error boundary, offline state, stream reconnection | M | GRF-202, GRF-204 | Not started |
+| [GRF-209](../tickets/GRF-209-studio-resilience.md) | Studio resilience: error boundary, offline state, stream reconnection | M | GRF-202, GRF-204 | Done |
 
 ## Phase-level notes
 
@@ -504,3 +504,154 @@ Manual browser verification: with the React StrictMode root active, creating `gr
 **Follow-ups discovered**
 
 - GRF-230 should include an automated StrictMode replay regression for `useMutation` once its jsdom and Testing Library harness lands.
+
+### GRF-209 — Studio resilience: error boundary, offline state, stream reconnection
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | No |
+
+**What was built**
+
+Studio now distinguishes an unreachable Runtime from a reachable HTTP or target failure. Transport failures preserve and dim stale query data, disable every mutation with a visible global reason, and trigger visibility-aware status probes with bounded backoff. Root and route-section error boundaries replace white-screen failures with resettable error surfaces, while the event stream now reports connection state, retries permanently closed sources with jitter and a ceiling, offers manual reconnection, and refetches the active page after reconnect.
+
+**Files added**
+
+- `studio/src/app/error-boundary.tsx` — resettable class boundary with once-per-error logging.
+- `studio/src/app/error-boundary.test.tsx` — fallback/reset and duplicate-log regression coverage.
+- `studio/src/app/reachability.tsx` — shared Runtime polling, request-health, stream-state, and invalidation provider.
+- `studio/src/app/reachability-banner.tsx` — persistent application-level transport-failure banner.
+- `studio/src/app/reachability.test.ts` — exact 1-to-30-second backoff coverage.
+- `studio/src/api/events.test.ts` — stream transition, retry-ceiling, manual-reconnect, and teardown coverage.
+
+**Files changed**
+
+- `studio/src/api/client.ts` / `client.test.ts` — transport/HTTP discrimination, request IDs, and request-health events.
+- `studio/src/api/events.ts` — observable EventSource lifecycle with bounded explicit retry for `CLOSED` sources.
+- `studio/src/app/bootstrap.tsx` — root boundary and single-owner caught-error logging.
+- `studio/src/app/providers.tsx` — compose reachability outside AppState.
+- `studio/src/app/shell.tsx` — global banner and route-section boundary.
+- `studio/src/app/use-async.ts` — unavailable query state and reachability-gated mutations.
+- `studio/src/app/use-ledger-events.ts` — register active-page reconnect invalidation with the shared stream.
+- `studio/src/features/{ledgers,changes,proposals,releases}/*-page.tsx` — disable current mutation controls and retries while offline.
+- `studio/src/features/shell/runtime-status.tsx` — combined HTTP/stream state and manual reconnect control.
+- `studio/src/ui/feedback/async-boundary.tsx` / `async-boundary.test.tsx` — preserve and dim unavailable data.
+- `studio/src/ui/feedback/error-state.tsx` — caller-owned action label and disabled reason.
+- `studio/src/ui/layout/application-shell.tsx` — application-level banner slot.
+- `docs/ai/design-system.md`, `docs/ai/product.md`, `docs/ai/repo-structure.md`, `docs/ai/tech-spec.md`, `docs/ai/tickets/INDEX.md` — current resilience contract, tree, closed gap, and status.
+
+**Files removed**
+
+- `studio/src/features/shell/use-system-status.ts` — superseded by the shared reachability provider; separate pollers could disagree about whether the Runtime was reachable.
+
+**Contracts introduced or changed**
+
+```ts
+type ApiErrorKind = "transport" | "http";
+
+class ApiError extends Error {
+	constructor(code: string, message: string, status: number, kind: ApiErrorKind, requestId?: string);
+}
+
+function subscribeToRequestHealth(
+	listener: (health: { reachable: true } | { reachable: false; error: ApiError }) => void,
+): () => void;
+
+type QueryResult<T> = {
+	data: T | undefined;
+	error: Error | undefined;
+	loading: boolean;
+	refetching: boolean;
+	unavailable: boolean;
+	refetch: () => void;
+};
+
+type MutationResult<TArgs, TResult> = {
+	run: (args: TArgs) => Promise<void>;
+	pending: boolean;
+	blocked: boolean;
+	disabledReason: string | undefined;
+	error: Error | undefined;
+	result: TResult | undefined;
+	reset: () => void;
+};
+
+type EventStreamState = "connecting" | "open" | "closed";
+type EventSubscription = { close(): void; reconnect(): void };
+
+function subscribeToEvents(options: {
+	onState(state: EventStreamState): void;
+	onReconnect(): void;
+	onExhausted(exhausted: boolean): void;
+}): EventSubscription;
+```
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| HTTP responses always mean the Runtime is reachable | A `503` release response describes target failure, not loss of the Runtime | Treat every non-2xx as offline | It sends operators to the wrong diagnosis and hides recovery-required state |
+| Keep transport failure out of page `error` state | Reachability is application-level and stale data remains useful | Replace every page with `ErrorState` | It duplicates the banner and removes known-good governance data |
+| Use one provider for polling and stream state | Banner, topbar, mutation gates, and reconnect invalidation must agree | Keep the old per-component status hook | Independent pollers race and can display contradictory states |
+| Let EventSource handle `CONNECTING`; explicitly replace only `CLOSED` | Browser retry semantics are correct for transient transport loss | Always close and recreate on `onerror` | It creates competing reconnect loops |
+| Suppress React's root caught-error logger and log in the boundary | Guarantees one explicit message with component stack and one `onError` call | Keep both loggers | Every caught render error appeared twice in the console |
+
+**Deviations from the ticket**
+
+None. The reconnect ceiling is six explicit attempts. Stream delays use ±20% jitter over exponential 1, 2, 4, 8, 16, and 30-second bases; reachability probes use exact exponential delays capped at 30 seconds.
+
+**Traps for future work**
+
+- Abort errors must pass through without marking the Runtime offline; StrictMode and dependency changes intentionally abort reads.
+- The Vite development proxy converts an unavailable upstream into an HTTP 500. That correctly remains an HTTP failure under the client contract; transport behavior was browser-verified by aborting requests below the proxy.
+- `EventSource` may remain `CONNECTING` indefinitely under native retry. Explicit retry and the attempt ceiling apply only after its `readyState` becomes `CLOSED`.
+- GRF-210 must extend the shared stream subscription rather than creating one EventSource per page.
+
+**Tests added**
+
+- `studio/src/api/events.test.ts` — `connecting → open → closed → open`, bounded retry, manual reconnect, source closure, and timer cleanup.
+- `studio/src/app/error-boundary.test.tsx` — fallback/reset contract and one log/`onError` call per captured error.
+- `studio/src/app/reachability.test.ts` — 1, 2, 4, 8, 16, 30, 30-second probe delay sequence.
+- `studio/src/api/client.test.ts` additions — rejected-fetch transport error, request-health recovery, request ID, and reachable HTTP 503.
+
+**Docs updated**
+
+- `docs/ai/design-system.md` §4.6 / §6 — boundary use and application-level unreachable state.
+- `docs/ai/product.md` §7 — removed the render/stream silent-failure gap.
+- `docs/ai/repo-structure.md` §3 — resilience files and provider ownership.
+- `docs/ai/tech-spec.md` §11 / §12 / §14 — exact contracts, tests, and closed technical gap.
+- `docs/ai/tickets/INDEX.md` — GRF-209 marked Done.
+
+**Verification**
+
+```
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference       (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger          (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant  (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/tests                    (cached)
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files  7 passed (7)
+Tests       16 passed (16)
+✓ 1908 modules transformed.
+✓ built in 1.08s
+
+$ docker build -t gyrifi:local .
+[+] Building 33.1s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+
+$ cd docs/ai/tickets && diff <ticket files> <INDEX status rows>
+tickets consistent
+```
+
+Manual browser verification against a live Runtime: the stream and HTTP probe reached `Connected`; an intercepted transport failure displayed the persistent banner, marked the topbar `Offline`, retained the page shell, and disabled `Create ledger` with the exact banner message in its title. Removing the failure caused a successful request to clear the banner automatically and re-enable the mutation. A real Runtime stop behind Vite produced an HTTP 500 rather than a false transport classification, and restart recovered to `Connected` without reloading Studio.
+
+**Follow-ups discovered**
+
+- GRF-230 should add jsdom integration coverage for banner rendering, visibility changes, and mutation-button gating through the rendered provider tree.
+- GRF-210 must add domain-event parsing and dispatch to the existing shared stream; reconnect invalidation is already wired.

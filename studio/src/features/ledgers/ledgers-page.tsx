@@ -49,8 +49,8 @@ export function LedgersPage() {
                 <Label htmlFor="ledger-name">Name</Label>
                 <Input id="ledger-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="product-docs" required autoFocus />
               </div>
-              {createMutation.error && <ErrorState title="Unable to create ledger" message={createMutation.error.message} onRetry={() => void createMutation.run({ name })} />}
-              <DialogFooter><Button type="submit" loading={createMutation.pending}>Create ledger</Button></DialogFooter>
+              {createMutation.error && <ErrorState title="Unable to create ledger" message={createMutation.error.message} onRetry={() => void createMutation.run({ name })} retryDisabled={createMutation.blocked} retryTitle={createMutation.disabledReason} />}
+              <DialogFooter><Button type="submit" loading={createMutation.pending} disabled={createMutation.blocked} title={createMutation.disabledReason}>Create ledger</Button></DialogFooter>
             </form>
           </DialogContent>
         </Dialog>

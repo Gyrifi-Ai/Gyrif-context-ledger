@@ -255,7 +255,6 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
 | No retention limits, quotas, or backup command | GRF-222 |
 | Evaluation criteria is hardcoded in Studio | GRF-207 |
-| A render error blanks Studio; a dropped event stream is never noticed | GRF-209 |
 | Ledgers and Changes are create-only — a mistaken ingestion is permanent | GRF-215 |
 | No liveness or readiness signal an orchestrator can use | GRF-224 |
 | The inference child process is unsupervised and its output is discarded | GRF-225 |

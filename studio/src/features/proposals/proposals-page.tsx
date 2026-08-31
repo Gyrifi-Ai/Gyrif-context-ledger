@@ -50,7 +50,7 @@ export function ProposalsPage() {
           <CardDescription>Evaluate, approve, and release batched changes.</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          {actionMutation.error && <div className="p-5"><ErrorState title="Unable to update Proposal" message={actionMutation.error.message} onRetry={() => { if (lastAction) void actionMutation.run(lastAction); }} /></div>}
+          {actionMutation.error && <div className="p-5"><ErrorState title="Unable to update Proposal" message={actionMutation.error.message} onRetry={() => { if (lastAction) void actionMutation.run(lastAction); }} retryDisabled={actionMutation.blocked} retryTitle={actionMutation.disabledReason} /></div>}
           <AsyncBoundary query={workspaceQuery} empty={<EmptyState title="No Proposals" description="Select Ready Changes to create a reviewable Context PR." />} isEmpty={(workspace) => workspace.proposals.length === 0}>
             {(workspace) => (
             <ul className="divide-y divide-border/60">
@@ -62,9 +62,9 @@ export function ProposalsPage() {
                     <code className="block text-xs text-muted-foreground">{proposal.hash.slice(0, 18)} · {proposal.changeIds.length} changes</code>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="secondary" size="sm" loading={actionMutation.pending} onClick={() => act("evaluate", proposal)}>Evaluate</Button>
-                    <Button variant="secondary" size="sm" loading={actionMutation.pending} onClick={() => act("approve", proposal)}>Approve</Button>
-                    <Button variant="destructive" size="sm" loading={actionMutation.pending} onClick={() => act("release", proposal)}>Release</Button>
+                    <Button variant="secondary" size="sm" loading={actionMutation.pending} disabled={actionMutation.blocked} title={actionMutation.disabledReason} onClick={() => act("evaluate", proposal)}>Evaluate</Button>
+                    <Button variant="secondary" size="sm" loading={actionMutation.pending} disabled={actionMutation.blocked} title={actionMutation.disabledReason} onClick={() => act("approve", proposal)}>Approve</Button>
+                    <Button variant="destructive" size="sm" loading={actionMutation.pending} disabled={actionMutation.blocked} title={actionMutation.disabledReason} onClick={() => act("release", proposal)}>Release</Button>
                   </div>
                 </li>
               ))}
@@ -99,9 +99,9 @@ export function ProposalsPage() {
                 ))}
               </div>
             </div>
-            {createMutation.error && <ErrorState title="Unable to create Proposal" message={createMutation.error.message} onRetry={() => void createMutation.run({ proposalTitle: title, changeIds: selected })} />}
+            {createMutation.error && <ErrorState title="Unable to create Proposal" message={createMutation.error.message} onRetry={() => void createMutation.run({ proposalTitle: title, changeIds: selected })} retryDisabled={createMutation.blocked} retryTitle={createMutation.disabledReason} />}
             <Separator />
-            <Button type="submit" className="w-full" disabled={selected.length === 0} loading={createMutation.pending}>
+            <Button type="submit" className="w-full" disabled={selected.length === 0 || createMutation.blocked} title={createMutation.disabledReason} loading={createMutation.pending}>
               Create Proposal{selected.length > 0 ? ` (${selected.length})` : ""}
             </Button>
           </form>

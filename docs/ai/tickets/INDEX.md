@@ -136,7 +136,7 @@ Update this table when a ticket is completed, and write the corresponding entry 
 | GRF-206 | Not started | — | — |
 | GRF-207 | Not started | — | — |
 | GRF-208 | Not started | — | — |
-| GRF-209 | Not started | — | — |
+| GRF-209 | Done | 2026-08-31 | phase-1.md |
 | GRF-210 | Not started | — | — |
 | GRF-211 | Not started | — | — |
 | GRF-212 | Not started | — | — |

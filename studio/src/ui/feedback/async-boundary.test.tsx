@@ -7,7 +7,7 @@ import { AsyncBoundary } from "./async-boundary";
 const refetch = vi.fn();
 
 function query<T>(state: Partial<QueryResult<T>>): QueryResult<T> {
-  return { data: undefined, error: undefined, loading: false, refetching: false, refetch, ...state };
+  return { data: undefined, error: undefined, loading: false, refetching: false, unavailable: false, refetch, ...state };
 }
 
 describe("AsyncBoundary", () => {

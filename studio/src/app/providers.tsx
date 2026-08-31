@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { Ledger } from "../api/types";
+import { ReachabilityProvider } from "./reachability";
 import { useQuery } from "./use-async";
 
 interface AppState {
@@ -13,7 +14,7 @@ interface AppState {
 
 const Context = createContext<AppState | null>(null);
 
-export function Providers({ children }: { children: ReactNode }) {
+function AppStateProvider({ children }: { children: ReactNode }) {
   const [ledgerId, setLedgerId] = useState(() => localStorage.getItem("gyrifi.ledger") ?? "");
   const ledgerQuery = useQuery("app-ledgers", async (signal) => (await api.ledgers({ signal })).items ?? [], []);
   const ledgers = ledgerQuery.data ?? [];
@@ -22,6 +23,10 @@ export function Providers({ children }: { children: ReactNode }) {
   const ledger = ledgers.find((item) => item.id === ledgerId) ?? null;
   const value = useMemo(() => ({ ledgerId, ledger, ledgers, setLedgerId: selectLedger, refreshLedgers }), [ledgerId, ledger, ledgers, selectLedger, refreshLedgers]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
+}
+
+export function Providers({ children }: { children: ReactNode }) {
+  return <ReachabilityProvider><AppStateProvider>{children}</AppStateProvider></ReachabilityProvider>;
 }
 
 export function useAppState() {
