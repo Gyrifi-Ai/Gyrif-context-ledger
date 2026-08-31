@@ -58,33 +58,33 @@ The API must distinguish these, because the safe response differs.
 
 **Read**
 
-- [ ] `GET .../release-intents` returns `{ "items": [ReleaseIntent] }` newest-first, filtered by `status` when the query parameter is present and valid. An unknown status ⇒ `400 INVALID_ARGUMENT`.
-- [ ] `GET .../release-intents/{intentID}` returns the intent including the full `Plan` with per-operation `unit`, `action`, `expectedFingerprint`, `desiredFingerprint`, and `hasBeforeImage`.
-- [ ] `hasBeforeImage` is derived by checking that the retained before-image object is present in the object store, not by assuming it.
-- [ ] An intent belonging to another ledger ⇒ `404 NOT_FOUND`.
-- [ ] `Repository` gains `LoadReleaseIntent(ctx, id string) (ledger.ReleaseIntent, error)` and `ListReleaseIntentsForLedger(ctx, ledgerID string, status *ledger.ReleaseIntentStatus) ([]ledger.ReleaseIntent, error)`.
+- [x] `GET .../release-intents` returns `{ "items": [ReleaseIntent] }` newest-first, filtered by `status` when the query parameter is present and valid. An unknown status ⇒ `400 INVALID_ARGUMENT`.
+- [x] `GET .../release-intents/{intentID}` returns the intent including the full `Plan` with per-operation `unit`, `action`, `expectedFingerprint`, `desiredFingerprint`, and `hasBeforeImage`.
+- [x] `hasBeforeImage` is derived by checking that the retained before-image object is present in the object store, not by assuming it.
+- [x] An intent belonging to another ledger ⇒ `404 NOT_FOUND`.
+- [x] `Repository` gains `LoadReleaseIntent(ctx, id string) (ledger.ReleaseIntent, error)` and `ListReleaseIntentsForLedger(ctx, ledgerID string, status *ledger.ReleaseIntentStatus) ([]ledger.ReleaseIntent, error)`.
 
 **Retry**
 
-- [ ] `POST .../retry` is valid only for `RECOVERY_REQUIRED` and `VERIFYING`; any other status ⇒ `409 CONFLICT` naming the current status.
-- [ ] Retry re-reads the target and compares against the plan's desired fingerprints. It **never** issues a write to the target.
-- [ ] On success the intent moves to `FINALIZED`, the Release row is completed, `HEAD` advances, the proposal becomes `RELEASED`, and the affected Changes become `RELEASED` — using the same code path as the happy-path finalisation, not a copy.
-- [ ] On failure the response is `200` with `{ "resolved": false, "mismatches": [{ "unit", "expected", "observed" }] }` and the intent stays `RECOVERY_REQUIRED`.
-- [ ] Target unreachable during retry ⇒ `503 UNAVAILABLE`, intent unchanged.
-- [ ] Retry is safe to call repeatedly.
+- [x] `POST .../retry` is valid only for `RECOVERY_REQUIRED` and `VERIFYING`; any other status ⇒ `409 CONFLICT` naming the current status.
+- [x] Retry re-reads the target and compares against the plan's desired fingerprints. It **never** issues a write to the target.
+- [x] On success the intent moves to `FINALIZED`, the Release row is completed, `HEAD` advances, the proposal becomes `RELEASED`, and the affected Changes become `RELEASED` — using the same code path as the happy-path finalisation, not a copy.
+- [x] On failure the response is `200` with `{ "resolved": false, "mismatches": [{ "unit", "expected", "observed" }] }` and the intent stays `RECOVERY_REQUIRED`.
+- [x] Target unreachable during retry ⇒ `503 UNAVAILABLE`, intent unchanged.
+- [x] Retry is safe to call repeatedly.
 
 **Resolve**
 
-- [ ] `POST .../resolve` requires `{ "resolution": "ABANDONED", "note": "<non-empty>" }`. A missing or empty note ⇒ `400 INVALID_ARGUMENT`.
-- [ ] Any resolution value other than `ABANDONED` ⇒ `400 INVALID_ARGUMENT`.
-- [ ] Resolving sets the intent status to `ABANDONED` (new status), records the note and timestamp, does not advance `HEAD`, and leaves the Proposal in its pre-release status so it can be re-released after the operator repairs the target.
-- [ ] Resolve is rejected with `409` unless the current status is `RECOVERY_REQUIRED`.
-- [ ] A ledger with an unresolved `RECOVERY_REQUIRED` intent rejects new releases with `409 CONFLICT` "A release intent requires recovery before further releases." — add this guard to `ReleaseProposal` if it is not already enforced.
+- [x] `POST .../resolve` requires `{ "resolution": "ABANDONED", "note": "<non-empty>" }`. A missing or empty note ⇒ `400 INVALID_ARGUMENT`.
+- [x] Any resolution value other than `ABANDONED` ⇒ `400 INVALID_ARGUMENT`.
+- [x] Resolving sets the intent status to `ABANDONED` (new status), records the note and timestamp, does not advance `HEAD`, and leaves the Proposal in its pre-release status so it can be re-released after the operator repairs the target.
+- [x] Resolve is rejected with `409` unless the current status is `RECOVERY_REQUIRED`.
+- [x] A ledger with an unresolved `RECOVERY_REQUIRED` intent rejects new releases with `409 CONFLICT` "A release intent requires recovery before further releases." — add this guard to `ReleaseProposal` if it is not already enforced.
 
 **Schema and general**
 
-- [ ] Migration `003_release_intent_resolution.sql` adds `resolution TEXT`, `resolution_note TEXT`, `resolved_at TEXT` to `release_intents`. `ABANDONED` added to the status set in code.
-- [ ] `go test ./...` passes; no existing release test regresses.
+- [x] Migration `002_release_intent_resolution.sql` adds `resolution TEXT`, `resolution_note TEXT`, `resolved_at TEXT` to `release_intents`. `ABANDONED` added to the status set in code. The planned `003` number was renumbered because GRF-213 landed before GRF-212.
+- [x] `go test ./...` passes; no existing release test regresses.
 
 ## Implementation notes
 

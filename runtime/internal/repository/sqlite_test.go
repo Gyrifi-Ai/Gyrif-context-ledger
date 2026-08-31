@@ -112,3 +112,39 @@ func TestListChangesScansNullDesiredForDelete(t *testing.T) {
 		t.Fatalf("DELETE response exposed desired: %s", encoded)
 	}
 }
+
+func TestReleaseIntentResolutionAndListing(t *testing.T) {
+	ctx := context.Background()
+	repository, proposal := proposalRepository(t)
+	older := ledger.ReleaseIntent{ID: "intent_older", LedgerID: proposal.LedgerID, ProposalID: proposal.ID, ProposalHash: proposal.Hash, Status: ledger.IntentRecoveryRequired, Plan: []byte(`{"operations":[]}`), CreatedAt: time.Now().UTC().Add(-time.Minute)}
+	newer := ledger.ReleaseIntent{ID: "intent_newer", LedgerID: proposal.LedgerID, ProposalID: proposal.ID, ProposalHash: proposal.Hash, Status: ledger.IntentVerifying, Plan: []byte(`{"operations":[]}`), CreatedAt: time.Now().UTC()}
+	for _, intent := range []ledger.ReleaseIntent{older, newer} {
+		if err := repository.SaveReleaseIntent(ctx, intent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := repository.ListReleaseIntentsForLedger(ctx, proposal.LedgerID, nil)
+	if err != nil || len(items) != 2 || items[0].ID != newer.ID {
+		t.Fatalf("release intents = %#v, %v", items, err)
+	}
+	status := ledger.IntentRecoveryRequired
+	items, err = repository.ListReleaseIntentsForLedger(ctx, proposal.LedgerID, &status)
+	if err != nil || len(items) != 1 || items[0].ID != older.ID {
+		t.Fatalf("filtered release intents = %#v, %v", items, err)
+	}
+	resolvedAt := time.Now().UTC()
+	if err := repository.ResolveReleaseIntent(ctx, older.ID, "Operator inspected target", resolvedAt); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := repository.LoadReleaseIntent(ctx, older.ID)
+	if err != nil || loaded.Status != ledger.IntentAbandoned || loaded.Resolution != string(ledger.IntentAbandoned) || loaded.ResolutionNote != "Operator inspected target" || loaded.ResolvedAt == nil {
+		t.Fatalf("resolved intent = %#v, %v", loaded, err)
+	}
+	if err := repository.ResolveReleaseIntent(ctx, older.ID, "again", time.Now()); err == nil {
+		t.Fatal("second resolution should conflict")
+	}
+	unfinished, err := repository.ListUnfinishedReleaseIntents(ctx)
+	if err != nil || len(unfinished) != 1 || unfinished[0].ID != newer.ID {
+		t.Fatalf("unfinished intents = %#v, %v", unfinished, err)
+	}
+}

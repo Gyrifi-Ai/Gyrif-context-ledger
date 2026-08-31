@@ -153,6 +153,7 @@ Components use **only** these.
 | Intent `READY`, `APPLYING`, `VERIFYING` | warning |
 | Intent `FINALIZED` | success |
 | Intent `RECOVERY_REQUIRED` | danger |
+| Intent `ABANDONED` | neutral |
 | `HEAD` marker | accent (orange) |
 
 `StatusBadge` MUST map by exact value against this table. The current regex-based tone guessing is replaced (GRF-202).

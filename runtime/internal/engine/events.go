@@ -17,6 +17,7 @@ const (
 	EventReleaseCompleted       EventKind = "release.completed"
 	EventReleaseFailed          EventKind = "release.failed"
 	EventIntentRecoveryRequired EventKind = "intent.recovery_required"
+	EventIntentResolved         EventKind = "intent.resolved"
 )
 
 type Event struct {

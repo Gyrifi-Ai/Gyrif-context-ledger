@@ -119,11 +119,13 @@ describe("event subscription", () => {
     source.readyState = 1;
     source.onopen?.();
     source.emit("change.accepted", JSON.stringify({ kind: "change.accepted", ledgerId: "ldg one", subjectId: "chg_one", at: "2026-08-31T07:00:00Z" }));
+    source.emit("intent.resolved", JSON.stringify({ kind: "intent.resolved", ledgerId: "ldg one", subjectId: "intent_one", at: "2026-08-31T07:01:00Z" }));
     source.emit("change.accepted", "not-json");
 
     expect(requestedURL).toBe("/events/v1?ledgerId=ldg%20one");
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler).toHaveBeenCalledWith({ kind: "change.accepted", ledgerId: "ldg one", subjectId: "chg_one", at: "2026-08-31T07:00:00Z" });
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenNthCalledWith(1, { kind: "change.accepted", ledgerId: "ldg one", subjectId: "chg_one", at: "2026-08-31T07:00:00Z" });
+    expect(handler).toHaveBeenNthCalledWith(2, { kind: "intent.resolved", ledgerId: "ldg one", subjectId: "intent_one", at: "2026-08-31T07:01:00Z" });
     subscription.close();
   });
 

@@ -33,6 +33,22 @@ describe("API client", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/ledgers/ldg_one/proposals/pr_one/approvals", expect.objectContaining({ method: "POST", body: JSON.stringify({ actor: "reviewer@example.com" }) }));
   });
 
+  it("uses the Release Intent inspection and recovery endpoints", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.releaseIntents("ldg_one", "RECOVERY_REQUIRED");
+    await api.releaseIntent("ldg_one", "intent_one");
+    await api.retryReleaseIntent("ldg_one", "intent_one");
+    await api.resolveReleaseIntent("ldg_one", "intent_one", "inspected target");
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/ledgers/ldg_one/release-intents?status=RECOVERY_REQUIRED",
+      "/api/v1/ledgers/ldg_one/release-intents/intent_one",
+      "/api/v1/ledgers/ldg_one/release-intents/intent_one/retry",
+      "/api/v1/ledgers/ldg_one/release-intents/intent_one/resolve",
+    ]);
+    expect(fetchMock.mock.calls[3][1]).toMatchObject({ method: "POST", body: JSON.stringify({ resolution: "ABANDONED", note: "inspected target" }) });
+  });
+
   it("maps structured API errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "CONFLICT", message: "blocked" } }), { status: 409, headers: { "X-Request-ID": "req-123" } })));
     const error = await api.createLedger({ name: "duplicate" }).catch((value: unknown) => value);

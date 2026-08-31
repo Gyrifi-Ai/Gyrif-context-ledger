@@ -126,6 +126,10 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation` | 200 | `{ "criteria" }` | `{ "passed", "summary", "previewFidelity", "findings"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | **204** | `{ "actor" }` | — |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/release` | 201 | — | `Release` |
+| GET | `/api/v1/ledgers/{ledgerID}/release-intents` | 200 | — | `{ "items": ReleaseIntent[] }` (newest first; optional `?status=`) |
+| GET | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}` | 200 | — | `ReleaseIntent` with expanded Plan and per-operation `hasBeforeImage` |
+| POST | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}/retry` | 200 | — | `{ "resolved": bool, "mismatches": VerificationMismatch[] }` |
+| POST | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}/resolve` | **204** | `{ "resolution":"ABANDONED", "note":string }` | — |
 | GET | `/api/v1/ledgers/{ledgerID}/releases` | 200 | — | `{ "items": Release[] }` (newest first) |
 | POST | `/api/v1/ledgers/{ledgerID}/releases/{releaseID}/rollback` | 201 | — | `Proposal` |
 | GET | `/events/v1` | 200 | — | `text/event-stream` |
@@ -155,9 +159,10 @@ data: {"kind":"proposal.created","ledgerId":"ldg_…","subjectId":"pr_…","at":
 | `proposal.evaluated` | evaluation evidence is saved | Proposal ID |
 | `proposal.approved` | approval bound to the current hash is saved | Proposal ID |
 | `release.started` | a Release Intent is saved | Intent ID |
-| `release.completed` | finalization advances HEAD, including successful startup recovery | Release ID |
+| `release.completed` | finalization advances HEAD, including successful startup or operator recovery | Release ID |
 | `release.failed` | apply or verification fails and requires recovery | Intent ID |
-| `intent.recovery_required` | startup recovery durably marks an Intent for operator recovery | Intent ID |
+| `intent.recovery_required` | release, startup recovery, or retry durably marks an Intent for operator recovery | Intent ID |
+| `intent.resolved` | retry finalizes or an operator abandons an Intent | Intent ID |
 
 ---
 
@@ -227,10 +232,32 @@ type Release struct {
 }
 
 type ReleaseIntent struct {
-    ID, LedgerID, ProposalID, ProposalHash, ParentID string
-    Status    ReleaseIntentStatus
-    Plan      []byte
-    CreatedAt time.Time
+    ID             string              `json:"id"`
+    LedgerID       string              `json:"ledgerId"`
+    ProposalID     string              `json:"proposalId"`
+    ProposalHash   string              `json:"proposalHash"`
+    ParentID       string              `json:"parentId,omitempty"`
+    Status         ReleaseIntentStatus `json:"status"`
+    Plan           []byte              `json:"plan"`
+    CreatedAt      time.Time           `json:"createdAt"`
+    Resolution     string              `json:"resolution,omitempty"`
+    ResolutionNote string              `json:"resolutionNote,omitempty"`
+    ResolvedAt     *time.Time          `json:"resolvedAt,omitempty"`
+}
+
+// engine read model: Plan is expanded instead of exposing the persisted []byte.
+type ReleaseIntentOperation struct {
+    targets.Operation
+    HasBeforeImage bool `json:"hasBeforeImage"`
+}
+
+type ReleaseIntentPlan struct {
+    Operations []ReleaseIntentOperation `json:"operations"`
+}
+
+type RetryReleaseIntentResult struct {
+    Resolved   bool                           `json:"resolved"`
+    Mismatches []targets.VerificationMismatch `json:"mismatches"`
 }
 
 type ActionGate struct {
@@ -265,7 +292,7 @@ The read-API `CheckResult` exposes `id`, `proposalHash`, `kind`, `passed`, `summ
 | `ChangeAction` | `PUT`, `DELETE` |
 | `ChangeStatus` | `ACCEPTED`, `READY`, `INVALID`, `RELEASED` |
 | `ProposalStatus` | `DRAFT`, `REVIEWED`, `APPROVED`, `RELEASED`, `BLOCKED` |
-| `ReleaseIntentStatus` | `READY`, `APPLYING`, `VERIFYING`, `FINALIZED`, `RECOVERY_REQUIRED` |
+| `ReleaseIntentStatus` | `READY`, `APPLYING`, `VERIFYING`, `FINALIZED`, `RECOVERY_REQUIRED`, `ABANDONED` |
 
 `Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, and `RELEASED` after finalization. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, and HEAD predicates. `Change.status` is only ever written as `READY` or `RELEASED`.
 
@@ -319,6 +346,10 @@ func (e *Engine) ListApprovals(ctx, ledgerID, proposalID string) ([]Approval, er
 func (e *Engine) EvaluateProposal(ctx, ledgerID, proposalID, criteria string) (EvaluationResponse, error)
 func (e *Engine) ApproveProposal(ctx, ledgerID, proposalID, actor string) error
 func (e *Engine) ReleaseProposal(ctx, ledgerID, proposalID string) (ledger.Release, error)
+func (e *Engine) ListReleaseIntents(ctx, ledgerID string, status *ledger.ReleaseIntentStatus) ([]ReleaseIntent, error)
+func (e *Engine) LoadReleaseIntent(ctx, ledgerID, intentID string) (ReleaseIntent, error)
+func (e *Engine) RetryReleaseIntent(ctx, ledgerID, intentID string) (RetryReleaseIntentResult, error)
+func (e *Engine) ResolveReleaseIntent(ctx, ledgerID, intentID, resolution, note string) error
 func (e *Engine) ListReleases(ctx, ledgerID string) ([]ledger.Release, error)
 func (e *Engine) CreateRollbackProposal(ctx, ledgerID, targetReleaseID string) (ledger.Proposal, error)
 func (e *Engine) RecoverReleases(ctx) error
@@ -365,6 +396,8 @@ func (e *Engine) Close() error
 
 **`ReleaseProposal`** — see [product.md §3 step 5](product.md).
 
+Before gate evaluation, `ReleaseProposal` rejects a Ledger with any `RECOVERY_REQUIRED` Intent. `RetryReleaseIntent` accepts only `RECOVERY_REQUIRED` or `VERIFYING`, calls `TargetAdapter.Verify` without calling `Apply`, and shares `finalizeIntent` with the happy path. Structured verification mismatches return a successful HTTP response with `resolved: false`; transport or target-read failures remain `UNAVAILABLE`. `ResolveReleaseIntent` atomically records `ABANDONED`, its operator note, and its timestamp without changing `HEAD` or Proposal status.
+
 **`CreateRollbackProposal`** — see [product.md §4](product.md). Note the synthetic idempotency key format: `rollback:{releases[0].ID}:{targetReleaseID}:{unit}` where `releases[0]` is the current HEAD release.
 
 ---
@@ -391,6 +424,9 @@ type Repository interface {
     CurrentHead(ctx, ledgerID string) (ledger.Head, error)
     SaveReleaseIntent(context.Context, ledger.ReleaseIntent) error
     UpdateReleaseIntent(ctx, intentID string, s ledger.ReleaseIntentStatus) error
+    ResolveReleaseIntent(ctx context.Context, intentID, note string, resolvedAt time.Time) error
+    LoadReleaseIntent(ctx context.Context, intentID string) (ledger.ReleaseIntent, error)
+    ListReleaseIntentsForLedger(ctx context.Context, ledgerID string, status *ledger.ReleaseIntentStatus) ([]ledger.ReleaseIntent, error)
     ListUnfinishedReleaseIntents(context.Context) ([]ledger.ReleaseIntent, error)
     LoadReleaseIntentForProposal(ctx, proposalID string) (ledger.ReleaseIntent, error)
     FinalizeRelease(context.Context, ledger.ReleaseIntent, ledger.Release) error
@@ -533,6 +569,10 @@ CREATE INDEX releases_by_ledger ON releases(ledger_id, created_at DESC);
 
 All timestamps are TEXT in UTC (`time.Now().UTC()`).
 
+### Migration 002 — Release Intent resolution
+
+`002_release_intent_resolution.sql` adds nullable `resolution`, `resolution_note`, and `resolved_at` TEXT columns to `release_intents`. `ABANDONED` rows store `resolution = "ABANDONED"`, the trimmed operator note, and an RFC 3339 timestamp. `ListUnfinishedReleaseIntents` treats both `FINALIZED` and `ABANDONED` as terminal. The migration uses `002` rather than the ticket's planned `003` because GRF-213 landed before GRF-212; migration numbers follow actual apply order.
+
 **Migration rules:** never edit an applied migration. Add `00N_description.sql`. SQLite cannot drop or alter most constraints — prefer additive columns with defaults, or a create-copy-rename table rebuild inside one transaction.
 
 ---
@@ -571,6 +611,16 @@ type Operation struct {
 
 type Plan struct { Operations []Operation }
 
+type VerificationMismatch struct {
+    Unit     string `json:"unit"`
+    Expected string `json:"expected"`
+    Observed string `json:"observed"`
+}
+
+type VerificationError struct {
+    Mismatches []VerificationMismatch
+}
+
 type TargetAdapter interface {
     Read(context.Context, string) (Value, error)
     Fingerprint(context.Context, string) (string, error)
@@ -599,7 +649,7 @@ type TargetAdapter interface {
 
 **Normalisation.** Both target reads and desired values are reduced to the canonical logical point `{id, vector, payload}` before fingerprinting. Extra Qdrant response fields never affect identity.
 
-**Cosine collections.** Qdrant normalises vectors on write for `Cosine` distance, so a byte-identical fingerprint comparison would always fail. `Verify` compares vector **direction** with a dot-product tolerance of `1e-6` when the collection metric is `Cosine`; otherwise it compares strictly. Only collections with a single unnamed vector config are supported — named multi-vector collections are rejected explicitly rather than verified with the wrong metric.
+**Cosine collections.** Qdrant normalises vectors on write for `Cosine` distance, so a byte-identical fingerprint comparison would always fail. `Verify` compares vector **direction** with a dot-product tolerance of `1e-6` when the collection metric is `Cosine`; otherwise it compares strictly. Semantic disagreements are accumulated into `VerificationError.Mismatches`; read/network failures remain ordinary errors so recovery can distinguish a mismatch response from target unavailability. Only collections with a single unnamed vector config are supported — named multi-vector collections are rejected explicitly rather than verified with the wrong metric.
 
 **Capabilities today:** `{AtomicApply: false, ExactPreview: false, ConditionalWrite: true, Batch: true, Restore: true}`. Sparse in-place release is advertised as **recoverable**, never as globally atomic. `Preview` fidelity is always `FAST`.
 
@@ -663,7 +713,7 @@ function subscribeToRequestHealth(listener: (health: { reachable: true } | { rea
 
 `request` always sets `Content-Type: application/json`. A rejected `fetch` throws a `transport` `ApiError` with status `0` and publishes an unreachable request-health event; an intentional `AbortError` is passed through without changing reachability. Any HTTP response first publishes reachable, then a non-2xx response throws an `http` `ApiError` preserving `body.error.code`, `body.error.message`, and `X-Request-ID` when present. Malformed error envelopes use `code: "UNKNOWN"` and `Request failed ({status})`. A `204` resolves `undefined`. Read methods accept an optional `RequestInit` so callers can supply an `AbortSignal`. All paths are relative; Vite proxies `/api` and `/events` to `127.0.0.1:18080` in development, and production is same-origin.
 
-`api` methods: `status`, `ledgers`, `createLedger`, `changes`, `createChange`, `proposals`, `createProposal`, `proposal`, `proposalChecks`, `proposalApprovals`, `evaluate`, `approve`, `release`, `releases`, `rollback`. `evaluate` exposes the full persisted evidence payload (`passed`, `summary`, `previewFidelity`, optional `findings`, `model`, and `evidence`); `approve` sends the Studio's editable actor.
+`api` methods: `status`, `ledgers`, `createLedger`, `changes`, `createChange`, `proposals`, `createProposal`, `proposal`, `proposalChecks`, `proposalApprovals`, `evaluate`, `approve`, `release`, `releaseIntents`, `releaseIntent`, `retryReleaseIntent`, `resolveReleaseIntent`, `releases`, `rollback`. `evaluate` exposes the full persisted evidence payload (`passed`, `summary`, `previewFidelity`, optional `findings`, `model`, and `evidence`); `approve` sends the Studio's editable actor. The Release Intent methods provide the typed GRF-208 consumer contract, including expanded operations, before-image presence, and mismatch results.
 
 `ProposalDetail.gates` contains aggregate release predicates plus `approvalAction` and `releaseAction` `{ enabled, reason }` values. `features/proposals/gates.ts` projects those per-action values by identity; feature code renders them verbatim and never derives governance permissions from Proposal status.
 
@@ -724,10 +774,11 @@ State composition: `Providers` nests reachability around the AppState context `{
 | `runtime/tests/change_flow_test.go` | full Change → Proposal → Evaluation → Approval → Release and event sequence; idempotent re-submission; rollback; apply/verify failure and recovery events |
 | `runtime/internal/repository/sqlite_test.go` | CheckResult and Approval newest-first ordering, non-null empty lists, and nullable DELETE desired scanning/serialization |
 | `runtime/tests/proposal_detail_test.go` | detail and action gates, release/approval reason anti-drift, moved HEAD, stale/malformed evidence, cross-Ledger isolation, and HTTP serialization |
+| `runtime/tests/release_recovery_test.go` | Intent list/detail and scoping; before-image presence; retry success, mismatch, and unavailability; explicit abandonment; release guard and repeated-call behavior |
 | `runtime/internal/ledger/invariants_test.go` | Proposal hash determinism and order sensitivity; approval staleness after re-hash |
-| `runtime/internal/targets/qdrant/qdrant_test.go` | collection path construction, `api-key` header, cosine vector equivalence |
+| `runtime/internal/targets/qdrant/qdrant_test.go` | collection path construction, `api-key` header, cosine vector equivalence, and structured verification mismatches |
 | `runtime/internal/inference/llamacpp_test.go` | structured-output requirement, free-form rejection |
-| `studio/src/api/client.test.ts` | versioned endpoint paths including Proposal detail/evidence, structured/request-ID error mapping, transport versus HTTP reachability |
+| `studio/src/api/client.test.ts` | versioned endpoint paths including Proposal detail/evidence and Release Intent recovery, structured/request-ID error mapping, transport versus HTTP reachability |
 | `studio/src/api/events.test.ts` | stream state, bounded CLOSED retry, manual reconnect, timer/source teardown, typed named-event parsing and dispatch |
 | `studio/src/app/error-boundary.test.tsx` | fallback/reset contract and once-per-error logging |
 | `studio/src/app/reachability.test.ts` | exact bounded reachability backoff schedule |
@@ -765,7 +816,6 @@ docker build -t gyrifi:dev .
 | Gap | Ticket |
 |---|---|
 | No Proposal cancellation, so claims are permanent | GRF-212 |
-| No API for listing or resolving `RECOVERY_REQUIRED` intents | GRF-213 |
 | List endpoints have no pagination, filtering, or bounds | GRF-214 |
 | No authentication or authorisation anywhere | GRF-220 |
 | `Change.baseFingerprint` is always `""`; no async preparation phase | GRF-221 |

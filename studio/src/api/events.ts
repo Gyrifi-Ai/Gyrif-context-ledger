@@ -36,6 +36,7 @@ const eventKinds: EventKind[] = [
   "release.completed",
   "release.failed",
   "intent.recovery_required",
+  "intent.resolved",
 ];
 
 export function parseDomainEvent(data: string): DomainEvent | undefined {

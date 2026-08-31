@@ -107,7 +107,8 @@ export type EventKind =
   | "release.started"
   | "release.completed"
   | "release.failed"
-  | "intent.recovery_required";
+  | "intent.recovery_required"
+  | "intent.resolved";
 
 export type DomainEvent = {
   kind: EventKind;
@@ -117,4 +118,36 @@ export type DomainEvent = {
 };
 
 export type APIError = { error: { code: string; message: string } };
-export type ReleaseIntentStatus = "READY" | "APPLYING" | "VERIFYING" | "FINALIZED" | "RECOVERY_REQUIRED";
+export type ReleaseIntentStatus = "READY" | "APPLYING" | "VERIFYING" | "FINALIZED" | "RECOVERY_REQUIRED" | "ABANDONED";
+
+export type ReleaseIntentOperation = {
+  unit: string;
+  action: Change["action"];
+  desired?: unknown;
+  expectedFingerprint?: string;
+  expectedExists: boolean;
+  desiredFingerprint: string;
+  targetMetric?: string;
+  beforeObjectHash?: string;
+  beforeExists: boolean;
+  hasBeforeImage: boolean;
+};
+
+export type ReleaseIntent = {
+  id: string;
+  ledgerId: string;
+  proposalId: string;
+  proposalHash: string;
+  parentId?: string;
+  status: ReleaseIntentStatus;
+  plan: { operations: ReleaseIntentOperation[] };
+  createdAt: string;
+  resolution?: string;
+  resolutionNote?: string;
+  resolvedAt?: string;
+};
+
+export type RetryReleaseIntentResult = {
+  resolved: boolean;
+  mismatches: Array<{ unit: string; expected: string; observed: string }>;
+};

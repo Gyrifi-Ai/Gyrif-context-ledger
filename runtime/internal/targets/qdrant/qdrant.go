@@ -200,6 +200,7 @@ func (adapter *Adapter) Apply(ctx context.Context, plan targets.Plan) error {
 	return nil
 }
 func (adapter *Adapter) Verify(ctx context.Context, plan targets.Plan) error {
+	mismatches := make([]targets.VerificationMismatch, 0)
 	for _, operation := range plan.Operations {
 		value, err := adapter.Read(ctx, operation.Unit)
 		if err != nil {
@@ -207,20 +208,24 @@ func (adapter *Adapter) Verify(ctx context.Context, plan targets.Plan) error {
 		}
 		if operation.Action == ledger.ChangeDelete {
 			if value.Exists {
-				return fmt.Errorf("Qdrant point %s still exists", operation.Unit)
+				mismatches = append(mismatches, targets.VerificationMismatch{Unit: operation.Unit, Expected: operation.DesiredFingerprint, Observed: value.Fingerprint})
 			}
 			continue
 		}
 		if !value.Exists {
-			return fmt.Errorf("Qdrant point %s is missing", operation.Unit)
+			mismatches = append(mismatches, targets.VerificationMismatch{Unit: operation.Unit, Expected: operation.DesiredFingerprint})
+			continue
 		}
 		expected, err := normalizePoint(operation.Desired)
 		if err != nil {
 			return fmt.Errorf("normalize desired Qdrant point %s: %w", operation.Unit, err)
 		}
 		if !equivalentJSON(expected, value.Value, operation.TargetMetric) {
-			return fmt.Errorf("Qdrant point %s did not reach desired fingerprint", operation.Unit)
+			mismatches = append(mismatches, targets.VerificationMismatch{Unit: operation.Unit, Expected: operation.DesiredFingerprint, Observed: value.Fingerprint})
 		}
+	}
+	if len(mismatches) != 0 {
+		return &targets.VerificationError{Mismatches: mismatches}
 	}
 	return nil
 }

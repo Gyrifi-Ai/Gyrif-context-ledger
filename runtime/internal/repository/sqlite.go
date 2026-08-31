@@ -380,15 +380,69 @@ func (repository *SQLite) UpdateReleaseIntent(ctx context.Context, id string, st
 	_, err := repository.db.ExecContext(ctx, `UPDATE release_intents SET status=? WHERE id=?`, status, id)
 	return err
 }
+func (repository *SQLite) ResolveReleaseIntent(ctx context.Context, id, note string, resolvedAt time.Time) error {
+	result, err := repository.db.ExecContext(ctx, `UPDATE release_intents SET status=?,resolution=?,resolution_note=?,resolved_at=? WHERE id=? AND status=?`, ledger.IntentAbandoned, string(ledger.IntentAbandoned), note, formatTime(resolvedAt), id, ledger.IntentRecoveryRequired)
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if updated == 0 {
+		return ledger.ErrConflict
+	}
+	return nil
+}
 func scanIntent(scanner interface{ Scan(...any) error }) (ledger.ReleaseIntent, error) {
 	var value ledger.ReleaseIntent
 	var created string
-	err := scanner.Scan(&value.ID, &value.LedgerID, &value.ProposalID, &value.ProposalHash, &value.ParentID, &value.Status, &value.Plan, &created)
+	var resolution, resolutionNote, resolvedAt sql.NullString
+	err := scanner.Scan(&value.ID, &value.LedgerID, &value.ProposalID, &value.ProposalHash, &value.ParentID, &value.Status, &value.Plan, &created, &resolution, &resolutionNote, &resolvedAt)
 	value.CreatedAt = parseTime(created)
+	value.Resolution = resolution.String
+	value.ResolutionNote = resolutionNote.String
+	if resolvedAt.Valid {
+		parsed := parseTime(resolvedAt.String)
+		value.ResolvedAt = &parsed
+	}
 	return value, err
 }
+
+const releaseIntentColumns = `id,ledger_id,proposal_id,proposal_hash,parent_id,status,plan,created_at,resolution,resolution_note,resolved_at`
+
+func (repository *SQLite) LoadReleaseIntent(ctx context.Context, id string) (ledger.ReleaseIntent, error) {
+	value, err := scanIntent(repository.db.QueryRowContext(ctx, `SELECT `+releaseIntentColumns+` FROM release_intents WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return value, ErrNotFound
+	}
+	return value, err
+}
+func (repository *SQLite) ListReleaseIntentsForLedger(ctx context.Context, ledgerID string, status *ledger.ReleaseIntentStatus) ([]ledger.ReleaseIntent, error) {
+	query := `SELECT ` + releaseIntentColumns + ` FROM release_intents WHERE ledger_id=?`
+	arguments := []any{ledgerID}
+	if status != nil {
+		query += ` AND status=?`
+		arguments = append(arguments, *status)
+	}
+	query += ` ORDER BY created_at DESC,id DESC`
+	rows, err := repository.db.QueryContext(ctx, query, arguments...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := make([]ledger.ReleaseIntent, 0)
+	for rows.Next() {
+		item, err := scanIntent(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
 func (repository *SQLite) ListUnfinishedReleaseIntents(ctx context.Context) ([]ledger.ReleaseIntent, error) {
-	rows, err := repository.db.QueryContext(ctx, `SELECT id,ledger_id,proposal_id,proposal_hash,parent_id,status,plan,created_at FROM release_intents WHERE status<>?`, ledger.IntentFinalized)
+	rows, err := repository.db.QueryContext(ctx, `SELECT `+releaseIntentColumns+` FROM release_intents WHERE status NOT IN (?,?)`, ledger.IntentFinalized, ledger.IntentAbandoned)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +458,7 @@ func (repository *SQLite) ListUnfinishedReleaseIntents(ctx context.Context) ([]l
 	return items, rows.Err()
 }
 func (repository *SQLite) LoadReleaseIntentForProposal(ctx context.Context, proposalID string) (ledger.ReleaseIntent, error) {
-	value, err := scanIntent(repository.db.QueryRowContext(ctx, `SELECT id,ledger_id,proposal_id,proposal_hash,parent_id,status,plan,created_at FROM release_intents WHERE proposal_id=? AND status=? ORDER BY created_at DESC LIMIT 1`, proposalID, ledger.IntentFinalized))
+	value, err := scanIntent(repository.db.QueryRowContext(ctx, `SELECT `+releaseIntentColumns+` FROM release_intents WHERE proposal_id=? AND status=? ORDER BY created_at DESC LIMIT 1`, proposalID, ledger.IntentFinalized))
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, ErrNotFound
 	}

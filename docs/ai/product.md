@@ -103,6 +103,7 @@ A `ReleaseIntent` is the durable crash-recovery record. It holds the compiled pl
 ```text
 READY → APPLYING → VERIFYING → FINALIZED
                  ↘ RECOVERY_REQUIRED
+                    ↘ ABANDONED
 ```
 
 A `Release` is immutable and parent-linked. It exists only after target apply **and** verify succeeded. `HEAD` advances in the same SQLite transaction that inserts it.
@@ -176,7 +177,18 @@ Evaluation **never** mutates the target and **never** grants release authority.
 - intents still in `READY` are skipped (no target mutation was attempted),
 - otherwise the plan is re-verified; if it verifies, the Release is finalized; if not, the intent becomes `RECOVERY_REQUIRED`.
 
-Recovery **never guesses success**. There is currently no API or UI to inspect or resolve `RECOVERY_REQUIRED` intents (GRF-213).
+Recovery **never guesses success**. Intents that remain `RECOVERY_REQUIRED` are exposed through the operator recovery API and, in Studio, belong inside Releases.
+
+### Step 7 — Operator recovery
+
+Release Intent recovery is explicit and serialised with ordinary release work:
+
+- `GET .../release-intents` lists the audit records newest-first; `GET .../release-intents/{intentID}` exposes the compiled Plan and reports whether each retained before-image is still present.
+- `POST .../release-intents/{intentID}/retry` re-runs **verification only** and never re-applies. A passing verification uses the normal finalisation path and advances `HEAD` exactly once. A semantic mismatch returns `200` with `resolved: false` and unit-level expected/observed fingerprints; an unreachable target returns `503`.
+- `POST .../release-intents/{intentID}/resolve` requires an operator-authored `ABANDONED` resolution and non-empty note. It records the resolution without advancing `HEAD` or changing the Proposal from its pre-release status.
+- A Ledger with any `RECOVERY_REQUIRED` intent rejects new releases until retry succeeds or an operator abandons the intent. After abandonment and target repair, the same Proposal may be released again.
+
+`RECOVERY_REQUIRED` therefore means the runtime cannot prove target state. Retry distinguishes a recoverable delayed verification from a semantic disagreement without issuing an unsafe write.
 
 ---
 
@@ -222,6 +234,9 @@ These are enforced by code and tests. **Do not weaken any of them.**
 | 15 | Rollback creates forward history | `CreateRollbackProposal` |
 | 16 | Object representation never changes logical hashes | CAS write is content-addressed and idempotent |
 | 17 | Governance works with inference disabled | `engine.inference == nil` branch |
+| 18 | A Ledger cannot start another release while an Intent requires recovery | `ReleaseProposal` queries `RECOVERY_REQUIRED` intents before gate evaluation |
+| 19 | Recovery retry verifies only; it never reapplies target writes | `RetryReleaseIntent` calls `TargetAdapter.Verify`, then the shared finalisation path |
+| 20 | Abandonment is explicit, attributed with a note, and never advances `HEAD` | atomic `ResolveReleaseIntent` transition from `RECOVERY_REQUIRED` to `ABANDONED` |
 
 ---
 
@@ -247,7 +262,7 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 | Gap | Ticket |
 |---|---|
 | Proposals cannot be cancelled; claimed Changes are stuck forever | GRF-212 |
-| `RECOVERY_REQUIRED` intents are invisible and unresolvable | GRF-213 |
+| Release Intent recovery has an API but no operator UI inside Releases | GRF-208 |
 | List endpoints are unbounded and unfiltered | GRF-214 |
 | No authentication; anyone can approve and release | GRF-220 |
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |

@@ -20,15 +20,19 @@ const (
 	IntentVerifying        ReleaseIntentStatus = "VERIFYING"
 	IntentFinalized        ReleaseIntentStatus = "FINALIZED"
 	IntentRecoveryRequired ReleaseIntentStatus = "RECOVERY_REQUIRED"
+	IntentAbandoned        ReleaseIntentStatus = "ABANDONED"
 )
 
 type ReleaseIntent struct {
-	ID           string              `json:"id"`
-	LedgerID     string              `json:"ledgerId"`
-	ProposalID   string              `json:"proposalId"`
-	ProposalHash string              `json:"proposalHash"`
-	ParentID     string              `json:"parentId,omitempty"`
-	Status       ReleaseIntentStatus `json:"status"`
-	Plan         []byte              `json:"plan"`
-	CreatedAt    time.Time           `json:"createdAt"`
+	ID             string              `json:"id"`
+	LedgerID       string              `json:"ledgerId"`
+	ProposalID     string              `json:"proposalId"`
+	ProposalHash   string              `json:"proposalHash"`
+	ParentID       string              `json:"parentId,omitempty"`
+	Status         ReleaseIntentStatus `json:"status"`
+	Plan           []byte              `json:"plan"`
+	CreatedAt      time.Time           `json:"createdAt"`
+	Resolution     string              `json:"resolution,omitempty"`
+	ResolutionNote string              `json:"resolutionNote,omitempty"`
+	ResolvedAt     *time.Time          `json:"resolvedAt,omitempty"`
 }

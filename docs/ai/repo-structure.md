@@ -61,6 +61,7 @@ runtime/
 │   │   ├── proposal_detail.go        #   detail/evidence reads + server-authoritative gates
 │   │   ├── evaluation.go            #   EvaluateProposal
 │   │   ├── releases.go              #   ReleaseProposal, RecoverReleases
+│   │   ├── release_intents.go        #   Intent inspection, verification-only retry, explicit abandonment
 │   │   └── rollback.go              #   CreateRollbackProposal
 │   ├── repository/                  # Gyrifi-owned persistence only
 │   │   ├── repository.go            #   Repository interface + sentinel errors
@@ -84,10 +85,12 @@ runtime/
 │           └── static/              #   embedded Studio assets (index.html fallback in git)
 ├── migrations/
 │   ├── 001_initial.sql              # full schema
+│   ├── 002_release_intent_resolution.sql # additive operator-resolution fields
 │   └── migrations.go                # //go:embed + ordered application
 └── tests/
     ├── change_flow_test.go          # end-to-end governance flow against fakes
-    └── proposal_detail_test.go      # detail gates, evidence, scoping, and HTTP contracts
+    ├── proposal_detail_test.go      # detail gates, evidence, scoping, and HTTP contracts
+    └── release_recovery_test.go     # Intent reads, retry/resolve, release guard, before-images
 ```
 
 ### Layering rules — hard

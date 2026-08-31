@@ -2,9 +2,14 @@ package qdrant
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
+	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets"
 )
 
 func TestReadUsesConfiguredCollectionAndAPIKey(t *testing.T) {
@@ -40,5 +45,22 @@ func TestEquivalentJSONHandlesCosineNormalization(t *testing.T) {
 	}
 	if equivalentJSON(expected, actual, "Dot") {
 		t.Fatal("dot-product vectors must preserve magnitude")
+	}
+}
+
+func TestVerifyReturnsStructuredSemanticMismatches(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"result":{"id":42,"vector":[1,0],"payload":{"answer":"foreign"}}}`))
+	}))
+	defer server.Close()
+	adapter, err := New(server.URL, "context", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = adapter.Verify(context.Background(), targets.Plan{Operations: []targets.Operation{{Unit: "42", Action: ledger.ChangePut, Desired: json.RawMessage(`{"id":42,"vector":[1,0],"payload":{"answer":"expected"}}`), DesiredFingerprint: "sha256:expected", TargetMetric: "Cosine"}}})
+	var verificationError *targets.VerificationError
+	if !errors.As(err, &verificationError) || len(verificationError.Mismatches) != 1 || verificationError.Mismatches[0].Unit != "42" || verificationError.Mismatches[0].Expected != "sha256:expected" || verificationError.Mismatches[0].Observed == "" {
+		t.Fatalf("verification error = %#v", err)
 	}
 }

@@ -21,11 +21,16 @@ type memoryTarget struct {
 	values     map[string]json.RawMessage
 	failApply  bool
 	failVerify bool
+	failRead   bool
+	applyCalls int
 }
 
 func (target *memoryTarget) Read(_ context.Context, unit string) (targets.Value, error) {
 	target.mu.Lock()
 	defer target.mu.Unlock()
+	if target.failRead {
+		return targets.Value{}, errors.New("injected read failure")
+	}
 	value, exists := target.values[unit]
 	copyValue := append(json.RawMessage(nil), value...)
 	return targets.Value{Unit: unit, Value: copyValue, Fingerprint: func() string {
@@ -52,6 +57,7 @@ func (target *memoryTarget) Compile(_ context.Context, changes []ledger.Change) 
 func (target *memoryTarget) Apply(_ context.Context, plan targets.Plan) error {
 	target.mu.Lock()
 	defer target.mu.Unlock()
+	target.applyCalls++
 	if target.failApply {
 		return errors.New("injected apply failure")
 	}
@@ -68,14 +74,21 @@ func (target *memoryTarget) Verify(ctx context.Context, plan targets.Plan) error
 	if target.failVerify {
 		return errors.New("injected verify failure")
 	}
+	mismatches := make([]targets.VerificationMismatch, 0)
 	for _, operation := range plan.Operations {
-		value, _ := target.Read(ctx, operation.Unit)
+		value, err := target.Read(ctx, operation.Unit)
+		if err != nil {
+			return err
+		}
 		if operation.Action == ledger.ChangeDelete && value.Exists {
-			return errors.New("delete failed")
+			mismatches = append(mismatches, targets.VerificationMismatch{Unit: operation.Unit, Expected: operation.DesiredFingerprint, Observed: value.Fingerprint})
 		}
 		if operation.Action == ledger.ChangePut && value.Fingerprint != operation.DesiredFingerprint {
-			return errors.New("put failed")
+			mismatches = append(mismatches, targets.VerificationMismatch{Unit: operation.Unit, Expected: operation.DesiredFingerprint, Observed: value.Fingerprint})
 		}
+	}
+	if len(mismatches) != 0 {
+		return &targets.VerificationError{Mismatches: mismatches}
 	}
 	return nil
 }

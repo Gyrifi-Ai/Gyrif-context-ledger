@@ -3,6 +3,7 @@ package targets
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
 )
@@ -41,6 +42,20 @@ type Operation struct {
 
 type Plan struct {
 	Operations []Operation `json:"operations"`
+}
+
+type VerificationMismatch struct {
+	Unit     string `json:"unit"`
+	Expected string `json:"expected"`
+	Observed string `json:"observed"`
+}
+
+type VerificationError struct {
+	Mismatches []VerificationMismatch
+}
+
+func (err *VerificationError) Error() string {
+	return fmt.Sprintf("target verification found %d mismatched units", len(err.Mismatches))
 }
 
 type TargetAdapter interface {

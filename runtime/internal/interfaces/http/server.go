@@ -58,6 +58,10 @@ func (server *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation", server.evaluateProposal)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals", server.approveProposal)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/release", server.releaseProposal)
+	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/release-intents", server.listReleaseIntents)
+	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/release-intents/{intentID}", server.releaseIntentDetail)
+	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/release-intents/{intentID}/retry", server.retryReleaseIntent)
+	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/release-intents/{intentID}/resolve", server.resolveReleaseIntent)
 	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/releases", server.listReleases)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/releases/{releaseID}/rollback", server.rollbackRelease)
 	mux.HandleFunc("GET /events/v1", server.events)
@@ -247,6 +251,53 @@ func (server *Server) releaseProposal(writer http.ResponseWriter, request *http.
 		return
 	}
 	server.writeJSON(writer, http.StatusCreated, value)
+}
+func (server *Server) listReleaseIntents(writer http.ResponseWriter, request *http.Request) {
+	var status *ledger.ReleaseIntentStatus
+	if rawStatus := request.URL.Query().Get("status"); rawStatus != "" {
+		value := ledger.ReleaseIntentStatus(rawStatus)
+		if !engine.ValidReleaseIntentStatus(value) {
+			server.writeError(writer, engine.CodeInvalid, "Release Intent status is invalid.", http.StatusBadRequest)
+			return
+		}
+		status = &value
+	}
+	items, err := server.engine.ListReleaseIntents(request.Context(), request.PathValue("ledgerID"), status)
+	if err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, map[string]any{"items": items})
+}
+func (server *Server) releaseIntentDetail(writer http.ResponseWriter, request *http.Request) {
+	value, err := server.engine.LoadReleaseIntent(request.Context(), request.PathValue("ledgerID"), request.PathValue("intentID"))
+	if err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, value)
+}
+func (server *Server) retryReleaseIntent(writer http.ResponseWriter, request *http.Request) {
+	value, err := server.engine.RetryReleaseIntent(request.Context(), request.PathValue("ledgerID"), request.PathValue("intentID"))
+	if err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, value)
+}
+func (server *Server) resolveReleaseIntent(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Resolution string `json:"resolution"`
+		Note       string `json:"note"`
+	}
+	if !server.decode(writer, request, &input) {
+		return
+	}
+	if err := server.engine.ResolveReleaseIntent(request.Context(), request.PathValue("ledgerID"), request.PathValue("intentID"), input.Resolution, input.Note); err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 func (server *Server) listReleases(writer http.ResponseWriter, request *http.Request) {
 	items, err := server.engine.ListReleases(request.Context(), request.PathValue("ledgerID"))

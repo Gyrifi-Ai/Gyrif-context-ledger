@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
 )
@@ -32,6 +33,9 @@ type Repository interface {
 	CurrentHead(context.Context, string) (ledger.Head, error)
 	SaveReleaseIntent(context.Context, ledger.ReleaseIntent) error
 	UpdateReleaseIntent(context.Context, string, ledger.ReleaseIntentStatus) error
+	ResolveReleaseIntent(context.Context, string, string, time.Time) error
+	LoadReleaseIntent(context.Context, string) (ledger.ReleaseIntent, error)
+	ListReleaseIntentsForLedger(context.Context, string, *ledger.ReleaseIntentStatus) ([]ledger.ReleaseIntent, error)
 	ListUnfinishedReleaseIntents(context.Context) ([]ledger.ReleaseIntent, error)
 	LoadReleaseIntentForProposal(context.Context, string) (ledger.ReleaseIntent, error)
 	FinalizeRelease(context.Context, ledger.ReleaseIntent, ledger.Release) error

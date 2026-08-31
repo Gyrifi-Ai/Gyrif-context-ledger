@@ -1,4 +1,4 @@
-import type { Approval, Change, CheckResult, EvaluationResponse, Ledger, Proposal, ProposalDetail, Release, SystemStatus } from "./types";
+import type { Approval, Change, CheckResult, EvaluationResponse, Ledger, Proposal, ProposalDetail, Release, ReleaseIntent, ReleaseIntentStatus, RetryReleaseIntentResult, SystemStatus } from "./types";
 
 export type ApiErrorKind = "transport" | "http";
 
@@ -75,6 +75,10 @@ export const api = {
   evaluate: (ledgerId: string, proposalId: string, criteria: string) => request<EvaluationResponse>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/evaluation`, { method: "POST", body: JSON.stringify({ criteria }) }),
   approve: (ledgerId: string, proposalId: string, actor = "local-user") => request<void>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/approvals`, { method: "POST", body: JSON.stringify({ actor }) }),
   release: (ledgerId: string, proposalId: string) => request<Release>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/release`, { method: "POST" }),
+  releaseIntents: (ledgerId: string, status?: ReleaseIntentStatus, init?: RequestInit) => request<{ items: ReleaseIntent[] }>(`/api/v1/ledgers/${ledgerId}/release-intents${status ? `?status=${encodeURIComponent(status)}` : ""}`, init),
+  releaseIntent: (ledgerId: string, intentId: string, init?: RequestInit) => request<ReleaseIntent>(`/api/v1/ledgers/${ledgerId}/release-intents/${intentId}`, init),
+  retryReleaseIntent: (ledgerId: string, intentId: string) => request<RetryReleaseIntentResult>(`/api/v1/ledgers/${ledgerId}/release-intents/${intentId}/retry`, { method: "POST" }),
+  resolveReleaseIntent: (ledgerId: string, intentId: string, note: string) => request<void>(`/api/v1/ledgers/${ledgerId}/release-intents/${intentId}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "ABANDONED", note }) }),
   releases: (ledgerId: string, init?: RequestInit) => request<{ items: Release[] }>(`/api/v1/ledgers/${ledgerId}/releases`, init),
   rollback: (ledgerId: string, releaseId: string) => request<Proposal>(`/api/v1/ledgers/${ledgerId}/releases/${releaseId}/rollback`, { method: "POST" }),
 };

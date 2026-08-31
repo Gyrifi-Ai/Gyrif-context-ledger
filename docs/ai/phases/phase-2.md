@@ -11,7 +11,7 @@
 | [GRF-210](../tickets/GRF-210-event-stream.md) | Real domain event stream | M | — | Done |
 | [GRF-211](../tickets/GRF-211-proposal-detail-api.md) | Proposal detail and evidence read API | M | — | Done |
 | [GRF-212](../tickets/GRF-212-proposal-cancellation.md) | Proposal cancellation and claim release | M | — | Not started |
-| [GRF-213](../tickets/GRF-213-release-intent-api.md) | Release intent inspection and recovery API | L | — | Not started |
+| [GRF-213](../tickets/GRF-213-release-intent-api.md) | Release intent inspection and recovery API | L | — | Done |
 | [GRF-214](../tickets/GRF-214-pagination.md) | Pagination and filtering for list endpoints | M | — | Not started |
 | [GRF-215](../tickets/GRF-215-lifecycle-management.md) | Ledger and Change lifecycle management | M | GRF-212 | Not started |
 
@@ -19,6 +19,7 @@
 
 - **GRF-211 and GRF-213 are prerequisites for Phase 1 work** (GRF-207 and GRF-208 respectively). Schedule them accordingly — the recommended order in [INDEX.md](../tickets/INDEX.md) interleaves the phases for this reason.
 - This phase introduces the first migrations after `001_initial.sql`. `001_initial.sql` is frozen; every schema change is a new numbered file. Migration numbers are allocated in ticket order: 002 (GRF-212), 003 (GRF-213), 004 (GRF-214), 007 (GRF-215). If tickets land out of order, renumber to match the actual apply order and record it here.
+- GRF-213 landed before GRF-212, so its migration uses the next actual apply-order number, `002_release_intent_resolution.sql`, instead of the ticket's planned `003`.
 - Three tickets add enum members — `ProposalStatus.CANCELLED` (GRF-212), `ReleaseIntentStatus.ABANDONED` (GRF-213), and `ChangeStatus.WITHDRAWN` (GRF-215). All must be reflected in `design-system.md` §2.2 status tone mapping and in the exhaustive TypeScript mapping, or the frontend build breaks. That breakage is intentional and desirable.
 - GRF-212 and GRF-215 both manipulate `proposal_changes` claims. Do GRF-212 first; GRF-215's withdrawal guard depends on cancellation existing as the escape hatch for a claimed Change.
 - No new Go dependencies are permitted in this phase.
@@ -331,4 +332,152 @@ $ docker build -t gyrifi:local .
 **Follow-ups discovered**
 
 None beyond the ticketed GRF-220 authorisation requirement and GRF-207 consumer.
+
+### GRF-213 — Release intent inspection and recovery API
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | Yes — migration renumbered from planned 003 to actual apply-order 002 because GRF-213 landed before GRF-212 |
+
+**What was built**
+
+Four Ledger-scoped endpoints expose Release Intents and their expanded Plans, including a live object-store presence check for each retained before-image. Operators can retry verification without reapplying target writes or explicitly abandon a recovery attempt with a required note. Structured target mismatches are distinct from target unavailability, successful retry shares the ordinary atomic finalisation path, and unresolved recovery blocks new releases on the Ledger. The Engine emits `intent.resolved` after either successful retry or abandonment.
+
+**Files added**
+
+- `runtime/internal/engine/release_intents.go` — Intent read models, scoped reads, status validation, verification-only retry, mismatch responses, and explicit resolution.
+- `runtime/migrations/002_release_intent_resolution.sql` — additive resolution, note, and timestamp columns.
+- `runtime/tests/release_recovery_test.go` — Intent API, retry, resolution, release guard, before-image, scoping, and repeated-call coverage.
+
+**Files changed**
+
+- `runtime/internal/ledger/release.go` — `ABANDONED` plus persisted resolution metadata.
+- `runtime/internal/targets/target.go`, `runtime/internal/targets/qdrant/qdrant.go` — structured semantic verification mismatch contract while preserving cosine-aware equivalence.
+- `runtime/internal/repository/repository.go`, `runtime/internal/repository/sqlite.go` — load/list/resolve operations, nullable field scans, and terminal abandonment handling.
+- `runtime/internal/engine/releases.go`, `runtime/internal/engine/events.go` — unresolved-recovery guard, shared finalisation, durable recovery events, and `intent.resolved`.
+- `runtime/internal/interfaces/http/server.go` — two read and two recovery routes with thin request/response translation.
+- `runtime/internal/repository/sqlite_test.go`, `runtime/internal/targets/qdrant/qdrant_test.go`, `runtime/tests/change_flow_test.go` — repository transitions, adapter mismatch structure, no-reapply instrumentation, and target-read failure behavior.
+- `studio/src/api/types.ts`, `studio/src/api/client.ts`, `studio/src/api/client.test.ts` — typed Release Intent contracts and all four client methods.
+- `studio/src/api/events.ts`, `studio/src/api/events.test.ts` — `intent.resolved` event support.
+- `studio/src/features/shared/status.ts`, `studio/src/features/shared/status.test.ts` — exhaustive neutral `ABANDONED` mapping.
+- `docs/ai/product.md`, `docs/ai/repo-structure.md`, `docs/ai/tech-spec.md`, `docs/ai/design-system.md`, `docs/ai/tickets/GRF-213-release-intent-api.md`, `docs/ai/tickets/INDEX.md` — workflow, invariants, contracts, tree, migration, status tone, acceptance, and completion status.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```go
+const IntentAbandoned ReleaseIntentStatus = "ABANDONED"
+
+type VerificationMismatch struct {
+	Unit     string `json:"unit"`
+	Expected string `json:"expected"`
+	Observed string `json:"observed"`
+}
+
+type VerificationError struct {
+	Mismatches []VerificationMismatch
+}
+
+type RetryReleaseIntentResult struct {
+	Resolved   bool                           `json:"resolved"`
+	Mismatches []targets.VerificationMismatch `json:"mismatches"`
+}
+
+func (e *Engine) ListReleaseIntents(ctx context.Context, ledgerID string, status *ledger.ReleaseIntentStatus) ([]ReleaseIntent, error)
+func (e *Engine) LoadReleaseIntent(ctx context.Context, ledgerID, intentID string) (ReleaseIntent, error)
+func (e *Engine) RetryReleaseIntent(ctx context.Context, ledgerID, intentID string) (RetryReleaseIntentResult, error)
+func (e *Engine) ResolveReleaseIntent(ctx context.Context, ledgerID, intentID, resolution, note string) error
+
+func (r *SQLite) ResolveReleaseIntent(ctx context.Context, id, note string, resolvedAt time.Time) error
+func (r *SQLite) LoadReleaseIntent(ctx context.Context, id string) (ledger.ReleaseIntent, error)
+func (r *SQLite) ListReleaseIntentsForLedger(ctx context.Context, ledgerID string, status *ledger.ReleaseIntentStatus) ([]ledger.ReleaseIntent, error)
+```
+
+```ts
+type ReleaseIntentStatus = "READY" | "APPLYING" | "VERIFYING" | "FINALIZED" | "RECOVERY_REQUIRED" | "ABANDONED";
+type RetryReleaseIntentResult = {
+  resolved: boolean;
+  mismatches: Array<{ unit: string; expected: string; observed: string }>;
+};
+```
+
+HTTP routes:
+
+- `GET /api/v1/ledgers/{ledgerID}/release-intents?status=<optional status>`
+- `GET /api/v1/ledgers/{ledgerID}/release-intents/{intentID}`
+- `POST /api/v1/ledgers/{ledgerID}/release-intents/{intentID}/retry`
+- `POST /api/v1/ledgers/{ledgerID}/release-intents/{intentID}/resolve`
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Retry calls `Verify` only and uses the shared `finalizeIntent` tail on success | A partial apply cannot safely be repeated; one finalisation path prevents audit-history drift | Call `Apply` again or duplicate finalisation in retry | Reapplying may overwrite foreign state; duplicate transactional logic will diverge |
+| Target adapters return `VerificationError` only for semantic disagreement | The API must return mismatch details with HTTP 200 while keeping transport/read failures as 503 | Parse adapter error strings or classify every verification error as a mismatch | Strings are not a contract; connectivity failures contain no trustworthy observed state |
+| Derive `hasBeforeImage` by reading the object store | The object store, not a stale database flag, is authoritative for rollback material | Persist a presence boolean | It could outlive or disagree with the actual object |
+| Resolve uses one conditional SQL update from `RECOVERY_REQUIRED` | The status check and resolution metadata must be atomic | Load, check, then perform an unconditional update | Another caller could resolve or finalize between the check and write |
+| Publish one `intent.resolved` event for finalization and abandonment | Both transitions close operator recovery and require the same REST refetch | Add separate success/abandon event kinds | Consumers need invalidation, not event-derived state |
+
+**Deviations from the ticket**
+
+- The migration is `002_release_intent_resolution.sql`, not the planned `003_release_intent_resolution.sql`. GRF-213 landed before GRF-212, and Phase 2 requires numbering by actual apply order. The schema content is unchanged from the acceptance criterion.
+- No behavior or acceptance criterion was omitted.
+
+**Traps for future work**
+
+- A `VerificationError` means verification completed and found semantic mismatches. Any ordinary adapter error means verification could not complete and must remain `UNAVAILABLE`; do not collapse these cases.
+- Retry must never call `Apply` or `Restore`. Its only target mutation-adjacent call is `Verify`, followed by SQLite finalisation when verified.
+- `hasBeforeImage` is intentionally evaluated at read time. `os.ErrNotExist` produces `false`; other object-store failures are internal errors, not missing-object claims.
+- `ABANDONED` is terminal for startup recovery but leaves the Proposal and Changes untouched, allowing a later release after manual target repair.
+- Resolution is intentionally not idempotent: resolving an already terminal Intent returns `409` rather than rewriting operator history.
+
+**Tests added**
+
+- Retry success finalizes through the shared path, advances `HEAD` once, emits completion/resolution events, and never increments target apply calls; a repeated retry conflicts.
+- Semantic mismatch returns unit-level expected/observed fingerprints; target read failure is unavailable and leaves recovery state unchanged; a `VERIFYING` mismatch becomes `RECOVERY_REQUIRED`.
+- Resolution validates the enum and trimmed note, records metadata, preserves Proposal/HEAD state, blocks repeated resolution, unblocks later release, and enforces the Ledger-wide release guard.
+- List/detail endpoints cover newest-first status filtering, invalid status, cross-Ledger isolation, expanded Plan JSON, and present/missing before-images.
+- SQLite tests cover filtered listing, atomic abandonment, repeated-resolution conflict, and exclusion of abandoned rows from startup recovery.
+- Qdrant tests cover structured semantic mismatches while retaining cosine-aware comparison; Studio tests cover endpoint paths, event parsing, and exhaustive status tones.
+
+**Verification**
+
+```text
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race -count=1 && go build ./...
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine 1.626s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference 2.036s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http 2.466s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger 2.857s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository 4.048s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant 3.350s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests 4.975s
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files 17 passed (17)
+Tests 65 passed (65)
+✓ 1865 modules transformed.
+✓ built in 905ms
+
+$ docker build -t gyrifi:local .
+[+] Building 37.5s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+
+$ diff <ticket files> <INDEX status rows>
+tickets consistent
+
+$ git diff --check
+(no output)
+```
+
+**Follow-ups discovered**
+
+- GRF-208 should render the API's `hasBeforeImage` and mismatch values directly and use `intent.resolved` only as a refetch hint.
+- GRF-222 should define retention for before-image objects referenced by abandoned intents.
 
