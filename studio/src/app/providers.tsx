@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { api } from "../api/client";
 import type { Ledger } from "../api/types";
 import { ReachabilityProvider } from "./reachability";
-import { useQuery } from "./use-async";
+import { usePaginatedQuery } from "./use-paginated-query";
 
 interface AppState {
   ledgerId: string;
@@ -10,6 +10,9 @@ interface AppState {
   ledgers: Ledger[];
   setLedgerId: (id: string) => void;
   refreshLedgers: () => Promise<void>;
+  loadMoreLedgers: () => void;
+  hasMoreLedgers: boolean;
+  loadingMoreLedgers: boolean;
   openLedgerSwitcher: () => void;
   ledgerSwitcherRequest: number;
 }
@@ -19,13 +22,13 @@ const Context = createContext<AppState | null>(null);
 function AppStateProvider({ children }: { children: ReactNode }) {
   const [ledgerId, setLedgerId] = useState(() => localStorage.getItem("gyrifi.ledger") ?? "");
   const [ledgerSwitcherRequest, setLedgerSwitcherRequest] = useState(0);
-  const ledgerQuery = useQuery("app-ledgers", async (signal) => (await api.ledgers({ signal })).items ?? [], []);
+  const ledgerQuery = usePaginatedQuery("app-ledgers", (cursor, signal) => api.ledgers({ cursor }, { signal }), []);
   const ledgers = ledgerQuery.data ?? [];
   const refreshLedgers = useCallback(async () => { ledgerQuery.refetch(); }, [ledgerQuery.refetch]);
   const selectLedger = useCallback((id: string) => { localStorage.setItem("gyrifi.ledger", id); setLedgerId(id); }, []);
   const openLedgerSwitcher = useCallback(() => setLedgerSwitcherRequest((request) => request + 1), []);
   const ledger = ledgers.find((item) => item.id === ledgerId) ?? null;
-  const value = useMemo(() => ({ ledgerId, ledger, ledgers, setLedgerId: selectLedger, refreshLedgers, openLedgerSwitcher, ledgerSwitcherRequest }), [ledgerId, ledger, ledgers, selectLedger, refreshLedgers, openLedgerSwitcher, ledgerSwitcherRequest]);
+  const value = useMemo(() => ({ ledgerId, ledger, ledgers, setLedgerId: selectLedger, refreshLedgers, loadMoreLedgers: ledgerQuery.loadMore, hasMoreLedgers: Boolean(ledgerQuery.nextCursor), loadingMoreLedgers: ledgerQuery.loadingMore, openLedgerSwitcher, ledgerSwitcherRequest }), [ledgerId, ledger, ledgers, selectLedger, refreshLedgers, ledgerQuery.loadMore, ledgerQuery.nextCursor, ledgerQuery.loadingMore, openLedgerSwitcher, ledgerSwitcherRequest]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

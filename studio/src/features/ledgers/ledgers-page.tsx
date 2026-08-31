@@ -4,7 +4,8 @@ import { ApiError, api } from "../../api/client";
 import type { Ledger } from "../../api/types";
 import { useAppState } from "../../app/providers";
 import { useLedgerEvents } from "../../app/use-ledger-events";
-import { useMutation, useQuery, type QueryResult } from "../../app/use-async";
+import { useMutation, useQuery } from "../../app/use-async";
+import { usePaginatedQuery, type PaginatedQueryResult } from "../../app/use-paginated-query";
 import { Button } from "../../ui/primitives/button";
 import { Field, FieldGroup } from "../../ui/primitives/field";
 import { Input } from "../../ui/primitives/input";
@@ -25,12 +26,18 @@ const millisecondsPerSecond = 1_000;
 function LedgerCard({ ledger, active, onSelect }: { ledger: Ledger; active: boolean; onSelect: (ledger: Ledger) => void }) {
   const readyQuery = useQuery(
     `ledger-ready-count-${ledger.id}`,
-    async (signal) => countReadyChanges((await api.changes(ledger.id, { signal })).items ?? []),
+    async (signal) => {
+      const page = await api.changes(ledger.id, { limit: 200, status: "READY" }, { signal });
+      return page.nextCursor ? `${countReadyChanges(page.items ?? [])}+` : countReadyChanges(page.items ?? []);
+    },
     [ledger.id],
   );
   const releasesQuery = useQuery(
     `ledger-release-count-${ledger.id}`,
-    async (signal) => (await api.releases(ledger.id, { signal })).items?.length ?? 0,
+    async (signal) => {
+      const page = await api.releases(ledger.id, { limit: 200 }, { signal });
+      return page.nextCursor ? `${page.items?.length ?? 0}+` : page.items?.length ?? 0;
+    },
     [ledger.id],
   );
   useLedgerEvents(ledger.id, readyQuery.refetch);
@@ -74,7 +81,7 @@ function LedgerGridSkeleton() {
   );
 }
 
-function LedgerList({ query, activeId, onSelect, onCreate }: { query: QueryResult<Ledger[]>; activeId: string; onSelect: (ledger: Ledger) => void; onCreate: () => void }) {
+function LedgerList({ query, activeId, onSelect, onCreate }: { query: PaginatedQueryResult<Ledger>; activeId: string; onSelect: (ledger: Ledger) => void; onCreate: () => void }) {
   if (query.loading && query.data === undefined) return <LedgerGridSkeleton />;
   if (query.error) return <ErrorState message={query.error.message} onRetry={query.refetch} />;
   if (query.data === undefined) return <div className={query.unavailable ? "gy-is-refetching" : undefined}><LedgerGridSkeleton /></div>;
@@ -94,6 +101,8 @@ function LedgerList({ query, activeId, onSelect, onCreate }: { query: QueryResul
       <div className="gy-ledger-grid">
         {query.data.map((ledger) => <LedgerCard key={ledger.id} ledger={ledger} active={ledger.id === activeId} onSelect={onSelect} />)}
       </div>
+      {query.nextCursor && <div className="mt-5 flex justify-center"><Button variant="secondary" loading={query.loadingMore} disabled={query.loadingMore || query.refetching} onClick={query.loadMore}>Load more</Button></div>}
+      {query.loadMoreError && <div className="mt-4"><ErrorState title="Unable to load more Ledgers" message={query.loadMoreError.message} onRetry={query.loadMore} retryDisabled={query.loadingMore} /></div>}
     </div>
   );
 }
@@ -109,7 +118,7 @@ export function LedgersPage() {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const restoreHeaderFocusRef = useRef(false);
   const { ledgerId, refreshLedgers, setLedgerId } = useAppState();
-  const ledgerQuery = useQuery("ledgers", async (signal) => (await api.ledgers({ signal })).items ?? [], []);
+  const ledgerQuery = usePaginatedQuery("ledgers", (cursor, signal) => api.ledgers({ cursor }, { signal }), []);
   const createMutation = useMutation(async ({ ledgerName, ledgerDescription }: { ledgerName: string; ledgerDescription: string }) => {
     const ledger = await api.createLedger({ name: ledgerName, description: ledgerDescription || undefined });
     setLedgerId(ledger.id);

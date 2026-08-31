@@ -46,7 +46,7 @@ beforeEach(() => {
   mocks.mutationIndex = 0;
   mocks.appState.ledgerId = "ldg_one";
   mocks.appState.openLedgerSwitcher.mockReset();
-  mocks.query = queryState({ data: [ready, released] });
+  mocks.query = queryState({ data: { items: [ready, released] } });
   for (const mutation of mocks.mutations) {
     mutation.run.mockReset();
     mutation.reset.mockReset();
@@ -67,7 +67,7 @@ describe("ChangesPage", () => {
     expect(html).toContain("point/ready");
     expect(html).toContain("point/released");
     expect(html).toContain('title="2026-08-31T11:58:00Z"');
-    expect(html).toContain("Server-side bounds and filtering are tracked by GRF-214.");
+    expect(html).toContain("Status and action filter the complete server history.");
     expect(html.match(/>1<\/p>/g)?.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -85,7 +85,7 @@ describe("ChangesPage", () => {
     expect(loading.match(/aria-busy="true"/g)?.length).toBeGreaterThanOrEqual(3);
 
     mocks.mutationIndex = 0;
-    mocks.query = queryState({ data: [] });
+    mocks.query = queryState({ data: { items: [] } });
     const empty = renderToStaticMarkup(<ChangesPage />);
     expect(empty).toContain("No Changes yet");
     expect(empty).toContain("/api/v1/ledgers/{id}/changes");
@@ -98,7 +98,7 @@ describe("ChangesPage", () => {
   });
 
   it("keeps populated rows visible and dimmed while refetching", () => {
-    mocks.query = queryState({ data: [ready], refetching: true });
+    mocks.query = queryState({ data: { items: [ready] }, refetching: true });
     const html = renderToStaticMarkup(<ChangesPage />);
     expect(html).toContain("point/ready");
   });
@@ -124,12 +124,12 @@ describe("ChangesPage", () => {
     expect(html).toContain("One or more Changes are already in another active Proposal.");
   });
 
-  it("filters rendered Changes and opens row detail", async () => {
+  it("keeps server-filtered rows during refetch, searches loaded units, and opens row detail", async () => {
     const user = userEvent.setup();
     render(<ChangesPage />);
     await user.selectOptions(screen.getByRole("combobox", { name: "Filter by status" }), "READY");
     expect(screen.getByText("point/ready")).toBeInTheDocument();
-    expect(screen.queryByText("point/released")).not.toBeInTheDocument();
+    expect(screen.getByText("point/released")).toBeInTheDocument();
     await user.selectOptions(screen.getByRole("combobox", { name: "Filter by status" }), "ALL");
     await user.type(screen.getByRole("textbox", { name: "Search units" }), "released");
     expect(screen.queryByText("point/ready")).not.toBeInTheDocument();

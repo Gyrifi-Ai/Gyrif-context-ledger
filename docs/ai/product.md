@@ -266,7 +266,6 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 
 | Gap | Ticket |
 |---|---|
-| List endpoints are unbounded and unfiltered | GRF-214 |
 | No authentication; anyone can approve and release | GRF-220 |
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
 | No retention limits, quotas, or backup command | GRF-222 |

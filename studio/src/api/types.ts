@@ -5,6 +5,18 @@ export type Ledger = {
   createdAt: string;
 };
 
+export type ListOptions = {
+  limit?: number;
+  cursor?: string;
+  status?: string;
+  action?: string;
+};
+
+export type ListPage<T> = {
+  items: T[];
+  nextCursor?: string;
+};
+
 export type Change = {
   id: string;
   ledgerId: string;

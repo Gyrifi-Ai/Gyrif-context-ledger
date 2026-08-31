@@ -67,7 +67,7 @@ describe("LedgersPage", () => {
     expect(loading).toContain('aria-busy="true"');
 
     mocks.appState.ledgerId = ledger.id;
-    mocks.queryStates.set("ledgers", queryState({ data: [ledger] }));
+    mocks.queryStates.set("ledgers", queryState({ data: { items: [ledger] } }));
     mocks.queryStates.set(`ledger-ready-count-${ledger.id}`, queryState({ data: 2 }));
     mocks.queryStates.set(`ledger-release-count-${ledger.id}`, queryState({ data: 4 }));
     const populated = renderToStaticMarkup(<LedgersPage />);
@@ -81,7 +81,7 @@ describe("LedgersPage", () => {
   });
 
   it("renders the empty state with its creation action", () => {
-    mocks.queryStates.set("ledgers", queryState({ data: [] }));
+    mocks.queryStates.set("ledgers", queryState({ data: { items: [] } }));
     const html = renderToStaticMarkup(<LedgersPage />);
     expect(html).toContain("No ledgers yet");
     expect(html).toContain("Create your first ledger");
@@ -96,7 +96,7 @@ describe("LedgersPage", () => {
   });
 
   it("surfaces duplicate-name conflicts only on the name field", () => {
-    mocks.queryStates.set("ledgers", queryState({ data: [] }));
+    mocks.queryStates.set("ledgers", queryState({ data: { items: [] } }));
     mocks.mutation.error = new ApiError("CONFLICT", "A ledger with that name already exists.", 409, "http");
     const html = renderToStaticMarkup(<LedgersPage />);
     expect(html.match(/A ledger with that name already exists\./g)).toHaveLength(1);
@@ -104,7 +104,7 @@ describe("LedgersPage", () => {
   });
 
   it("keeps a card usable when either count is unavailable", () => {
-    mocks.queryStates.set("ledgers", queryState({ data: [ledger] }));
+    mocks.queryStates.set("ledgers", queryState({ data: { items: [ledger] } }));
     mocks.queryStates.set(`ledger-ready-count-${ledger.id}`, queryState({ error: new Error("failed") }));
     mocks.queryStates.set(`ledger-release-count-${ledger.id}`, queryState({ data: 1 }));
     const html = renderToStaticMarkup(<LedgersPage />);
@@ -115,7 +115,7 @@ describe("LedgersPage", () => {
 
   it("validates creation in the drawer and submits trimmed input", async () => {
     const user = userEvent.setup();
-    mocks.queryStates.set("ledgers", queryState({ data: [] }));
+    mocks.queryStates.set("ledgers", queryState({ data: { items: [] } }));
     render(<LedgersPage />);
     await user.click(screen.getByRole("button", { name: "Create your first ledger" }));
     expect(screen.getByRole("dialog", { name: "Create ledger" })).toBeInTheDocument();
@@ -131,7 +131,7 @@ describe("LedgersPage", () => {
 
   it("switches the active ledger from a rendered card", async () => {
     const user = userEvent.setup();
-    mocks.queryStates.set("ledgers", queryState({ data: [ledger] }));
+    mocks.queryStates.set("ledgers", queryState({ data: { items: [ledger] } }));
     render(<LedgersPage />);
     await user.click(screen.getByRole("button", { name: /product-docs/ }));
     expect(mocks.appState.setLedgerId).toHaveBeenCalledWith(ledger.id);
@@ -140,7 +140,7 @@ describe("LedgersPage", () => {
 
   it("disables creation while the Runtime is unreachable", async () => {
     const user = userEvent.setup();
-    mocks.queryStates.set("ledgers", queryState({ data: [] }));
+    mocks.queryStates.set("ledgers", queryState({ data: { items: [] } }));
     mocks.mutation.blocked = true;
     mocks.mutation.disabledReason = "Cannot reach the Gyrifi runtime.";
     render(<LedgersPage />);

@@ -1,4 +1,4 @@
-import type { Approval, Change, CheckResult, EvaluationResponse, Ledger, Proposal, ProposalDetail, Release, ReleaseIntent, ReleaseIntentStatus, RetryReleaseIntentResult, SystemStatus } from "./types";
+import type { Approval, Change, CheckResult, EvaluationResponse, Ledger, ListOptions, ListPage, Proposal, ProposalDetail, Release, ReleaseIntent, ReleaseIntentStatus, RetryReleaseIntentResult, SystemStatus } from "./types";
 
 export type ApiErrorKind = "transport" | "http";
 
@@ -61,13 +61,23 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function listPath(path: string, options?: ListOptions): string {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+  if (options?.cursor !== undefined) query.set("cursor", options.cursor);
+  if (options?.status !== undefined) query.set("status", options.status);
+  if (options?.action !== undefined) query.set("action", options.action);
+  const encoded = query.toString();
+  return encoded ? `${path}?${encoded}` : path;
+}
+
 export const api = {
   status: (init?: RequestInit) => request<SystemStatus>("/api/v1/system/status", init),
-  ledgers: (init?: RequestInit) => request<{ items: Ledger[] }>("/api/v1/ledgers", init),
+  ledgers: (options?: ListOptions, init?: RequestInit) => request<ListPage<Ledger>>(listPath("/api/v1/ledgers", options), init),
   createLedger: (input: { name: string; description?: string }) => request<Ledger>("/api/v1/ledgers", { method: "POST", body: JSON.stringify(input) }),
-  changes: (ledgerId: string, init?: RequestInit) => request<{ items: Change[] }>(`/api/v1/ledgers/${ledgerId}/changes`, init),
+  changes: (ledgerId: string, options?: ListOptions, init?: RequestInit) => request<ListPage<Change>>(listPath(`/api/v1/ledgers/${ledgerId}/changes`, options), init),
   createChange: (ledgerId: string, input: { unit: string; action: "PUT" | "DELETE"; desired?: unknown; idempotencyKey: string }) => request<Change>(`/api/v1/ledgers/${ledgerId}/changes`, { method: "POST", body: JSON.stringify(input) }),
-  proposals: (ledgerId: string, init?: RequestInit) => request<{ items: Proposal[] }>(`/api/v1/ledgers/${ledgerId}/proposals`, init),
+  proposals: (ledgerId: string, options?: ListOptions, init?: RequestInit) => request<ListPage<Proposal>>(listPath(`/api/v1/ledgers/${ledgerId}/proposals`, options), init),
   createProposal: (ledgerId: string, input: { title: string; changeIds: string[] }) => request<Proposal>(`/api/v1/ledgers/${ledgerId}/proposals`, { method: "POST", body: JSON.stringify(input) }),
   proposal: (ledgerId: string, proposalId: string, init?: RequestInit) => request<ProposalDetail>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}`, init),
   proposalChecks: (ledgerId: string, proposalId: string, init?: RequestInit) => request<{ items: CheckResult[] }>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/checks`, init),
@@ -80,7 +90,7 @@ export const api = {
   releaseIntent: (ledgerId: string, intentId: string, init?: RequestInit) => request<ReleaseIntent>(`/api/v1/ledgers/${ledgerId}/release-intents/${intentId}`, init),
   retryReleaseIntent: (ledgerId: string, intentId: string) => request<RetryReleaseIntentResult>(`/api/v1/ledgers/${ledgerId}/release-intents/${intentId}/retry`, { method: "POST" }),
   resolveReleaseIntent: (ledgerId: string, intentId: string, note: string) => request<void>(`/api/v1/ledgers/${ledgerId}/release-intents/${intentId}/resolve`, { method: "POST", body: JSON.stringify({ resolution: "ABANDONED", note }) }),
-  releases: (ledgerId: string, init?: RequestInit) => request<{ items: Release[] }>(`/api/v1/ledgers/${ledgerId}/releases`, init),
+  releases: (ledgerId: string, options?: ListOptions, init?: RequestInit) => request<ListPage<Release>>(listPath(`/api/v1/ledgers/${ledgerId}/releases`, options), init),
   rollback: (ledgerId: string, releaseId: string) => request<Proposal>(`/api/v1/ledgers/${ledgerId}/releases/${releaseId}/rollback`, { method: "POST" }),
 };
 

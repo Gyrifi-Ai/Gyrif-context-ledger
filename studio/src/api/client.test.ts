@@ -11,6 +11,23 @@ describe("API client", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/ledgers", expect.any(Object));
   });
 
+  it("encodes list options and propagates next cursors", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [], nextCursor: "next-page" }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.changes("ldg_one", { limit: 25, cursor: "a/b+c=", status: "READY", action: "DELETE" })).resolves.toEqual({ items: [], nextCursor: "next-page" });
+    await api.proposals("ldg_one", { cursor: "proposal cursor", status: "CANCELLED" });
+    await api.releases("ldg_one", { limit: 1 });
+    await api.ledgers({ cursor: "ledger cursor" });
+
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/ledgers/ldg_one/changes?limit=25&cursor=a%2Fb%2Bc%3D&status=READY&action=DELETE",
+      "/api/v1/ledgers/ldg_one/proposals?cursor=proposal+cursor&status=CANCELLED",
+      "/api/v1/ledgers/ldg_one/releases?limit=1",
+      "/api/v1/ledgers?cursor=ledger+cursor",
+    ]);
+  });
+
   it("uses the proposal detail and evidence endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } })));
     vi.stubGlobal("fetch", fetchMock);

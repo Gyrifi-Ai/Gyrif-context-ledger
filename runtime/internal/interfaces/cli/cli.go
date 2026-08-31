@@ -19,11 +19,20 @@ func Run(ctx context.Context, args []string, application *engine.Engine, output 
 	}
 	switch args[0] {
 	case "doctor":
-		ledgers, err := application.ListLedgers(ctx)
-		if err != nil {
-			return true, err
+		ledgerCount := 0
+		cursor := ""
+		for {
+			page, err := application.ListLedgers(ctx, engine.ListRequest{Limit: engine.MaxListLimit, Cursor: cursor})
+			if err != nil {
+				return true, err
+			}
+			ledgerCount += len(page.Items)
+			if page.NextCursor == "" {
+				break
+			}
+			cursor = page.NextCursor
 		}
-		return true, json.NewEncoder(output).Encode(map[string]any{"status": "ok", "ledgers": len(ledgers), "inference": application.InferenceName()})
+		return true, json.NewEncoder(output).Encode(map[string]any{"status": "ok", "ledgers": ledgerCount, "inference": application.InferenceName()})
 	default:
 		return true, fmt.Errorf("unknown command %q", args[0])
 	}

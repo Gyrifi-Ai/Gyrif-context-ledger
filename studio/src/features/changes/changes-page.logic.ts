@@ -13,13 +13,9 @@ export type ChangeSubmission = {
   desired?: unknown;
 };
 
-export function filterChanges(changes: Change[], filters: ChangeFilters): Change[] {
-  const unit = filters.unit.trim().toLocaleLowerCase();
-  return changes.filter((change) => (
-    (filters.status === "ALL" || change.status === filters.status)
-    && (filters.action === "ALL" || change.action === filters.action)
-    && (unit === "" || change.unit.toLocaleLowerCase().includes(unit))
-  ));
+export function filterChangesByUnit(changes: Change[], query: string): Change[] {
+  const unit = query.trim().toLocaleLowerCase();
+  return unit === "" ? changes : changes.filter((change) => change.unit.toLocaleLowerCase().includes(unit));
 }
 
 export function countChangeStatuses(changes: Change[]): { ready: number; released: number; invalid: number } {

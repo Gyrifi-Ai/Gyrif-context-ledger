@@ -110,23 +110,38 @@ func (repository *SQLite) CreateLedger(ctx context.Context, value ledger.Ledger)
 	return tx.Commit()
 }
 
-func (repository *SQLite) ListLedgers(ctx context.Context) ([]ledger.Ledger, error) {
-	rows, err := repository.db.QueryContext(ctx, `SELECT id,name,description,created_at FROM ledgers ORDER BY created_at`)
+func (repository *SQLite) ListLedgers(ctx context.Context, options ListOptions) (Page[ledger.Ledger], error) {
+	query := `SELECT id,name,description,created_at FROM ledgers`
+	args := make([]any, 0, 3)
+	if options.Cursor != nil {
+		query += ` WHERE (created_at, id) < (?, ?)`
+		args = append(args, formatTime(options.Cursor.CreatedAt), options.Cursor.ID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	args = append(args, options.Limit+1)
+	rows, err := repository.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list ledgers: %w", err)
+		return Page[ledger.Ledger]{}, fmt.Errorf("list ledgers: %w", err)
 	}
 	defer rows.Close()
-	var items []ledger.Ledger
+	items := make([]ledger.Ledger, 0, options.Limit+1)
 	for rows.Next() {
 		var item ledger.Ledger
 		var created string
 		if err := rows.Scan(&item.ID, &item.Name, &item.Description, &created); err != nil {
-			return nil, err
+			return Page[ledger.Ledger]{}, err
 		}
 		item.CreatedAt = parseTime(created)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return Page[ledger.Ledger]{}, err
+	}
+	page := Page[ledger.Ledger]{Items: items, HasMore: len(items) > options.Limit}
+	if page.HasMore {
+		page.Items = page.Items[:options.Limit]
+	}
+	return page, nil
 }
 
 func scanChange(scanner interface{ Scan(...any) error }) (ledger.Change, error) {
@@ -165,21 +180,44 @@ func (repository *SQLite) InsertChange(ctx context.Context, value *ledger.Change
 	return tx.Commit()
 }
 
-func (repository *SQLite) ListChanges(ctx context.Context, ledgerID string) ([]ledger.Change, error) {
-	rows, err := repository.db.QueryContext(ctx, `SELECT `+changeColumns+` FROM changes WHERE ledger_id=? ORDER BY sequence DESC`, ledgerID)
+func (repository *SQLite) ListChanges(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Change], error) {
+	query := `SELECT ` + changeColumns + ` FROM changes WHERE ledger_id=?`
+	args := []any{ledgerID}
+	if options.Status != nil {
+		query += ` AND status=?`
+		args = append(args, *options.Status)
+	}
+	if options.Action != nil {
+		query += ` AND action=?`
+		args = append(args, *options.Action)
+	}
+	if options.Cursor != nil {
+		query += ` AND (created_at, id) < (?, ?)`
+		args = append(args, formatTime(options.Cursor.CreatedAt), options.Cursor.ID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	args = append(args, options.Limit+1)
+	rows, err := repository.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return Page[ledger.Change]{}, err
 	}
 	defer rows.Close()
-	var items []ledger.Change
+	items := make([]ledger.Change, 0, options.Limit+1)
 	for rows.Next() {
 		item, err := scanChange(rows)
 		if err != nil {
-			return nil, err
+			return Page[ledger.Change]{}, err
 		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return Page[ledger.Change]{}, err
+	}
+	page := Page[ledger.Change]{Items: items, HasMore: len(items) > options.Limit}
+	if page.HasMore {
+		page.Items = page.Items[:options.Limit]
+	}
+	return page, nil
 }
 
 func (repository *SQLite) LoadChanges(ctx context.Context, ledgerID string, ids []string) ([]ledger.Change, error) {
@@ -245,24 +283,40 @@ func (repository *SQLite) LoadProposal(ctx context.Context, ledgerID, id string)
 	}
 	return item, err
 }
-func (repository *SQLite) ListProposals(ctx context.Context, ledgerID string) ([]ledger.Proposal, error) {
-	rows, err := repository.db.QueryContext(ctx, `SELECT id,ledger_id,title,base_release_id,proposal_hash,status,change_ids,created_at FROM proposals WHERE ledger_id=? ORDER BY created_at DESC`, ledgerID)
+func (repository *SQLite) ListProposals(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Proposal], error) {
+	query := `SELECT id,ledger_id,title,base_release_id,proposal_hash,status,change_ids,created_at FROM proposals WHERE ledger_id=?`
+	args := []any{ledgerID}
+	if options.Status != nil {
+		query += ` AND status=?`
+		args = append(args, *options.Status)
+	}
+	if options.Cursor != nil {
+		query += ` AND (created_at, id) < (?, ?)`
+		args = append(args, formatTime(options.Cursor.CreatedAt), options.Cursor.ID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	args = append(args, options.Limit+1)
+	rows, err := repository.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return Page[ledger.Proposal]{}, err
 	}
 	defer rows.Close()
-	var items []ledger.Proposal
+	items := make([]ledger.Proposal, 0, options.Limit+1)
 	for rows.Next() {
 		item, err := scanProposal(rows)
 		if err != nil {
-			return nil, err
+			return Page[ledger.Proposal]{}, err
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return Page[ledger.Proposal]{}, err
 	}
-	return items, nil
+	page := Page[ledger.Proposal]{Items: items, HasMore: len(items) > options.Limit}
+	if page.HasMore {
+		page.Items = page.Items[:options.Limit]
+	}
+	return page, nil
 }
 
 func (repository *SQLite) HasReleaseIntent(ctx context.Context, proposalID string) (bool, error) {
@@ -536,23 +590,38 @@ func (repository *SQLite) FinalizeRelease(ctx context.Context, intent ledger.Rel
 	}
 	return tx.Commit()
 }
-func (repository *SQLite) ListReleases(ctx context.Context, ledgerID string) ([]ledger.Release, error) {
-	rows, err := repository.db.QueryContext(ctx, `SELECT id,ledger_id,proposal_id,parent_id,release_hash,created_at FROM releases WHERE ledger_id=? ORDER BY created_at DESC`, ledgerID)
+func (repository *SQLite) ListReleases(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Release], error) {
+	query := `SELECT id,ledger_id,proposal_id,parent_id,release_hash,created_at FROM releases WHERE ledger_id=?`
+	args := []any{ledgerID}
+	if options.Cursor != nil {
+		query += ` AND (created_at, id) < (?, ?)`
+		args = append(args, formatTime(options.Cursor.CreatedAt), options.Cursor.ID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	args = append(args, options.Limit+1)
+	rows, err := repository.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, err
+		return Page[ledger.Release]{}, err
 	}
 	defer rows.Close()
-	var items []ledger.Release
+	items := make([]ledger.Release, 0, options.Limit+1)
 	for rows.Next() {
 		var item ledger.Release
 		var created string
 		if err := rows.Scan(&item.ID, &item.LedgerID, &item.ProposalID, &item.ParentID, &item.Hash, &created); err != nil {
-			return nil, err
+			return Page[ledger.Release]{}, err
 		}
 		item.CreatedAt = parseTime(created)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return Page[ledger.Release]{}, err
+	}
+	page := Page[ledger.Release]{Items: items, HasMore: len(items) > options.Limit}
+	if page.HasMore {
+		page.Items = page.Items[:options.Limit]
+	}
+	return page, nil
 }
 func (repository *SQLite) WriteObject(ctx context.Context, kind string, value []byte) (string, error) {
 	return repository.objects.Write(ctx, kind, value)

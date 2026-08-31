@@ -40,7 +40,7 @@ export function ProposalOrder({ changes, orderedIds, onChange }: { changes: Chan
   );
 }
 
-export function CreateProposalDrawer({ open, ledgerId, changes, onClose, onCreated, onConflict }: { open: boolean; ledgerId: string; changes: Change[]; onClose: () => void; onCreated: (proposal: Proposal) => void; onConflict: () => void }) {
+export function CreateProposalDrawer({ open, ledgerId, changes, hasMoreChanges = false, loadingMoreChanges = false, onLoadMoreChanges, onClose, onCreated, onConflict }: { open: boolean; ledgerId: string; changes: Change[]; hasMoreChanges?: boolean; loadingMoreChanges?: boolean; onLoadMoreChanges?: () => void; onClose: () => void; onCreated: (proposal: Proposal) => void; onConflict: () => void }) {
   const [title, setTitle] = useState("");
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const mutation = useMutation(async ({ proposalTitle, changeIds }: { proposalTitle: string; changeIds: string[] }) => {
@@ -87,6 +87,7 @@ export function CreateProposalDrawer({ open, ledgerId, changes, onClose, onCreat
           <div className="max-h-80 overflow-auto rounded-md border border-border">
             <DataTable columns={columns} rows={changes} getRowId={(change) => change.id} selectable selectedIds={orderedIds} onSelectionChange={setOrderedIds} empty={<p className="p-4 text-sm text-muted-foreground">No READY Changes are available.</p>} />
           </div>
+          {hasMoreChanges && <div className="mt-3 text-center"><Button variant="secondary" size="sm" loading={loadingMoreChanges} disabled={loadingMoreChanges} onClick={onLoadMoreChanges}>Load more Changes</Button></div>}
         </div>
         <ProposalOrder changes={orderedChanges} orderedIds={orderedIds} onChange={setOrderedIds} />
         {mutation.error && <ErrorState title="Unable to create Proposal" message={mutation.error.message} onRetry={() => void mutation.run({ proposalTitle: title.trim(), changeIds: orderedIds })} retryDisabled={mutation.blocked || !title.trim() || orderedIds.length === 0} retryTitle={mutation.disabledReason} />}

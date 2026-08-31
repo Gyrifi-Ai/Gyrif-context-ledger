@@ -100,10 +100,11 @@ func TestListChangesScansNullDesiredForDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := repository.ListChanges(ctx, proposal.LedgerID)
+	page, err := repository.ListChanges(ctx, proposal.LedgerID, ListOptions{Limit: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
+	items := page.Items
 	if len(items) != 2 || items[0].ID != change.ID || items[0].Desired != nil {
 		t.Fatalf("changes = %#v", items)
 	}
@@ -209,9 +210,49 @@ func TestProposalCancellationMigrationBackfillsOrderedSnapshot(t *testing.T) {
 	if got, want := strings.Join(proposal.ChangeIDs, ","), "chg_second,chg_first"; got != want {
 		t.Fatalf("backfilled Change order = %q, want %q", got, want)
 	}
-	items, err := upgraded.ListProposals(ctx, "ldg_upgrade")
+	page, err := upgraded.ListProposals(ctx, "ldg_upgrade", ListOptions{Limit: 50})
+	items := page.Items
 	if err != nil || len(items) != 1 || strings.Join(items[0].ChangeIDs, ",") != "chg_second,chg_first" {
 		t.Fatalf("upgraded Proposal list = %#v, %v", items, err)
+	}
+}
+
+func TestPaginationQueriesUseListIndexes(t *testing.T) {
+	ctx := context.Background()
+	repository, proposal := proposalRepository(t)
+	tests := []struct {
+		name  string
+		query string
+		args  []any
+		index string
+	}{
+		{"ledgers", `EXPLAIN QUERY PLAN SELECT id,name,description,created_at FROM ledgers WHERE (created_at,id) < (?,?) ORDER BY created_at DESC,id DESC LIMIT ?`, []any{formatTime(time.Now().UTC()), "ldg_cursor", 51}, "ledgers_list"},
+		{"changes", `EXPLAIN QUERY PLAN SELECT ` + changeColumns + ` FROM changes WHERE ledger_id=? AND status=? AND action=? AND (created_at,id) < (?,?) ORDER BY created_at DESC,id DESC LIMIT ?`, []any{proposal.LedgerID, ledger.ChangeReady, ledger.ChangePut, formatTime(time.Now().UTC()), "chg_cursor", 51}, "changes_status_list"},
+		{"proposals", `EXPLAIN QUERY PLAN SELECT id,ledger_id,title,base_release_id,proposal_hash,status,change_ids,created_at FROM proposals WHERE ledger_id=? AND status=? AND (created_at,id) < (?,?) ORDER BY created_at DESC,id DESC LIMIT ?`, []any{proposal.LedgerID, ledger.ProposalDraft, formatTime(time.Now().UTC()), "pr_cursor", 51}, "proposals_status_list"},
+		{"releases", `EXPLAIN QUERY PLAN SELECT id,ledger_id,proposal_id,parent_id,release_hash,created_at FROM releases WHERE ledger_id=? AND (created_at,id) < (?,?) ORDER BY created_at DESC,id DESC LIMIT ?`, []any{proposal.LedgerID, formatTime(time.Now().UTC()), "rel_cursor", 51}, "releases_list"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rows, err := repository.db.QueryContext(ctx, test.query, test.args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer rows.Close()
+			var plan []string
+			for rows.Next() {
+				var id, parent, unused int
+				var detail string
+				if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+					t.Fatal(err)
+				}
+				plan = append(plan, detail)
+			}
+			joined := strings.Join(plan, " | ")
+			t.Log(joined)
+			if !strings.Contains(joined, test.index) {
+				t.Fatalf("query plan did not use %s: %s", test.index, joined)
+			}
+		})
 	}
 }
 

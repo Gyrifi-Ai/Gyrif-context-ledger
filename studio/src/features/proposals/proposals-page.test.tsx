@@ -1,18 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { render, screen } from "@testing-library/react";
 import type { Change, Proposal } from "../../api/types";
 import { ProposalsPage } from "./proposals-page";
 
 const mocks = vi.hoisted(() => ({
-  query: {} as Record<string, unknown>,
+  proposalsQuery: {} as Record<string, unknown>,
+  changesQuery: {} as Record<string, unknown>,
   appState: { ledgerId: "ldg_one", openLedgerSwitcher: vi.fn() },
 }));
 vi.mock("../../app/providers", () => ({ useAppState: () => mocks.appState }));
 vi.mock("../../app/use-ledger-events", () => ({ useLedgerEvents: vi.fn() }));
 vi.mock("../../app/use-async", () => ({
-  useQuery: () => mocks.query,
   useMutation: () => ({ run: vi.fn(), pending: false, blocked: false, disabledReason: undefined, error: undefined, result: undefined, reset: vi.fn() }),
 }));
+vi.mock("../../app/use-paginated-query", () => ({ usePaginatedQuery: (key: string) => key === "proposals" ? mocks.proposalsQuery : mocks.changesQuery }));
 
 const proposal: Proposal = { id: "pr_one", ledgerId: "ldg_one", title: "Safety review", hash: "sha256:one", status: "DRAFT", changeIds: ["chg_one"], createdAt: "2026-08-31T00:00:00Z" };
 const change: Change = { id: "chg_one", ledgerId: "ldg_one", sequence: 1, unit: "point/one", action: "PUT", desired: {}, baseFingerprint: "", desiredFingerprint: "sha256:desired", status: "READY", createdAt: "2026-08-31T00:00:00Z" };
@@ -24,7 +26,8 @@ function queryState(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   mocks.appState.ledgerId = "ldg_one";
   mocks.appState.openLedgerSwitcher.mockReset();
-  mocks.query = queryState({ data: { proposals: [proposal], readyChanges: [change] } });
+  mocks.proposalsQuery = queryState({ data: [proposal], nextCursor: undefined, loadingMore: false, loadMoreError: undefined, loadMore: vi.fn() });
+  mocks.changesQuery = queryState({ data: [change], nextCursor: undefined, loadingMore: false, loadMoreError: undefined, loadMore: vi.fn() });
 });
 
 describe("ProposalsPage", () => {
@@ -38,13 +41,13 @@ describe("ProposalsPage", () => {
   });
 
   it("renders list loading, empty, error, and stale populated states", () => {
-    mocks.query = queryState({ loading: true });
+    mocks.proposalsQuery = queryState({ loading: true });
     expect(renderToStaticMarkup(<ProposalsPage />)).toContain("Loading Proposals");
-    mocks.query = queryState({ data: { proposals: [], readyChanges: [] } });
+    mocks.proposalsQuery = queryState({ data: [] });
     expect(renderToStaticMarkup(<ProposalsPage />)).toContain("No Proposals");
-    mocks.query = queryState({ error: new Error("Queue failed") });
+    mocks.proposalsQuery = queryState({ error: new Error("Queue failed") });
     expect(renderToStaticMarkup(<ProposalsPage />)).toContain("Queue failed");
-    mocks.query = queryState({ data: { proposals: [proposal], readyChanges: [change] }, refetching: true });
+    mocks.proposalsQuery = queryState({ data: [proposal], refetching: true });
     const stale = renderToStaticMarkup(<ProposalsPage />);
     expect(stale).toContain("Safety review");
   });
@@ -54,5 +57,11 @@ describe("ProposalsPage", () => {
     const html = renderToStaticMarkup(<ProposalsPage />);
     expect(html).toContain("Select a ledger");
     expect(html).toContain("Select ledger");
+  });
+
+  it("disables Load more while the next Proposal page is loading", () => {
+    mocks.proposalsQuery = queryState({ data: [proposal], nextCursor: "next", loadingMore: true, loadMore: vi.fn() });
+    render(<ProposalsPage />);
+    expect(screen.getByRole("button", { name: "Load more" })).toBeDisabled();
   });
 });

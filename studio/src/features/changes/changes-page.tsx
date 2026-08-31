@@ -4,7 +4,8 @@ import { ApiError, api } from "../../api/client";
 import type { Change } from "../../api/types";
 import { useAppState } from "../../app/providers";
 import { useLedgerEvents } from "../../app/use-ledger-events";
-import { useMutation, useQuery, type QueryResult } from "../../app/use-async";
+import { useMutation } from "../../app/use-async";
+import { usePaginatedQuery, type PaginatedQueryResult } from "../../app/use-paginated-query";
 import { Button } from "../../ui/primitives/button";
 import { Field, FieldGroup } from "../../ui/primitives/field";
 import { Input } from "../../ui/primitives/input";
@@ -22,7 +23,7 @@ import { Stat } from "../../ui/patterns/stat";
 import { StatusBadge } from "../../ui/patterns/status-badge";
 import { changeTone } from "../shared/status";
 import { formatAge } from "../shared/time";
-import { countChangeStatuses, filterChanges, moveOrdered, newIdempotencyKey, prepareChangeSubmission, validateDesiredJson, type ChangeFilters, type ChangeSubmission } from "./changes-page.logic";
+import { countChangeStatuses, filterChangesByUnit, moveOrdered, newIdempotencyKey, prepareChangeSubmission, validateDesiredJson, type ChangeFilters, type ChangeSubmission } from "./changes-page.logic";
 import { SelectionActionBar } from "./selection-action-bar";
 import { ChangeDetailDrawer } from "./change-detail-drawer";
 
@@ -48,7 +49,7 @@ function ChangesSkeleton() {
 }
 
 function ChangesSurface({ query, filtered, selectedIds, highlightedId, onSelectionChange, onRowClick, onSubmit }: {
-  query: QueryResult<Change[]>;
+  query: PaginatedQueryResult<Change>;
   filtered: Change[];
   selectedIds: string[];
   highlightedId: string;
@@ -84,6 +85,8 @@ function ChangesSurface({ query, filtered, selectedIds, highlightedId, onSelecti
           empty={<EmptyState variant="compact" title="No Changes match these filters" description="Clear or change a filter to see more of the durable inbox." />}
         />
       </Panel>
+      {query.nextCursor && <div className="mt-5 flex justify-center"><Button variant="secondary" loading={query.loadingMore} disabled={query.loadingMore || query.refetching} onClick={query.loadMore}>Load more</Button></div>}
+      {query.loadMoreError && <div className="mt-4"><ErrorState title="Unable to load more Changes" message={query.loadMoreError.message} onRetry={query.loadMore} retryDisabled={query.loadingMore} /></div>}
     </div>
   );
 }
@@ -108,7 +111,13 @@ export function ChangesPage() {
   const submitButton = useRef<HTMLButtonElement>(null);
   const unitInput = useRef<HTMLInputElement>(null);
 
-  const changesQuery = useQuery("changes", async (signal) => ledgerId ? (await api.changes(ledgerId, { signal })).items ?? [] : [], [ledgerId]);
+  const changesQuery = usePaginatedQuery(
+    "changes",
+    (cursor, signal) => ledgerId
+      ? api.changes(ledgerId, { cursor, status: filters.status === "ALL" ? undefined : filters.status, action: filters.action === "ALL" ? undefined : filters.action }, { signal })
+      : Promise.resolve({ items: [] }),
+    [ledgerId, filters.status, filters.action],
+  );
   useLedgerEvents(ledgerId, changesQuery.refetch);
 
   const showConfirmation = (message: string, changeId = "") => {
@@ -156,7 +165,7 @@ export function ChangesPage() {
   }, [submitOpen, submitMutation.result]);
 
   const items = changesQuery.data ?? [];
-  const filtered = useMemo(() => filterChanges(items, filters), [items, filters]);
+  const filtered = useMemo(() => filterChangesByUnit(items, filters.unit), [items, filters.unit]);
   const counts = useMemo(() => countChangeStatuses(items), [items]);
   const jsonError = action === "PUT" ? validateDesiredJson(desired) : undefined;
   const idempotencyConflict = submitMutation.error instanceof ApiError && submitMutation.error.code === "CONFLICT" ? submitMutation.error.message : undefined;
@@ -237,7 +246,7 @@ export function ChangesPage() {
         <label className="grid min-w-60 flex-1 gap-1 text-xs font-medium text-muted-foreground">Unit
           <Input aria-label="Search units" value={filters.unit} onChange={(event) => setFilters((value) => ({ ...value, unit: event.target.value }))} placeholder="Search unit…" />
         </label>
-        <p className="w-full text-xs text-muted-foreground">Filters apply to the fetched list. Server-side bounds and filtering are tracked by GRF-214.</p>
+        <p className="w-full text-xs text-muted-foreground">Status and action filter the complete server history. Unit search matches the rows loaded so far.</p>
       </div>
       <ChangesSurface query={changesQuery} filtered={filtered} selectedIds={selectedIds} highlightedId={highlightedId} onSelectionChange={setSelectedIds} onRowClick={setDetail} onSubmit={openSubmit} />
 

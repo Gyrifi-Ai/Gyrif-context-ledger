@@ -3,7 +3,7 @@ import { useAppState } from "../../app/providers";
 import { cn } from "@/lib/utils";
 
 export function LedgerSwitcher() {
-  const { ledger, ledgers, ledgerSwitcherRequest, setLedgerId } = useAppState();
+  const { ledger, ledgers, ledgerSwitcherRequest, setLedgerId, loadMoreLedgers, hasMoreLedgers, loadingMoreLedgers } = useAppState();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -64,6 +64,7 @@ export function LedgerSwitcher() {
               {item.name}
             </button>
           ))}
+          {hasMoreLedgers && !query && <button type="button" disabled={loadingMoreLedgers} onClick={loadMoreLedgers} className="mt-2 block w-full rounded-sm px-2 py-2 text-left text-xs font-medium text-primary hover:bg-muted disabled:opacity-60">{loadingMoreLedgers ? "Loading…" : "Load more"}</button>}
         </div>
       )}
     </div>

@@ -68,11 +68,11 @@ func TestCancelProposalReleasesClaimsAndRetainsAudit(t *testing.T) {
 	if _, err := application.EvaluateProposal(ctx, ledgerID, proposal.ID, "safe"); err == nil || publicMessage(err) != "A cancelled Proposal cannot be evaluated." {
 		t.Fatalf("cancelled evaluation error = %v", err)
 	}
-	changes, err := application.ListChanges(ctx, ledgerID)
+	changes, err := application.ListChanges(ctx, ledgerID, engine.ListRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range changes {
+	for _, change := range changes.Items {
 		if change.Status != ledger.ChangeReady {
 			t.Fatalf("Change %s status = %s", change.ID, change.Status)
 		}

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -116,6 +117,23 @@ func (server *Server) writeError(writer http.ResponseWriter, code engine.ErrorCo
 	body.Error.Message = message
 	server.writeJSON(writer, status, body)
 }
+func (server *Server) parseListRequest(writer http.ResponseWriter, request *http.Request) (engine.ListRequest, bool) {
+	query := request.URL.Query()
+	result := engine.ListRequest{Cursor: query.Get("cursor")}
+	if query.Has("limit") {
+		limit, err := strconv.Atoi(query.Get("limit"))
+		if err != nil || limit < 1 || limit > engine.MaxListLimit {
+			server.writeError(writer, engine.CodeInvalid, "Limit must be between 1 and 200.", http.StatusBadRequest)
+			return engine.ListRequest{}, false
+		}
+		result.Limit = limit
+	}
+	if query.Has("cursor") && result.Cursor == "" {
+		server.writeError(writer, engine.CodeInvalid, "The cursor is not valid.", http.StatusBadRequest)
+		return engine.ListRequest{}, false
+	}
+	return result, true
+}
 func (server *Server) status(writer http.ResponseWriter, _ *http.Request) {
 	server.writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "version": buildinfo.Version, "commit": buildinfo.Commit, "buildDate": buildinfo.Date, "inference": server.engine.InferenceName()})
 }
@@ -123,12 +141,16 @@ func (server *Server) adapters(writer http.ResponseWriter, _ *http.Request) {
 	server.writeJSON(writer, http.StatusOK, map[string]any{"items": []any{map[string]any{"id": "qdrant", "name": "Qdrant", "capabilities": server.engine.TargetCapabilities()}}})
 }
 func (server *Server) listLedgers(writer http.ResponseWriter, request *http.Request) {
-	items, err := server.engine.ListLedgers(request.Context())
+	input, ok := server.parseListRequest(writer, request)
+	if !ok {
+		return
+	}
+	page, err := server.engine.ListLedgers(request.Context(), input)
 	if err != nil {
 		server.writeEngineError(writer, err)
 		return
 	}
-	server.writeJSON(writer, http.StatusOK, map[string]any{"items": items})
+	server.writeJSON(writer, http.StatusOK, page)
 }
 func (server *Server) createLedger(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
@@ -146,12 +168,18 @@ func (server *Server) createLedger(writer http.ResponseWriter, request *http.Req
 	server.writeJSON(writer, http.StatusCreated, value)
 }
 func (server *Server) listChanges(writer http.ResponseWriter, request *http.Request) {
-	items, err := server.engine.ListChanges(request.Context(), request.PathValue("ledgerID"))
+	input, ok := server.parseListRequest(writer, request)
+	if !ok {
+		return
+	}
+	input.Status = request.URL.Query().Get("status")
+	input.Action = request.URL.Query().Get("action")
+	page, err := server.engine.ListChanges(request.Context(), request.PathValue("ledgerID"), input)
 	if err != nil {
 		server.writeEngineError(writer, err)
 		return
 	}
-	server.writeJSON(writer, http.StatusOK, map[string]any{"items": items})
+	server.writeJSON(writer, http.StatusOK, page)
 }
 func (server *Server) createChange(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
@@ -171,12 +199,17 @@ func (server *Server) createChange(writer http.ResponseWriter, request *http.Req
 	server.writeJSON(writer, http.StatusAccepted, value)
 }
 func (server *Server) listProposals(writer http.ResponseWriter, request *http.Request) {
-	items, err := server.engine.ListProposals(request.Context(), request.PathValue("ledgerID"))
+	input, ok := server.parseListRequest(writer, request)
+	if !ok {
+		return
+	}
+	input.Status = request.URL.Query().Get("status")
+	page, err := server.engine.ListProposals(request.Context(), request.PathValue("ledgerID"), input)
 	if err != nil {
 		server.writeEngineError(writer, err)
 		return
 	}
-	server.writeJSON(writer, http.StatusOK, map[string]any{"items": items})
+	server.writeJSON(writer, http.StatusOK, page)
 }
 func (server *Server) createProposal(writer http.ResponseWriter, request *http.Request) {
 	var input struct {
@@ -308,12 +341,16 @@ func (server *Server) resolveReleaseIntent(writer http.ResponseWriter, request *
 	writer.WriteHeader(http.StatusNoContent)
 }
 func (server *Server) listReleases(writer http.ResponseWriter, request *http.Request) {
-	items, err := server.engine.ListReleases(request.Context(), request.PathValue("ledgerID"))
+	input, ok := server.parseListRequest(writer, request)
+	if !ok {
+		return
+	}
+	page, err := server.engine.ListReleases(request.Context(), request.PathValue("ledgerID"), input)
 	if err != nil {
 		server.writeEngineError(writer, err)
 		return
 	}
-	server.writeJSON(writer, http.StatusOK, map[string]any{"items": items})
+	server.writeJSON(writer, http.StatusOK, page)
 }
 func (server *Server) rollbackRelease(writer http.ResponseWriter, request *http.Request) {
 	value, err := server.engine.CreateRollbackProposal(request.Context(), request.PathValue("ledgerID"), request.PathValue("releaseID"))

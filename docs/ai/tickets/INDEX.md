@@ -141,7 +141,7 @@ Update this table when a ticket is completed, and write the corresponding entry 
 | GRF-211 | Done | 2026-08-31 | phase-2.md |
 | GRF-212 | Done | 2026-08-31 | phase-2.md |
 | GRF-213 | Done | 2026-08-31 | phase-2.md |
-| GRF-214 | Not started | — | — |
+| GRF-214 | Done | 2026-09-01 | phase-2.md |
 | GRF-215 | Not started | — | — |
 | GRF-220 | Not started | — | — |
 | GRF-221 | Not started | — | — |

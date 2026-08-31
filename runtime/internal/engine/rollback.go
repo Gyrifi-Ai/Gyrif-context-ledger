@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
+	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets"
 )
 
@@ -18,9 +19,19 @@ type rollbackState struct {
 // CreateRollbackProposal reconstructs the desired state at targetReleaseID and
 // expresses it as ordinary Changes in a new forward-history Proposal.
 func (engine *Engine) CreateRollbackProposal(ctx context.Context, ledgerID, targetReleaseID string) (ledger.Proposal, error) {
-	releases, err := engine.repository.ListReleases(ctx, ledgerID)
-	if err != nil {
-		return ledger.Proposal{}, wrap(CodeInternal, "Could not load release history.", err)
+	var releases []ledger.Release
+	var cursor *repository.Cursor
+	for {
+		page, err := engine.repository.ListReleases(ctx, ledgerID, repository.ListOptions{Limit: MaxListLimit, Cursor: cursor})
+		if err != nil {
+			return ledger.Proposal{}, wrap(CodeInternal, "Could not load release history.", err)
+		}
+		releases = append(releases, page.Items...)
+		if !page.HasMore {
+			break
+		}
+		last := page.Items[len(page.Items)-1]
+		cursor = &repository.Cursor{CreatedAt: last.CreatedAt, ID: last.ID}
 	}
 	targetIndex := -1
 	for index, release := range releases {

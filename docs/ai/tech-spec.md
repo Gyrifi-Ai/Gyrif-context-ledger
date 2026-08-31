@@ -116,11 +116,11 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 |---|---|---|---|---|
 | GET | `/api/v1/system/status` | 200 | — | `{ "status":"ok", "version":"dev", "commit":"unknown", "buildDate":"unknown", "inference":"disabled"\|"llamacpp" }` |
 | GET | `/api/v1/adapters` | 200 | — | `{ "items":[{ "id":"qdrant", "name":"Qdrant", "capabilities": Capabilities }] }` |
-| GET | `/api/v1/ledgers` | 200 | — | `{ "items": Ledger[] }` |
+| GET | `/api/v1/ledgers` | 200 | — | `{ "items": Ledger[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers` | 201 | `{ "name", "description" }` | `Ledger` |
-| GET | `/api/v1/ledgers/{ledgerID}/changes` | 200 | — | `{ "items": Change[] }` |
+| GET | `/api/v1/ledgers/{ledgerID}/changes` | 200 | — | `{ "items": Change[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/changes` | **202** | `{ "unit", "action", "desired", "idempotencyKey" }` | `Change` |
-| GET | `/api/v1/ledgers/{ledgerID}/proposals` | 200 | — | `{ "items": Proposal[] }` |
+| GET | `/api/v1/ledgers/{ledgerID}/proposals` | 200 | — | `{ "items": Proposal[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals` | 201 | `{ "title", "changeIds":[…] }` | `Proposal` |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}` | 200 | — | `ProposalDetail` |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/checks` | 200 | — | `{ "items": CheckResult[] }` (newest first) |
@@ -133,11 +133,13 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 | GET | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}` | 200 | — | `ReleaseIntent` with expanded Plan and per-operation `hasBeforeImage` |
 | POST | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}/retry` | 200 | — | `{ "resolved": bool, "mismatches": VerificationMismatch[] }` |
 | POST | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}/resolve` | **204** | `{ "resolution":"ABANDONED", "note":string }` | — |
-| GET | `/api/v1/ledgers/{ledgerID}/releases` | 200 | — | `{ "items": Release[] }` (newest first) |
+| GET | `/api/v1/ledgers/{ledgerID}/releases` | 200 | — | `{ "items": Release[], "nextCursor"? }` (newest first) |
 | POST | `/api/v1/ledgers/{ledgerID}/releases/{releaseID}/rollback` | 201 | — | `Proposal` |
 | GET | `/events/v1` | 200 | — | `text/event-stream` |
 
 Unknown paths under `/api/` or `/events/` return `404 NOT_FOUND`. Everything else falls through to the embedded Studio file server, which serves `index.html` for unmatched paths (SPA fallback).
+
+The Ledger, Change, Proposal, and Release list endpoints use opaque newest-first keyset pagination. `limit` defaults to 50 and must be from 1 through 200; `cursor` is an opaque value returned as `nextCursor`, and malformed values return `INVALID_ARGUMENT` with `The cursor is not valid.` `nextCursor` is omitted at exhaustion. Change lists accept `status` and `action=PUT|DELETE`; Proposal lists accept `status`. Filters combine in SQL with bound parameters. Existing callers without query parameters now receive the first 50 rows rather than the full history.
 
 ### `/events/v1`
 
@@ -340,11 +342,11 @@ Object store hashes are **different**: `sha256(kind || 0x00 || value)`, prefixed
 func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider) *Engine
 
 func (e *Engine) CreateLedger(ctx, name, description string) (ledger.Ledger, error)
-func (e *Engine) ListLedgers(ctx) ([]ledger.Ledger, error)
+func (e *Engine) ListLedgers(ctx context.Context, request ListRequest) (ListPage[ledger.Ledger], error)
 func (e *Engine) CreateChange(ctx, ledgerID string, r CreateChangeRequest) (ledger.Change, error)
-func (e *Engine) ListChanges(ctx, ledgerID string) ([]ledger.Change, error)
+func (e *Engine) ListChanges(ctx context.Context, ledgerID string, request ListRequest) (ListPage[ledger.Change], error)
 func (e *Engine) CreateProposal(ctx, ledgerID string, r CreateProposalRequest) (ledger.Proposal, error)
-func (e *Engine) ListProposals(ctx, ledgerID string) ([]ledger.Proposal, error)
+func (e *Engine) ListProposals(ctx context.Context, ledgerID string, request ListRequest) (ListPage[ledger.Proposal], error)
 func (e *Engine) CancelProposal(ctx, ledgerID, proposalID string) error
 func (e *Engine) LoadProposalDetail(ctx, ledgerID, proposalID string) (ProposalDetail, error)
 func (e *Engine) ListCheckResults(ctx, ledgerID, proposalID string) ([]CheckResult, error)
@@ -356,7 +358,7 @@ func (e *Engine) ListReleaseIntents(ctx, ledgerID string, status *ledger.Release
 func (e *Engine) LoadReleaseIntent(ctx, ledgerID, intentID string) (ReleaseIntent, error)
 func (e *Engine) RetryReleaseIntent(ctx, ledgerID, intentID string) (RetryReleaseIntentResult, error)
 func (e *Engine) ResolveReleaseIntent(ctx, ledgerID, intentID, resolution, note string) error
-func (e *Engine) ListReleases(ctx, ledgerID string) ([]ledger.Release, error)
+func (e *Engine) ListReleases(ctx context.Context, ledgerID string, request ListRequest) (ListPage[ledger.Release], error)
 func (e *Engine) CreateRollbackProposal(ctx, ledgerID, targetReleaseID string) (ledger.Proposal, error)
 func (e *Engine) RecoverReleases(ctx) error
 func (e *Engine) Events() *Broker
@@ -376,6 +378,11 @@ func (e *Engine) Close() error
 - Idempotency is checked **before** insert and again on insert failure (race-safe fallback).
 - Status is set to `READY` at insert.
 - Desired bytes are written to the CAS as `VALUE` before the row insert.
+
+**List methods**
+- `ListRequest{Limit, Cursor, Status, Action}` is the transport-independent public request; Engine applies the default/maximum and validates resource enums before mapping to repository options.
+- `ListPage[T]{Items, NextCursor}` keeps the existing `items` envelope and omits the opaque cursor at exhaustion.
+- `CreateRollbackProposal` traverses bounded Release repository pages internally; rollback correctness is not limited to the first API page.
 
 **`CreateProposal`**
 - `title` and at least one `changeId` required.
@@ -418,14 +425,14 @@ Before gate evaluation, `ReleaseProposal` rejects a Ledger with any `RECOVERY_RE
 ```go
 type Repository interface {
     CreateLedger(context.Context, ledger.Ledger) error
-    ListLedgers(context.Context) ([]ledger.Ledger, error)
+    ListLedgers(context.Context, ListOptions) (Page[ledger.Ledger], error)
     FindChangeByIdempotencyKey(ctx, ledgerID, key string) (ledger.Change, error)
     InsertChange(context.Context, *ledger.Change) error
-    ListChanges(ctx, ledgerID string) ([]ledger.Change, error)
+    ListChanges(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Change], error)
     LoadChanges(ctx, ledgerID string, ids []string) ([]ledger.Change, error)
     InsertProposal(context.Context, ledger.Proposal) error
     LoadProposal(ctx, ledgerID, proposalID string) (ledger.Proposal, error)
-    ListProposals(ctx, ledgerID string) ([]ledger.Proposal, error)
+    ListProposals(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Proposal], error)
     CancelProposal(ctx, ledgerID, proposalID string) error
     HasReleaseIntent(ctx, proposalID string) (bool, error)
     SaveCheckResult(context.Context, ledger.CheckResult) error
@@ -443,7 +450,7 @@ type Repository interface {
     ListUnfinishedReleaseIntents(context.Context) ([]ledger.ReleaseIntent, error)
     LoadReleaseIntentForProposal(ctx, proposalID string) (ledger.ReleaseIntent, error)
     FinalizeRelease(context.Context, ledger.ReleaseIntent, ledger.Release) error
-    ListReleases(ctx, ledgerID string) ([]ledger.Release, error)
+    ListReleases(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Release], error)
     WriteObject(ctx, kind string, value []byte) (hash string, err error)
     ReadObject(ctx, hash string) ([]byte, error)
     Close() error
@@ -451,6 +458,30 @@ type Repository interface {
 ```
 
 Methods describe **Gyrifi operations**, not generic CRUD. Do not add a `Query(sql string)` style escape hatch.
+
+```go
+type Cursor struct {
+    CreatedAt time.Time
+    ID        string
+}
+
+type ListOptions struct {
+    Limit  int
+    Cursor *Cursor
+    Status *string
+    Action *string
+}
+
+type Page[T any] struct {
+    Items   []T
+    HasMore bool
+}
+
+func EncodeCursor(createdAt time.Time, id string) string
+func DecodeCursor(value string) (Cursor, error)
+```
+
+All four list queries order by `(created_at DESC, id DESC)`, apply cursor comparison as `(created_at, id) < (?, ?)`, and request `limit+1` rows. The extra row is removed and represented by `HasMore`. Query fragments are fixed strings; every cursor and filter value is bound.
 
 ### SQLite
 
@@ -590,6 +621,10 @@ All timestamps are TEXT in UTC (`time.Now().UTC()`).
 ### Migration 003 — Proposal cancellation
 
 `003_proposal_cancellation.sql` adds `proposals.change_ids TEXT NOT NULL DEFAULT '[]'` and backfills every existing Proposal from `proposal_changes`, ordered by `ordinal`. New Proposal inserts write this JSON snapshot in the same transaction as the unique claim rows. Proposal reads use the snapshot; cancellation can therefore delete the active claims without deleting historical membership. The ticket's planned filename was `002_proposal_cancellation.sql`, but immutable migration 002 had already landed for GRF-213, so actual apply order requires 003.
+
+### Migration 004 — List indexes
+
+`004_list_indexes.sql` adds `(created_at DESC, id DESC)` keyset indexes for Ledgers and Ledger-scoped Changes, Proposals, and Releases, plus status-leading indexes for Change and Proposal filters. The pinned SQLite planner uses those indexes for cursor predicates and avoids temporary sorting. The existing Change status/action filter remains a bound SQL predicate; the status-leading index narrows the candidate range before SQLite evaluates action.
 
 **Migration rules:** never edit an applied migration. Add `00N_description.sql`. SQLite cannot drop or alter most constraints — prefer additive columns with defaults, or a create-copy-rename table rebuild inside one transaction.
 
