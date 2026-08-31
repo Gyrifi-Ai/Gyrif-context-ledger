@@ -455,7 +455,7 @@ $ git diff --check
 |---|---|
 | Completed | 2026-09-01 |
 | Commit / PR | Uncommitted workspace change |
-| Deviated from ticket | No |
+| Deviated from ticket | Yes — protected-branch required-check configuration was blocked by repository permissions |
 
 **What was built**
 
@@ -516,7 +516,7 @@ CI image: qdrant/qdrant@sha256:318c11b72aaab96b36e9662ad244de3cabd0653a1b942d4e8
 
 **Deviations from the ticket**
 
-None. Every acceptance criterion was exercised against Qdrant 1.13.4, including two consecutive clean race-enabled runs. `docs/ai/product.md` already had no Qdrant-fake gap row, so no product text required removal; the stale technical gap was removed from `tech-spec.md` §14.
+Every implementation and qualification criterion was exercised against Qdrant 1.13.4, including two consecutive clean race-enabled runs. The `Qdrant integration` job is enabled, runs on every push and pull request, and any failure fails the workflow; however, it could not be added to default-branch required checks. The GitHub API reports `admin: false`, `maintain: false`, and rejected the branch-protection update with HTTP 404. A repository administrator must add `Qdrant integration` to required checks. `docs/ai/product.md` already had no Qdrant-fake gap row, so no product text required removal; the stale technical gap was removed from `tech-spec.md` §14.
 
 **Traps for future work**
 
@@ -577,4 +577,4 @@ tickets consistent
 
 **Follow-ups discovered**
 
-Named vectors, sparse vectors, and Qdrant multitenancy remain intentionally unsupported. Integration tests did not reveal a defect requiring a new ticket. Browser E2E CI remains disabled per the owner's explicit GRF-233 direction.
+Named vectors, sparse vectors, and Qdrant multitenancy remain intentionally unsupported. Integration tests did not reveal a defect requiring a new ticket. A repository administrator must add `Qdrant integration` to the default branch's required status checks; the implementation account cannot change branch protection. Browser E2E CI remains disabled per the owner's explicit GRF-233 direction.

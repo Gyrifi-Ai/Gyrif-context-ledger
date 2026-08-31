@@ -80,7 +80,7 @@ The release path's drift detection and rollback depend entirely on this adapter 
 **CI**
 
 - [x] CI (GRF-233) runs the integration job with a pinned `qdrant/qdrant` service container and `GYRIFI_TEST_QDRANT_URL` set.
-- [x] The integration job is required, not advisory.
+- [ ] The integration job is required, not advisory. The job is failure-enforcing in every workflow run, but the available account has no repository admin/maintain permission and cannot add it to default-branch required checks.
 
 ## Implementation notes
 
