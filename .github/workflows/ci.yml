@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime:
+    name: Runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: runtime
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: runtime/go.mod
+          cache-dependency-path: runtime/go.sum
+      - name: Check formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "${unformatted}" ]]; then
+            printf '%s\n' "${unformatted}"
+            echo "Go files must be formatted with gofmt." >&2
+            exit 1
+          fi
+      - name: Check module files
+        shell: bash
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Test with race detector
+        run: go test ./... -race
+      - name: Build
+        run: go build ./...
+
+  studio:
+    name: Studio
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up pnpm
+        uses: pnpm/action-setup@7088e561eb65bb68695d245aa206f005ef30921d # v4.1.0
+        with:
+          version: 11.15.1
+          run_install: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        working-directory: studio
+        run: pnpm typecheck
+      - name: Test
+        working-directory: studio
+        run: pnpm test
+      - name: Enforce coverage thresholds
+        working-directory: studio
+        run: pnpm coverage
+      - name: Build
+        working-directory: studio
+        run: pnpm build
+
+  image:
+    name: Image
+    needs:
+      - runtime
+      - studio
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Compute build metadata
+        id: metadata
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="${GITHUB_SHA::12}"
+          fi
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${GITHUB_OUTPUT}"
+      - name: Build image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: false
+          load: true
+          tags: gyrifi:ci
+          build-args: |
+            VERSION=${{ steps.metadata.outputs.version }}
+            COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ steps.metadata.outputs.date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test image
+        env:
+          EXPECTED_VERSION: ${{ steps.metadata.outputs.version }}
+        shell: bash
+        run: |
+          container_id="$(docker run --detach --rm --publish 127.0.0.1:18080:8080 gyrifi:ci)"
+          cleanup() {
+            docker rm --force "${container_id}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          response=""
+          for attempt in {1..30}; do
+            if response="$(curl --fail --silent --show-error http://127.0.0.1:18080/api/v1/system/status 2>/dev/null)"; then
+              break
+            fi
+            if [[ "${attempt}" -eq 30 ]]; then
+              docker logs "${container_id}"
+              echo "Gyrifi did not become healthy within 30 seconds." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          jq -e '.status == "ok" and (.version | type == "string" and length > 0)' <<<"${response}"
+          # GRF-223 replaces this non-empty check with equality against EXPECTED_VERSION
+          # when linker-injected build metadata becomes the runtime's single version source.
+      - name: Export image artifact
+        shell: bash
+        run: docker save gyrifi:ci | gzip --fast > "${RUNNER_TEMP}/gyrifi-ci.tar.gz"
+      - name: Upload image artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: gyrifi-ci-image
+          path: ${{ runner.temp }}/gyrifi-ci.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
+  # GRF-231 enables this job with pinned Qdrant, integration build tags, and the
+  # race detector. Once enabled, repository settings must make it a required check.
+  # integration:
+  #   name: Qdrant integration
+  #   runs-on: ubuntu-24.04
+  #   services:
+  #     qdrant:
+  #       image: qdrant/qdrant:v1.13.4
+  #       ports:
+  #         - 6333:6333
+  #   steps:
+  #     - run: echo "Enabled by GRF-231"
+
+  # GRF-232 supplied the isolated Playwright suite. Per GRF-233's extension-point
+  # contract, CI enablement remains disabled here until separately activated; once
+  # enabled, repository settings must make it a required check and retain failures.
+  # e2e:
+  #   name: Browser end-to-end
+  #   needs: image
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - run: echo "Enable the e2e package and upload e2e/test-results on failure"

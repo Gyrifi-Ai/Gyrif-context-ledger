@@ -1,5 +1,7 @@
 # Gyrifi Context Ledger
 
+[![CI](https://github.com/Gyrifi-Ai/Gyrif-context-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Gyrifi-Ai/Gyrif-context-ledger/actions/workflows/ci.yml)
+
 **Version control for the context your AI systems depend on.**
 
 Gyrifi is a local-first governance layer for mutable AI context. Applications submit desired-state **Changes**. A person groups them into a reviewable **Proposal**. Evaluation evidence and approvals bind to the exact Proposal hash. Only then does Gyrifi apply the batch to the target vector store, verify it, and record an immutable **Release**.
@@ -173,6 +175,8 @@ Go supervises `llama-server` on loopback `8081`, waits for `/health`, and termin
 ## Local development
 
 Requirements: Go 1.24+, Node.js 24+, pnpm 11. Docker only for the image.
+
+The CI workflow runs the Runtime, Studio, coverage, and shipping-image gates on every push to `main` and every pull request. Run the same checks locally before pushing; CI reports failures but is not a substitute for local verification.
 
 ```sh
 # Studio

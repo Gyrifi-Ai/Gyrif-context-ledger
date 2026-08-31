@@ -8,7 +8,7 @@
 
 | ID | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| [GRF-233](../tickets/GRF-233-ci-pipeline.md) | CI pipeline | M | — | Not started |
+| [GRF-233](../tickets/GRF-233-ci-pipeline.md) | CI pipeline | M | — | In progress |
 | [GRF-230](../tickets/GRF-230-studio-tests.md) | Studio component and integration test suite | L | GRF-202 | Done |
 | [GRF-231](../tickets/GRF-231-qdrant-qualification.md) | Qdrant integration qualification | L | — | Not started |
 | [GRF-232](../tickets/GRF-232-e2e-suite.md) | Browser end-to-end qualification | L | GRF-205 … GRF-208 | Done |

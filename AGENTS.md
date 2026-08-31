@@ -137,7 +137,7 @@ diff <(ls GRF-*.md | grep -oE 'GRF-[0-9]+' | sort) \
   && echo "tickets consistent"
 ```
 
-Once GRF-233 lands, CI enforces this on every push and pull request. Running it locally first is still your job.
+The workflow in `.github/workflows/ci.yml` enforces the Runtime, Studio, coverage, and image portions on every push to `main` and every pull request. Its integration and e2e extension points remain disabled until their owning ticket enables them. Running the full local gate above first is still your job.
 
 If a step fails for a reason unrelated to your change, say so explicitly in your summary. Do not silently skip it, and do not "fix" it by weakening the check.
 
