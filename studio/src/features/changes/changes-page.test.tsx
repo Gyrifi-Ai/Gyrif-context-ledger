@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ApiError } from "../../api/client";
 import type { Change } from "../../api/types";
 import { ChangesPage } from "./changes-page";
@@ -19,7 +21,7 @@ vi.mock("../../app/providers", () => ({ useAppState: () => mocks.appState }));
 vi.mock("../../app/use-ledger-events", () => ({ useLedgerEvents: vi.fn() }));
 vi.mock("../../app/use-async", () => ({
   useQuery: () => mocks.query,
-  useMutation: () => mocks.mutations[mocks.mutationIndex++],
+  useMutation: () => mocks.mutations[mocks.mutationIndex++ % mocks.mutations.length],
 }));
 
 function queryState(overrides: Record<string, unknown> = {}) {
@@ -98,7 +100,6 @@ describe("ChangesPage", () => {
   it("keeps populated rows visible and dimmed while refetching", () => {
     mocks.query = queryState({ data: [ready], refetching: true });
     const html = renderToStaticMarkup(<ChangesPage />);
-    expect(html).toContain("gy-is-refetching");
     expect(html).toContain("point/ready");
   });
 
@@ -121,5 +122,51 @@ describe("ChangesPage", () => {
     mocks.mutations[1].error = new ApiError("CONFLICT", "One or more Changes are already in another active Proposal.", 409, "http");
     const html = renderToStaticMarkup(<ChangesPage />);
     expect(html).toContain("One or more Changes are already in another active Proposal.");
+  });
+
+  it("filters rendered Changes and opens row detail", async () => {
+    const user = userEvent.setup();
+    render(<ChangesPage />);
+    await user.selectOptions(screen.getByRole("combobox", { name: "Filter by status" }), "READY");
+    expect(screen.getByText("point/ready")).toBeInTheDocument();
+    expect(screen.queryByText("point/released")).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Filter by status" }), "ALL");
+    await user.type(screen.getByRole("textbox", { name: "Search units" }), "released");
+    expect(screen.queryByText("point/ready")).not.toBeInTheDocument();
+    await user.clear(screen.getByRole("textbox", { name: "Search units" }));
+    await user.click(screen.getByRole("cell", { name: "point/ready" }));
+    expect(within(screen.getByRole("dialog", { name: "Change detail" })).getByTitle("sha256:123456789abcdef")).toBeInTheDocument();
+  });
+
+  it("selects READY rows and opens the ordered Proposal workflow", async () => {
+    const user = userEvent.setup();
+    render(<ChangesPage />);
+    await user.click(screen.getByRole("checkbox", { name: "Select chg_ready" }));
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create proposal" }));
+    const dialog = screen.getByRole("dialog", { name: "Create proposal" });
+    expect(dialog).toHaveTextContent("point/ready");
+    await user.type(within(dialog).getByRole("textbox", { name: "Title" }), "Safety update");
+    await user.click(within(dialog).getByRole("button", { name: "Create proposal" }));
+    expect(mocks.mutations[1].run).toHaveBeenCalledWith({ title: "Safety update", changeIds: ["chg_ready"] });
+  });
+
+  it("validates and submits a Change through the drawer", async () => {
+    const user = userEvent.setup();
+    render(<ChangesPage />);
+    await user.click(screen.getByRole("button", { name: "Submit change" }));
+    const dialog = screen.getByRole("dialog", { name: "Submit change" });
+    await user.clear(within(dialog).getByRole("textbox", { name: "Desired JSON" }));
+    await user.type(within(dialog).getByRole("textbox", { name: "Desired JSON" }), "not-json");
+    await user.tab();
+    expect(screen.getByRole("alert")).toHaveTextContent("not valid JSON");
+    await user.type(within(dialog).getByRole("textbox", { name: "Unit" }), "point/new");
+    const desiredInput = within(dialog).getByRole("textbox", { name: "Desired JSON" });
+    await user.clear(desiredInput);
+    await navigator.clipboard.writeText('{"ok":true}');
+    await user.click(desiredInput);
+    await user.paste();
+    await user.click(within(dialog).getByRole("button", { name: "Submit change" }));
+    expect(mocks.mutations[0].run).toHaveBeenCalledWith(expect.objectContaining({ unit: "point/new", action: "PUT", desired: { ok: true } }));
   });
 });

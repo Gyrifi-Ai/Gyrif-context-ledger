@@ -82,3 +82,5 @@ export const api = {
   releases: (ledgerId: string, init?: RequestInit) => request<{ items: Release[] }>(`/api/v1/ledgers/${ledgerId}/releases`, init),
   rollback: (ledgerId: string, releaseId: string) => request<Proposal>(`/api/v1/ledgers/${ledgerId}/releases/${releaseId}/rollback`, { method: "POST" }),
 };
+
+export type Api = typeof api;

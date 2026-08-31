@@ -39,39 +39,39 @@ There is no DOM environment configured and no Testing Library dependency yet.
 
 **Setup**
 
-- [ ] Dev dependencies added: `jsdom`, `@testing-library/react`, `@testing-library/user-event`, `@testing-library/jest-dom`. These are the only additions permitted; no test-utility grab bag.
-- [ ] `vite.config.ts` gains a `test` block with `environment: "jsdom"`, `setupFiles: ["src/test/setup.ts"]`, `globals: false` (import from `vitest` explicitly), and `css: true` so token classes resolve.
-- [ ] `src/test/setup.ts` registers jest-dom matchers, resets handlers between tests, and fails a test on an unexpected `console.error`.
-- [ ] `src/test/render.tsx` exports a `renderWithProviders` wrapping the component in the app providers, returning the `userEvent` instance.
-- [ ] `src/test/api-mock.ts` provides a typed `mockApi` built from the `Api` interface so a signature change breaks the mocks at compile time rather than at runtime.
-- [ ] The mock layer stubs `fetch` — it does not monkey-patch `client.ts` internals.
-- [ ] `pnpm test` runs the suite headlessly. The script keeps the direct-entry-point form (`node node_modules/vitest/vitest.mjs run`) required by the `:` in the workspace path.
+- [x] Dev dependencies added: `jsdom`, `@testing-library/react`, `@testing-library/user-event`, `@testing-library/jest-dom`. These are the only additions permitted; no test-utility grab bag.
+- [x] `vite.config.ts` gains a `test` block with `environment: "jsdom"`, `setupFiles: ["src/test/setup.ts"]`, `globals: false` (import from `vitest` explicitly), and `css: true` so token classes resolve.
+- [x] `src/test/setup.ts` registers jest-dom matchers, resets handlers between tests, and fails a test on an unexpected `console.error`.
+- [x] `src/test/render.tsx` exports a `renderWithProviders` wrapping the component in the app providers, returning the `userEvent` instance.
+- [x] `src/test/api-mock.ts` provides a typed `mockApi` built from the `Api` interface so a signature change breaks the mocks at compile time rather than at runtime.
+- [x] The mock layer stubs `fetch` — it does not monkey-patch `client.ts` internals.
+- [x] `pnpm test` runs the suite headlessly. The script keeps the direct-entry-point form (`node node_modules/vitest/vitest.mjs run`) required by the `:` in the workspace path.
 
 **Component coverage**
 
-- [ ] Every component in `src/ui/` has a test file covering: default render, each variant/tone, the disabled state where applicable, and keyboard interaction where applicable.
-- [ ] `Button` — variants, sizes, `loading` disables and exposes `aria-busy`, `iconOnly` requires an accessible name.
-- [ ] `StatusBadge` — every domain status maps to the expected tone; the exhaustive mapping is asserted so a new status added to the union fails the test.
-- [ ] `DataTable` — empty, loading, error, populated; row selection; keyboard row activation.
-- [ ] `EmptyState`, `ErrorState`, `Skeleton`, `Field`, `HashChip`, `Timeline`, `Stat`, `Panel`, `CodeBlock` — rendered and asserted.
-- [ ] `ConfirmDialog` — focus is trapped, `Escape` closes, focus returns to the trigger, the confirm action is not fired on dismiss.
+- [x] Every component in `src/ui/` has a test file covering: default render, each variant/tone, the disabled state where applicable, and keyboard interaction where applicable.
+- [x] `Button` — variants, sizes, `loading` disables and exposes `aria-busy`, `iconOnly` requires an accessible name.
+- [x] `StatusBadge` — every domain status maps to the expected tone; the exhaustive mapping is asserted so a new status added to the union fails the test.
+- [x] `DataTable` — empty, loading, error, populated; row selection; keyboard row activation.
+- [x] `EmptyState`, `ErrorState`, `Skeleton`, `Field`, `HashChip`, `Timeline`, `Stat`, `Panel`, `CodeBlock` — rendered and asserted.
+- [x] `ConfirmDialog` — focus is trapped, `Escape` closes, focus returns to the trigger, the confirm action is not fired on dismiss.
 
 **Page integration**
 
-- [ ] Each of the four feature pages has a test asserting all five interaction states from design-system §6: loading, empty, populated, error, and a permission/disabled state.
-- [ ] Proposals: the gate matrix is asserted through the rendered UI, not just the pure function — disabled buttons show their reason text.
-- [ ] Releases: the rollback confirm dialog contains the four required statements; the recovery banner appears only with intents present.
-- [ ] Changes: filters, detail drawer, and status rendering.
-- [ ] Ledgers: creation validation and the switcher.
-- [ ] Async layer: `useQuery` loading/success/error transitions, `useMutation` in-flight disabling, and `ApiError` code/message propagation into `ErrorState`.
+- [x] Each of the four feature pages has a test asserting all five interaction states from design-system §6: loading, empty, populated, error, and a permission/disabled state.
+- [x] Proposals: the gate matrix is asserted through the rendered UI, not just the pure function — disabled buttons show their reason text.
+- [x] Releases: the rollback confirm dialog contains the four required statements; the recovery banner appears only with intents present.
+- [x] Changes: filters, detail drawer, and status rendering.
+- [x] Ledgers: creation validation and the switcher.
+- [x] Async layer: `useQuery` loading/success/error transitions, `useMutation` in-flight disabling, and `ApiError` code/message propagation into `ErrorState`.
 
 **Discipline**
 
-- [ ] No test asserts on CSS class names as a proxy for behaviour. Query by role, label, and text.
-- [ ] No `waitFor` with an arbitrary sleep. Use Testing Library's async utilities.
-- [ ] No snapshot tests of whole components. Snapshots of large trees fail noisily and get regenerated without thought.
-- [ ] Coverage thresholds: 80% statements and 75% branches across `src/`, enforced by `vitest run --coverage` and wired into CI (GRF-233).
-- [ ] `pnpm typecheck && pnpm test && pnpm build` pass.
+- [x] No test asserts on CSS class names as a proxy for behaviour. Query by role, label, and text.
+- [x] No `waitFor` with an arbitrary sleep. Use Testing Library's async utilities.
+- [x] No snapshot tests of whole components. Snapshots of large trees fail noisily and get regenerated without thought.
+- [ ] Coverage thresholds: 80% statements and 75% branches across `src/`, enforced by `vitest run --coverage` and wired into CI (GRF-233). Local enforcement is complete; CI wiring remains deferred to GRF-233 because no workflow exists yet.
+- [x] `pnpm typecheck && pnpm test && pnpm build` pass.
 
 ## Implementation notes
 

@@ -137,9 +137,9 @@ Package: `@gyrifi/studio`. React 19.1.1, TypeScript 5.9.2 (strict), Vite 7.1.4, 
 
 ```text
 studio/
-├── package.json
+├── package.json                 # direct-entry dev/build/typecheck/test/coverage scripts
 ├── tsconfig.json               # strict: true, target ES2022, moduleResolution Bundler, noEmit, paths @/* → src/*
-├── vite.config.ts              # port 5173; proxies /api and /events → 127.0.0.1:18080; @tailwindcss/vite plugin
+├── vite.config.ts              # Vite/Tailwind, dev proxy, jsdom test setup, V8 coverage thresholds
 ├── index.html                  # <div id="root">, theme-color #06080c
 └── src/
     ├── main.tsx                # imports styles.css, calls bootstrap(root)
@@ -162,8 +162,7 @@ studio/
     │   ├── client.test.ts
     │   ├── events.ts           # stateful EventSource subscription with bounded CLOSED retries
     │   └── events.test.ts      # stream state, retry ceiling, manual reconnect, teardown
-    ├── components/ui/          # shadcn/ui components (button, card, badge, input, textarea, label,
-    │                           #  table, dialog, checkbox, separator, skeleton, tooltip)
+    ├── components/ui/          # shadcn/ui components plus focused primitive composition tests
     ├── ui/                     # VISUAL ONLY. must not know about ledgers/changes/etc.
     │   ├── primitives/         # Button, field controls, segmented control, domain-free SVG icons
     │   ├── patterns/           # DataTable, badges, hashes, code, timeline, stats, confirmation dialog
@@ -177,7 +176,10 @@ studio/
     │   ├── proposals/         # review queue/detail, progress, evidence, approval, release, ordered creation,
     │   │                      # server-gate projections, presets, and focused tests
     │   └── releases/          # timeline page, plan drawer, recovery banner/actions, rollback dialog, focused tests
-    └── test/                   # currently empty — GRF-230
+    └── test/
+        ├── setup.ts            # jest-dom, browser shims, cleanup, console-error guard, API reset
+        ├── render.tsx          # renderWithProviders() + userEvent
+        └── api-mock.ts         # typed fetch router derived from the real Api surface
 ```
 
 ### Frontend rules — hard
@@ -202,6 +204,8 @@ studio/
 | A screen or any domain widget | `features/<area>/` |
 | A new endpoint call or contract type | `api/client.ts` and `api/types.ts` |
 | A design token, colour, or spacing value | `styles.css` `:root` — never inline hex in a component |
+
+Test files are co-located as `*.test.ts` or `*.test.tsx`; only shared test infrastructure belongs in `src/test/`. Tests query roles, labels, and visible text rather than treating utility classes as behavior. `pnpm coverage` enforces the repository's 80% statement and 75% branch thresholds.
 
 ---
 

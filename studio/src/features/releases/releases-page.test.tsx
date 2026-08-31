@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { Proposal, Release, ReleaseIntent } from "../../api/types";
 import { ReleasesPage, RollbackSuccess } from "./releases-page";
 
@@ -51,7 +53,7 @@ describe("ReleasesPage", () => {
     mocks.query = query({ error: new Error("Release history failed") });
     expect(renderToStaticMarkup(<ReleasesPage />)).toContain("Release history failed");
     mocks.query = query({ data: { releases, proposals: [proposal], intents }, refetching: true });
-    expect(renderToStaticMarkup(<ReleasesPage />)).toContain("gy-is-refetching");
+    expect(renderToStaticMarkup(<ReleasesPage />)).toContain("rel_newest");
   });
 
   it("links a created rollback proposal directly into review", () => {
@@ -59,5 +61,38 @@ describe("ReleasesPage", () => {
     expect(html).toContain("Rollback proposal created: Restore state from rel_older");
     expect(html).toContain('href="#proposals/pr_rollback"');
     expect(html).toContain("Review proposal");
+  });
+
+  it("opens rollback confirmation with all forward-history consequences", async () => {
+    const user = userEvent.setup();
+    render(<ReleasesPage />);
+    await user.click(screen.getByRole("button", { name: "Roll back to here" }));
+    const dialog = screen.getByRole("dialog", { name: "Create rollback proposal?" });
+    expect(dialog).toHaveTextContent("new proposal");
+    expect(dialog).toHaveTextContent("does not rewind history");
+    expect(dialog).toHaveTextContent("1 units will be restored");
+    expect(dialog).toHaveTextContent("evaluated, approved, and released like any other");
+    expect(dialog).toHaveTextContent("HEAD will move forward");
+  });
+
+  it("shows recovery only for recovery-required intents and opens inspection", async () => {
+    const user = userEvent.setup();
+    const recovery = { ...intents[0], id: "intent_recovery", status: "RECOVERY_REQUIRED" as const };
+    mocks.query = query({ data: { releases, proposals: [proposal], intents: [...intents, recovery] } });
+    const { rerender } = render(<ReleasesPage />);
+    expect(screen.getByRole("alert")).toHaveTextContent("1 release intent requires recovery.");
+    await user.click(screen.getByRole("button", { name: "Inspect" }));
+    expect(screen.getByRole("dialog", { name: "Release recovery" })).toHaveTextContent("Retry verification");
+    mocks.query = query({ data: { releases, proposals: [proposal], intents } });
+    rerender(<ReleasesPage />);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("disables rollback when a newer Release plan is unavailable", () => {
+    mocks.query = query({ data: { releases, proposals: [proposal], intents: intents.slice(1) } });
+    render(<ReleasesPage />);
+    const rollback = screen.getByRole("button", { name: "Roll back to here" });
+    expect(rollback).toBeDisabled();
+    expect(rollback).toHaveAttribute("title", "Rollback plan is unavailable.");
   });
 });

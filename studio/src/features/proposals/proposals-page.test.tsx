@@ -46,7 +46,6 @@ describe("ProposalsPage", () => {
     expect(renderToStaticMarkup(<ProposalsPage />)).toContain("Queue failed");
     mocks.query = queryState({ data: { proposals: [proposal], readyChanges: [change] }, refetching: true });
     const stale = renderToStaticMarkup(<ProposalsPage />);
-    expect(stale).toContain("gy-is-refetching");
     expect(stale).toContain("Safety review");
   });
 

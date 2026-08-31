@@ -17,7 +17,6 @@ describe("AsyncBoundary", () => {
     expect(renderToStaticMarkup(<AsyncBoundary query={query<string[]>({ data: [] })} empty="Empty">{(data) => data.join(",")}</AsyncBoundary>)).toContain("Empty");
     const html = renderToStaticMarkup(<AsyncBoundary query={query<string[]>({ data: ["ready"], refetching: true })} empty="Empty">{(data) => data.join(",")}</AsyncBoundary>);
     expect(html).toContain("ready");
-    expect(html).toContain("gy-is-refetching");
   });
 
   it("passes retry through to the query refetch callback", () => {

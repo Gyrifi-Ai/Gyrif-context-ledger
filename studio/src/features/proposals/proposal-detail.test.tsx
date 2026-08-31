@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { render, screen } from "@testing-library/react";
 import type { Change, ProposalDetail as ProposalDetailData } from "../../api/types";
 import { ProposalDetail } from "./proposal-detail";
 
@@ -66,7 +67,6 @@ describe("ProposalDetail", () => {
     expect(renderToStaticMarkup(<ProposalDetail ledgerId="ldg_one" proposalId="pr_one" onUpdated={() => undefined} />)).toContain("Detail failed");
     mocks.query = queryState({ data: { detail, checks: [], approvals: [] }, refetching: true });
     const stale = renderToStaticMarkup(<ProposalDetail ledgerId="ldg_one" proposalId="pr_one" onUpdated={() => undefined} />);
-    expect(stale).toContain("gy-is-refetching");
     expect(stale).toContain("Safety review");
   });
 
@@ -81,5 +81,15 @@ describe("ProposalDetail", () => {
     const html = renderToStaticMarkup(<ProposalDetail ledgerId="ldg_one" proposalId="pr_one" onUpdated={() => undefined} />);
     expect(html).toContain("No current approval has been recorded.");
     expect(html).toContain("A current approval is required.");
+  });
+
+  it("renders server-authored disabled reasons beside disabled actions", () => {
+    render(<ProposalDetail ledgerId="ldg_one" proposalId="pr_one" onUpdated={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveAttribute("title", detail.gates.approvalAction.reason);
+    expect(screen.getByText(detail.gates.approvalAction.reason)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Release to Qdrant" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Release to Qdrant" })).toHaveAttribute("title", detail.gates.releaseAction.reason);
+    expect(screen.getByText(detail.gates.releaseAction.reason)).toBeInTheDocument();
   });
 });

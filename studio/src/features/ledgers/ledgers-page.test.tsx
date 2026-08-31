@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ApiError } from "../../api/client";
 import type { Change, Ledger } from "../../api/types";
 import { LedgersPage } from "./ledgers-page";
@@ -61,7 +63,8 @@ describe("LedgersPage", () => {
   it("renders three matching skeleton cards before rendering populated cards", () => {
     mocks.queryStates.set("ledgers", queryState({ loading: true }));
     const loading = renderToStaticMarkup(<LedgersPage />);
-    expect(loading.match(/min-h-44 rounded-lg/g)).toHaveLength(3);
+    expect(loading).toContain('aria-label="Loading ledgers"');
+    expect(loading).toContain('aria-busy="true"');
 
     mocks.appState.ledgerId = ledger.id;
     mocks.queryStates.set("ledgers", queryState({ data: [ledger] }));
@@ -108,6 +111,43 @@ describe("LedgersPage", () => {
     expect(html).toContain("product-docs");
     expect(html).toContain("— ready");
     expect(html).toContain("1 releases");
+  });
+
+  it("validates creation in the drawer and submits trimmed input", async () => {
+    const user = userEvent.setup();
+    mocks.queryStates.set("ledgers", queryState({ data: [] }));
+    render(<LedgersPage />);
+    await user.click(screen.getByRole("button", { name: "Create your first ledger" }));
+    expect(screen.getByRole("dialog", { name: "Create ledger" })).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "   ");
+    await user.click(screen.getByRole("button", { name: "Create ledger" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("A ledger name is required.");
+    await user.clear(screen.getByRole("textbox", { name: "Name" }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "  support-kb  ");
+    await user.type(screen.getByRole("textbox", { name: "Description" }), "Support answers");
+    await user.click(screen.getByRole("button", { name: "Create ledger" }));
+    expect(mocks.mutation.run).toHaveBeenCalledWith({ ledgerName: "support-kb", ledgerDescription: "Support answers" });
+  });
+
+  it("switches the active ledger from a rendered card", async () => {
+    const user = userEvent.setup();
+    mocks.queryStates.set("ledgers", queryState({ data: [ledger] }));
+    render(<LedgersPage />);
+    await user.click(screen.getByRole("button", { name: /product-docs/ }));
+    expect(mocks.appState.setLedgerId).toHaveBeenCalledWith(ledger.id);
+    expect(screen.getByRole("status")).toHaveTextContent("Now governing product-docs");
+  });
+
+  it("disables creation while the Runtime is unreachable", async () => {
+    const user = userEvent.setup();
+    mocks.queryStates.set("ledgers", queryState({ data: [] }));
+    mocks.mutation.blocked = true;
+    mocks.mutation.disabledReason = "Cannot reach the Gyrifi runtime.";
+    render(<LedgersPage />);
+    await user.click(screen.getByRole("button", { name: "Create your first ledger" }));
+    const create = screen.getByRole("button", { name: "Create ledger" });
+    expect(create).toBeDisabled();
+    expect(create).toHaveAttribute("title", "Cannot reach the Gyrifi runtime.");
   });
 });
 

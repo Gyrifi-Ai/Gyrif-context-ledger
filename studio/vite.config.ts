@@ -19,4 +19,20 @@ export default defineConfig({
       "/events": apiProxy,
     },
   },
+  test: {
+    environment: "jsdom",
+    setupFiles: ["src/test/setup.ts"],
+    globals: false,
+    css: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json-summary", "html"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/main.tsx", "src/vite-env.d.ts", "src/test/**", "**/*.test.{ts,tsx}"],
+      thresholds: {
+        statements: 80,
+        branches: 75,
+      },
+    },
+  },
 });

@@ -709,6 +709,7 @@ class ApiError extends Error {
 
 function request<T>(path: string, init?: RequestInit): Promise<T>;
 function subscribeToRequestHealth(listener: (health: { reachable: true } | { reachable: false; error: ApiError }) => void): () => void;
+type Api = typeof api;
 ```
 
 `request` always sets `Content-Type: application/json`. A rejected `fetch` throws a `transport` `ApiError` with status `0` and publishes an unreachable request-health event; an intentional `AbortError` is passed through without changing reachability. Any HTTP response first publishes reachable, then a non-2xx response throws an `http` `ApiError` preserving `body.error.code`, `body.error.message`, and `X-Request-ID` when present. Malformed error envelopes use `code: "UNKNOWN"` and `Request failed ({status})`. A `204` resolves `undefined`. Read methods accept an optional `RequestInit` so callers can supply an `AbortSignal`. All paths are relative; Vite proxies `/api` and `/events` to `127.0.0.1:18080` in development, and production is same-origin.
@@ -783,12 +784,19 @@ The Releases page loads Releases, Proposals, and Release Intents as one workspac
 | `studio/src/api/client.test.ts` | versioned endpoint paths including Proposal detail/evidence and Release Intent recovery, structured/request-ID error mapping, transport versus HTTP reachability |
 | `studio/src/api/events.test.ts` | stream state, bounded CLOSED retry, manual reconnect, timer/source teardown, typed named-event parsing and dispatch |
 | `studio/src/app/error-boundary.test.tsx` | fallback/reset contract and once-per-error logging |
+| `studio/src/app/{providers,reachability-provider,use-async,use-ledger-events}.test.tsx` | provider composition, persisted Ledger selection, Runtime health classification, query/mutation lifecycle, aborts, duplicate-mutation prevention, and stream invalidation registration |
 | `studio/src/app/reachability.test.ts` | exact bounded reachability backoff schedule |
-| `studio/src/features/changes/*.test.ts(x)` | Changes inbox states, eligibility, selection-bar contract, filtering, JSON validation, DELETE omission, ordering, and conflict placement |
-| `studio/src/features/proposals/*.test.ts(x)` | Proposal route/list states, server-gate projection, progress and stale evidence/approval, ordered creation, confirmation, and HTTP-503 recovery guidance |
-| `studio/src/features/releases/*.test.tsx` | timeline order and HEAD marking, five page states, plan/before-image rendering, unique rollback unit counts and forward-history copy, verbatim rollback errors, recovery presence and actions |
+| `studio/src/components/ui/components.test.tsx` | shadcn primitive composition, forms, Radix checkbox/dialog/tooltip interaction, tables, cards, and all visual variants |
+| `studio/src/ui/**/*.test.tsx` | every domain-free primitive, feedback, layout, and pattern component; variants, disabled/loading behavior, accessible names, keyboard table navigation, copy actions, dialog focus containment, Escape, and focus restoration |
+| `studio/src/features/shell/shell.test.tsx` | scoped navigation, keyboard Ledger switching, HEAD states, and Runtime/event-stream status controls |
+| `studio/src/features/ledgers/*.test.tsx` | five page states, count isolation, creation validation, Runtime-disabled creation, and Ledger switching |
+| `studio/src/features/changes/*.test.ts(x)` | five page states, status/action/unit filters, eligibility, keyboard selection, detail and submission drawers, JSON validation, DELETE omission, ordering, and conflict placement |
+| `studio/src/features/proposals/*.test.ts(x)` | five page/detail states, rendered server-gate reasons and disabled actions, progress and stale evidence/approval, ordered creation, confirmation, and HTTP-503 recovery guidance |
+| `studio/src/features/releases/*.test.tsx` | five page states, timeline order and HEAD marking, plan/before-image rendering, rollback permission and forward-history confirmation, verbatim errors, and conditional recovery inspection |
 | `studio/src/features/shared/time.test.ts` | relative minute/hour/day age formatting and malformed/future timestamps |
-| `studio/src/test/` | **empty** (GRF-230) |
+| `studio/src/test/setup.ts` | jest-dom registration, deterministic browser API shims, per-test API reset, cleanup, and unexpected `console.error` failure |
+| `studio/src/test/render.tsx` | `renderWithProviders` plus a configured `userEvent` instance |
+| `studio/src/test/api-mock.ts` | fetch-level router backed by a compile-time-complete `MockApi` derived from `Api` |
 | `e2e/` | **empty** (GRF-232) |
 
 Large model downloads are never part of tests.
@@ -805,12 +813,14 @@ go fmt ./... && go vet ./... && go test ./... && go build ./cmd/gyrifi
 
 cd ..
 pnpm install --frozen-lockfile
-pnpm typecheck && pnpm test && pnpm build
+pnpm typecheck && pnpm test && pnpm coverage && pnpm build
 
 docker build -t gyrifi:dev .
 ```
 
 `docker build` runs `go test ./...` inside the `runtime-build` stage, so a broken test breaks the image.
+
+Studio tests run in jsdom through Vitest with globals disabled, jest-dom matchers, CSS processing, Testing Library, and `userEvent`. `pnpm coverage` invokes the direct Vitest entry point with `--coverage`; V8 enforces global minimums of **80% statements** and **75% branches** across `src/`. GRF-233 must invoke this existing command in CI rather than duplicating its thresholds in workflow YAML.
 
 ---
 
