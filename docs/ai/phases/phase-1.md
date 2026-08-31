@@ -14,7 +14,7 @@
 | [GRF-203](../tickets/GRF-203-application-shell.md) | Application shell, navigation, real runtime status | M | GRF-202 | Done |
 | [GRF-204](../tickets/GRF-204-async-data-layer.md) | Async data layer | M | — | Done |
 | [GRF-205](../tickets/GRF-205-ledgers-page.md) | Ledgers page redesign | M | GRF-203, GRF-204 | Done |
-| [GRF-206](../tickets/GRF-206-changes-page.md) | Changes inbox redesign | L | GRF-203, GRF-204 | Not started |
+| [GRF-206](../tickets/GRF-206-changes-page.md) | Changes inbox redesign | L | GRF-203, GRF-204 | Done |
 | [GRF-207](../tickets/GRF-207-proposals-workspace.md) | Proposals review workspace | XL | GRF-203, GRF-204, GRF-211 | Not started |
 | [GRF-208](../tickets/GRF-208-releases-timeline.md) | Releases timeline and rollback flow | L | GRF-203, GRF-204, GRF-213 | Not started |
 | [GRF-209](../tickets/GRF-209-studio-resilience.md) | Studio resilience: error boundary, offline state, stream reconnection | M | GRF-202, GRF-204 | Done |
@@ -770,3 +770,139 @@ Manual browser verification used a live Runtime and screenshots at 1440, 1180, 9
 
 - A combined `GET /api/v1/ledgers?include=counts` contract may be warranted if ledger cardinality makes the current two requests per visible card uncomfortable; do not add it without a ticket.
 - GRF-230 should directly exercise Drawer focus transitions and the three-second confirmation under fake timers once its DOM harness exists. GRF-232 should retain the four-width screenshot path.
+
+### GRF-206 — Changes page redesign
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | Yes — interaction automation remains with GRF-230/232 |
+
+**What was built**
+
+The Changes surface is now a durable inbox workspace with live status counts, client-side filters, a keyboard-navigable selectable table, full Change inspection, and explicit loading/empty/error/stale/populated states. READY selection starts an ordered Proposal flow, while a separate drawer accepts PUT or DELETE Changes with field-local JSON and idempotency errors. The prerequisite SQLite NULL-scan defect was fixed so one DELETE Change no longer makes the entire inbox unreadable.
+
+**Files added**
+
+- `studio/src/features/changes/changes-page.logic.ts` — pure filtering, counts, submission preparation, ordering, and idempotency-key helpers.
+- `studio/src/features/changes/changes-page.logic.test.ts` — boundary and payload regressions.
+- `studio/src/features/changes/changes-page.test.tsx` — rendered page-state and contract coverage.
+- `studio/src/features/changes/selection-action-bar.tsx` — domain-owned sticky selected-count actions.
+- `studio/src/features/shared/time.ts` — dependency-free relative age formatting.
+- `studio/src/features/shared/time.test.ts` — relative-time boundary coverage.
+
+**Files changed**
+
+- `runtime/internal/repository/sqlite.go` — scans nullable Change desired bytes before assigning `json.RawMessage`.
+- `runtime/internal/repository/sqlite_test.go` — protects DELETE list reads and omitted desired serialization.
+- `studio/src/features/changes/changes-page.tsx` — rebuilt the complete inbox, detail, submission, and ordered Proposal flows.
+- `studio/src/ui/patterns/data-table.tsx` — added row eligibility/reasons, ordered selection callbacks, keyboard row navigation, and accepted-row highlighting.
+- `studio/src/app/providers.tsx` — added the shared ledger-switcher open request contract.
+- `studio/src/features/shell/ledger-switcher.tsx` — opens and focuses in response to application requests.
+- `studio/src/app/shell.tsx` — lets Changes own its header so the page action is rendered once.
+- `docs/ai/design-system.md`, `docs/ai/product.md`, `docs/ai/repo-structure.md`, `docs/ai/tech-spec.md`, `docs/ai/tickets/INDEX.md`, `docs/ai/phases/phase-1.md` — current product, implementation, test, and completion state.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```ts
+interface AppState {
+	openLedgerSwitcher: () => void;
+	ledgerSwitcherRequest: number;
+}
+
+type DataTableProps<T> = {
+	isRowSelectable?: (row: T) => boolean;
+	getSelectionDisabledReason?: (row: T) => string;
+	highlightedId?: string;
+};
+
+function formatAge(iso: string, now?: number): string;
+function validateDesiredJson(value: string): string | undefined;
+function prepareChangeSubmission(unit: string, action: Change["action"], desired: string, idempotencyKey: string): { input?: ChangeSubmission; jsonError?: string };
+function moveOrdered(ids: string[], index: number, direction: -1 | 1): string[];
+```
+
+No HTTP or schema contract changed. `GET /api/v1/ledgers/{ledgerID}/changes` now fulfills its existing contract for rows whose nullable `desired` column is NULL; `json:"desired,omitempty"` continues to omit that field for DELETE Changes.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Fix the DELETE scan in GRF-206 | The inbox cannot meet its acceptance criteria if any valid DELETE row makes `ListChanges` return 500; owner approved folding in the prerequisite | Hide or filter DELETE rows in Studio | It would make the durable audit trail lie by omission |
+| Keep selected IDs as an ordered array | Proposal identity is order-sensitive, and ordering must survive selection and reordering | Use a `Set` | Sets make the semantically meaningful order implicit and fragile |
+| Start Proposal creation only from selected READY rows | The server remains authoritative while the UI provides the minimum documented eligibility hint | Reproduce claim and gate rules in the browser | Client governance rules drift; conflicts must come verbatim from the server |
+| Add a provider request token for the topbar switcher | A no-ledger page action must open the already-owned switcher without moving its state into the page | Duplicate a ledger chooser inside Changes | Two selection surfaces would diverge and complicate focus handling |
+| Keep the existing dependency-free test stack | GRF-230 owns the DOM integration harness and this ticket authorizes no dependency | Add jsdom/Testing Library for one page | It would pre-empt GRF-230 and violate ticket dependency scope |
+
+**Deviations from the ticket**
+
+The implementation meets every product acceptance criterion. The test-plan interactions are not synthesized through a DOM test harness: production-used submission preparation and the selected-count component are covered directly, while Space selection, Tab access to the action bar, inline parser errors, no-request invalid submission, and the real DELETE request body were verified in the integrated browser. GRF-230/232 retain automated rendered interaction and end-to-end coverage.
+
+The design sketch showed a second `Build proposal →` header action and an idempotency key in detail. The ticket's selection-first acceptance contract is used instead, and the existing Change response does not expose an idempotency key; both design-level deviations are now explicit in design-system §5.2.
+
+**Traps for future work**
+
+- SQL NULL cannot scan directly into `json.RawMessage`; scan nullable blobs through `[]byte` and assign after `Scan`.
+- The shared Shell must not also render a header for pages that own header actions, or the title and description appear twice.
+- Keep `SelectionActionBar` and pure helpers outside the page component module so Fast Refresh sees only component exports and Vitest can cover decision boundaries without a browser DOM.
+- A successful mutation calls `refetch()` without awaiting it; the accepted row arrives through authoritative REST and is highlighted by returned Change ID for three seconds.
+
+**Tests added**
+
+- `runtime/internal/repository/sqlite_test.go` — a persisted DELETE followed by `ListChanges` remains readable and serializes without `desired`.
+- `studio/src/features/changes/changes-page.logic.test.ts` — exact status filtering/counts, invalid JSON blocking, PUT parsing, DELETE desired omission, ordered movement, and idempotency-key uniqueness.
+- `studio/src/features/changes/changes-page.test.tsx` — rows and eligibility, five-state branches, no-ledger switcher action, stale visible content, selected-count bar, and field-local conflict text.
+- `studio/src/features/shared/time.test.ts` — now/minute/hour/day boundaries plus future and malformed timestamps.
+
+**Docs updated**
+
+- `docs/ai/design-system.md` §5.2 — marked implemented and recorded design-sketch deviations.
+- `docs/ai/product.md` §6 — Proposal creation now begins in Changes.
+- `docs/ai/repo-structure.md` §3 — current feature/helper/test layout.
+- `docs/ai/tech-spec.md` §5, §11–§12 — DELETE scan behavior, AppState switcher request, and tests.
+- `docs/ai/tickets/INDEX.md` — GRF-206 marked Done.
+- `docs/ai/phases/phase-1.md` — ticket table and this completion record.
+
+**Verification**
+
+```
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine             (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference          (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http    (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger              (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository          1.712s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant      (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/tests                        2.418s
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files  11 passed (11)
+Tests       42 passed (42)
+✓ 1873 modules transformed.
+dist/index.html                   0.45 kB │ gzip:  0.29 kB
+dist/assets/index-8-BVbHoB.css   41.27 kB │ gzip:  8.37 kB
+dist/assets/index-CRif-rAB.js   295.51 kB │ gzip: 91.72 kB
+✓ built in 1.02s
+
+$ docker build -t gyrifi:local .
+[+] Building 32.3s (31/31) FINISHED
+=> [runtime-build 8/8] RUN CGO_ENABLED=0 go test ./... && CGO_ENABLED=0 go build -o /out/gyrifi ./cmd/gyrifi
+=> naming to docker.io/library/gyrifi:local
+
+$ cd docs/ai/tickets && diff <ticket files> <INDEX status rows>
+tickets consistent
+```
+
+Manual browser verification used the current Runtime with live PUT and DELETE rows. It confirmed one non-duplicated page header, three live stats, DELETE list rendering, Space row selection, `1 selected`, keyboard Tab reachability through `Clear` to `Create proposal`, invalid JSON's native parser message with zero POST requests, and a successful DELETE POST whose body contained `unit`, `action`, and `idempotencyKey` but no `desired`.
+
+**Follow-ups discovered**
+
+- GRF-214 must replace the visible client-side fetched-page filter limitation with bounded server pagination/filtering.
+- GRF-230 should synthesize selection, blur/submit validation, drawer focus, timers, and switcher-open requests under jsdom; GRF-232 should retain the full keyboard flow in a real browser.

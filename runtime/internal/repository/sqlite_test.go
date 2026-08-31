@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,5 +86,29 @@ func TestListApprovalsNewestFirst(t *testing.T) {
 	empty, err := repository.ListApprovals(ctx, "pr_missing")
 	if err != nil || empty == nil || len(empty) != 0 {
 		t.Fatalf("empty approvals = %#v, %v", empty, err)
+	}
+}
+
+func TestListChangesScansNullDesiredForDelete(t *testing.T) {
+	ctx := context.Background()
+	repository, proposal := proposalRepository(t)
+	change := ledger.Change{ID: "chg_delete", LedgerID: proposal.LedgerID, Unit: "obsolete", Action: ledger.ChangeDelete, DesiredFingerprint: ledger.Fingerprint(nil), IdempotencyKey: "delete", RequestFingerprint: "sha256:delete", Status: ledger.ChangeReady, CreatedAt: time.Now().UTC()}
+	if err := repository.InsertChange(ctx, &change); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := repository.ListChanges(ctx, proposal.LedgerID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].ID != change.ID || items[0].Desired != nil {
+		t.Fatalf("changes = %#v", items)
+	}
+	encoded, err := json.Marshal(items[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), `"desired"`) {
+		t.Fatalf("DELETE response exposed desired: %s", encoded)
 	}
 }

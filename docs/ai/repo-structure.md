@@ -146,7 +146,7 @@ studio/
     ├── app/
     │   ├── bootstrap.tsx       # createRoot + StrictMode + Providers + root ErrorBoundary + Shell
     │   ├── error-boundary.tsx  # resettable root/section React render boundary
-    │   ├── providers.tsx       # Reachability + AppState providers; selected Ledger id persisted locally
+    │   ├── providers.tsx       # Reachability + AppState providers; selected Ledger id and switcher-open requests
     │   ├── reachability.tsx    # Runtime polling, request health, stream state, reconnect invalidation
     │   ├── reachability-banner.tsx # persistent application-level transport failure surface
     │   ├── router.tsx          # hash routing: Route union + useRoute()
@@ -167,10 +167,10 @@ studio/
     │   ├── layout/             # slot-based application shell, page header, panel, drawer
     │   └── feedback/           # loading skeleton, empty/error states, AsyncBoundary query state renderer
     ├── features/               # ALL domain-aware UI
-    │   ├── shared/status.ts    # domain status → badge tone mapping (design-system §2.2)
+    │   ├── shared/             # domain status mapping and relative-time formatting
     │   ├── shell/              # Ledger switcher, HEAD chip, navigation, and shared connection status
     │   ├── ledgers/ledgers-page.tsx
-    │   ├── changes/changes-page.tsx
+    │   ├── changes/            # inbox page, pure submission/filter/order helpers, selection action bar, tests
     │   ├── proposals/proposals-page.tsx
     │   └── releases/releases-page.tsx
     └── test/                   # currently empty — GRF-230

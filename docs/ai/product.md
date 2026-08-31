@@ -232,8 +232,8 @@ Four top-level areas, nothing else:
 | Area | Purpose |
 |---|---|
 | **Ledgers** | Create and select the active Ledger. Selection persists in `localStorage` under `gyrifi.ledger`. |
-| **Changes** | Durable inbox view plus a form to submit desired state. |
-| **Proposals** | Review queue. Build a Proposal from `READY` Changes; run Evaluate / Approve / Release. |
+| **Changes** | Durable inbox, PUT/DELETE submission, Change inspection, and the ordered selection flow that starts Proposal creation from `READY` Changes. |
+| **Proposals** | Review queue for created Proposals; run Evaluate / Approve / Release. |
 | **Releases** | Immutable history. Trigger rollback from any non-HEAD Release. |
 
 There are deliberately **no** top-level pages for SQLite, object storage, target operations, inference processes, or Release Intents. Those are implementation concerns, not product concerns. Release Intent *recovery* is the one exception and belongs **inside** Releases (GRF-213).

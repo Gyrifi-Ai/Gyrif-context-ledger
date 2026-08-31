@@ -10,18 +10,22 @@ interface AppState {
   ledgers: Ledger[];
   setLedgerId: (id: string) => void;
   refreshLedgers: () => Promise<void>;
+  openLedgerSwitcher: () => void;
+  ledgerSwitcherRequest: number;
 }
 
 const Context = createContext<AppState | null>(null);
 
 function AppStateProvider({ children }: { children: ReactNode }) {
   const [ledgerId, setLedgerId] = useState(() => localStorage.getItem("gyrifi.ledger") ?? "");
+  const [ledgerSwitcherRequest, setLedgerSwitcherRequest] = useState(0);
   const ledgerQuery = useQuery("app-ledgers", async (signal) => (await api.ledgers({ signal })).items ?? [], []);
   const ledgers = ledgerQuery.data ?? [];
   const refreshLedgers = useCallback(async () => { ledgerQuery.refetch(); }, [ledgerQuery.refetch]);
   const selectLedger = useCallback((id: string) => { localStorage.setItem("gyrifi.ledger", id); setLedgerId(id); }, []);
+  const openLedgerSwitcher = useCallback(() => setLedgerSwitcherRequest((request) => request + 1), []);
   const ledger = ledgers.find((item) => item.id === ledgerId) ?? null;
-  const value = useMemo(() => ({ ledgerId, ledger, ledgers, setLedgerId: selectLedger, refreshLedgers }), [ledgerId, ledger, ledgers, selectLedger, refreshLedgers]);
+  const value = useMemo(() => ({ ledgerId, ledger, ledgers, setLedgerId: selectLedger, refreshLedgers, openLedgerSwitcher, ledgerSwitcherRequest }), [ledgerId, ledger, ledgers, selectLedger, refreshLedgers, openLedgerSwitcher, ledgerSwitcherRequest]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 

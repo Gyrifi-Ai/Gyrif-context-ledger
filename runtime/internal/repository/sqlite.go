@@ -131,7 +131,9 @@ func (repository *SQLite) ListLedgers(ctx context.Context) ([]ledger.Ledger, err
 func scanChange(scanner interface{ Scan(...any) error }) (ledger.Change, error) {
 	var item ledger.Change
 	var created string
-	err := scanner.Scan(&item.ID, &item.LedgerID, &item.Sequence, &item.Unit, &item.Action, &item.Desired, &item.BaseFingerprint, &item.DesiredFingerprint, &item.IdempotencyKey, &item.RequestFingerprint, &item.Status, &created)
+	var desired []byte
+	err := scanner.Scan(&item.ID, &item.LedgerID, &item.Sequence, &item.Unit, &item.Action, &desired, &item.BaseFingerprint, &item.DesiredFingerprint, &item.IdempotencyKey, &item.RequestFingerprint, &item.Status, &created)
+	item.Desired = desired
 	item.CreatedAt = parseTime(created)
 	return item, err
 }

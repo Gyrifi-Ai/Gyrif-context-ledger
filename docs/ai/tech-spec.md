@@ -335,6 +335,7 @@ func (e *Engine) Close() error
 **`CreateChange`** — see [product.md §3](product.md). Key details:
 - `PUT` desired JSON is compacted via `json.Compact`; invalid JSON ⇒ `INVALID_ARGUMENT`.
 - `DELETE` forces `Desired = nil`.
+- Repository scans route nullable `desired` through `[]byte`, so lists containing DELETE Changes remain readable and omit `desired` from the JSON response.
 - Idempotency is checked **before** insert and again on insert failure (race-safe fallback).
 - Status is set to `READY` at insert.
 - Desired bytes are written to the CAS as `VALUE` before the row insert.
@@ -710,7 +711,7 @@ Named SSE frames are parsed against the exact event-kind union; malformed or unk
 
 `app/error-boundary.tsx` is the class-based `ErrorBoundary({ fallback, onError?, children })`. The root boundary is inside `Providers` and renders a full-page `ErrorState`, error `CodeBlock`, and last failed request ID. The current routed page has a separately keyed section boundary, so navigation survives a page render error and reset remounts only that subtree. The boundary owns once-per-error logging; React's root `onCaughtError` default logger is disabled to avoid duplicate console entries.
 
-State composition: `Providers` nests reachability around the AppState context `{ ledgerId, ledger, ledgers, setLedgerId, refreshLedgers }`; its ledger list read uses `useQuery`, and only `ledgerId` is persisted to `localStorage["gyrifi.ledger"]`. The four feature pages use `useQuery`, `AsyncBoundary`, `useMutation`, and reconnect invalidation; mutation errors are rendered through `ErrorState`, and every mutation control consumes `blocked` and `disabledReason`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#releases`), defaulting to `ledgers`.
+State composition: `Providers` nests reachability around the AppState context `{ ledgerId, ledger, ledgers, setLedgerId, refreshLedgers, openLedgerSwitcher, ledgerSwitcherRequest }`; `openLedgerSwitcher()` increments the request token so ledger-scoped empty states can focus and open the shared topbar switcher. Its ledger list read uses `useQuery`, and only `ledgerId` is persisted to `localStorage["gyrifi.ledger"]`. The four feature pages use `useQuery`, `AsyncBoundary`, `useMutation`, and reconnect invalidation; mutation errors are rendered through `ErrorState`, and every mutation control consumes `blocked` and `disabledReason`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#releases`), defaulting to `ledgers`.
 
 ---
 
@@ -721,7 +722,7 @@ State composition: `Providers` nests reachability around the AppState context `{
 | `runtime/internal/engine/events_test.go` | broker delivery, full-buffer drops, idempotent unsubscribe, and concurrent publish/unsubscribe safety |
 | `runtime/internal/interfaces/http/events_test.go` | SSE connected frame, domain forwarding, Ledger filtering, flushing, and context cancellation |
 | `runtime/tests/change_flow_test.go` | full Change → Proposal → Evaluation → Approval → Release and event sequence; idempotent re-submission; rollback; apply/verify failure and recovery events |
-| `runtime/internal/repository/sqlite_test.go` | CheckResult and Approval newest-first ordering plus non-null empty lists |
+| `runtime/internal/repository/sqlite_test.go` | CheckResult and Approval newest-first ordering, non-null empty lists, and nullable DELETE desired scanning/serialization |
 | `runtime/tests/proposal_detail_test.go` | detail and action gates, release/approval reason anti-drift, moved HEAD, stale/malformed evidence, cross-Ledger isolation, and HTTP serialization |
 | `runtime/internal/ledger/invariants_test.go` | Proposal hash determinism and order sensitivity; approval staleness after re-hash |
 | `runtime/internal/targets/qdrant/qdrant_test.go` | collection path construction, `api-key` header, cosine vector equivalence |
@@ -730,6 +731,8 @@ State composition: `Providers` nests reachability around the AppState context `{
 | `studio/src/api/events.test.ts` | stream state, bounded CLOSED retry, manual reconnect, timer/source teardown, typed named-event parsing and dispatch |
 | `studio/src/app/error-boundary.test.tsx` | fallback/reset contract and once-per-error logging |
 | `studio/src/app/reachability.test.ts` | exact bounded reachability backoff schedule |
+| `studio/src/features/changes/*.test.ts(x)` | Changes inbox states, eligibility, selection-bar contract, filtering, JSON validation, DELETE omission, ordering, and conflict placement |
+| `studio/src/features/shared/time.test.ts` | relative minute/hour/day age formatting and malformed/future timestamps |
 | `studio/src/test/` | **empty** (GRF-230) |
 | `e2e/` | **empty** (GRF-232) |
 

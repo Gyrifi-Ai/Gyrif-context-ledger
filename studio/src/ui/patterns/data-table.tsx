@@ -1,11 +1,115 @@
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "../feedback/skeleton";
-export type Column<T> = { key: string; header: ReactNode; width?: string; align?: "start" | "end"; mono?: boolean; render: (row: T) => ReactNode };
-export type DataTableProps<T> = { columns: Column<T>[]; rows: T[]; getRowId: (row: T) => string; selectable?: boolean; selectedIds?: string[]; onSelectionChange?: (ids: string[]) => void; onRowClick?: (row: T) => void; loading?: boolean; empty?: ReactNode };
-export function DataTable<T>({ columns, rows, getRowId, selectable = false, selectedIds = [], onSelectionChange, onRowClick, loading = false, empty }: DataTableProps<T>) {
+
+export type Column<T> = {
+  key: string;
+  header: ReactNode;
+  width?: string;
+  align?: "start" | "end";
+  mono?: boolean;
+  render: (row: T) => ReactNode;
+};
+
+export type DataTableProps<T> = {
+  columns: Column<T>[];
+  rows: T[];
+  getRowId: (row: T) => string;
+  selectable?: boolean;
+  selectedIds?: string[];
+  onSelectionChange?: (ids: string[]) => void;
+  isRowSelectable?: (row: T) => boolean;
+  getSelectionDisabledReason?: (row: T) => string;
+  highlightedId?: string;
+  onRowClick?: (row: T) => void;
+  loading?: boolean;
+  empty?: ReactNode;
+};
+
+export function DataTable<T>({
+  columns,
+  rows,
+  getRowId,
+  selectable = false,
+  selectedIds = [],
+  onSelectionChange,
+  isRowSelectable = () => true,
+  getSelectionDisabledReason,
+  highlightedId,
+  onRowClick,
+  loading = false,
+  empty,
+}: DataTableProps<T>) {
   const table = useRef<HTMLTableElement>(null);
-  const toggle = (id: string) => onSelectionChange?.(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
-  const keyDown = (event: KeyboardEvent<HTMLTableRowElement>, row: T, index: number) => { const rowElements = table.current?.querySelectorAll<HTMLTableRowElement>('tbody tr[data-row]'); if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); rowElements?.[Math.max(0, Math.min(rows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]?.focus(); } if (event.key === " " && selectable) { event.preventDefault(); toggle(getRowId(row)); } if (event.key === "Enter") onRowClick?.(row); };
-  return <div className="overflow-auto"><table ref={table} className="w-full text-sm"><thead className="sticky top-0 bg-card"><tr>{selectable && <th scope="col" className="w-10 px-3 py-3" />} {columns.map((column) => <th key={column.key} scope="col" style={{ width: column.width }} className={cn("border-b border-border px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", column.align === "end" && "text-right")}>{column.header}</th>)}</tr></thead><tbody>{loading ? Array.from({ length: 4 }, (_, index) => <tr key={index}><td colSpan={columns.length + Number(selectable)} className="px-3 py-3"><Skeleton height="1rem" /></td></tr>) : rows.map((row, index) => { const id = getRowId(row); const selected = selectedIds.includes(id); return <tr data-row key={id} tabIndex={0} onKeyDown={(event) => keyDown(event, row, index)} onClick={() => onRowClick?.(row)} className={cn("h-11 border-b border-border/60 outline-none hover:bg-muted/60", selected && "border-l-2 border-l-primary bg-primary/5", onRowClick && "cursor-pointer")}>{selectable && <td className="px-3" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${id}`} checked={selected} onChange={() => toggle(id)} /></td>}{columns.map((column) => <td key={column.key} className={cn("px-3 py-2", column.align === "end" && "text-right", column.mono && "font-mono text-xs")}>{column.render(row)}</td>)}</tr>; })}</tbody></table>{!loading && rows.length === 0 && <div>{empty}</div>}</div>;
+  const toggle = (row: T) => {
+    if (!isRowSelectable(row)) return;
+    const id = getRowId(row);
+    onSelectionChange?.(selectedIds.includes(id) ? selectedIds.filter((item) => item !== id) : [...selectedIds, id]);
+  };
+  const keyDown = (event: KeyboardEvent<HTMLTableRowElement>, row: T, index: number) => {
+    const rowElements = table.current?.querySelectorAll<HTMLTableRowElement>("tbody tr[data-row]");
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      rowElements?.[Math.max(0, Math.min(rows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]?.focus();
+    }
+    if (event.key === " " && selectable && isRowSelectable(row)) {
+      event.preventDefault();
+      toggle(row);
+    }
+    if (event.key === "Enter") onRowClick?.(row);
+  };
+
+  return (
+    <div className="overflow-auto">
+      <table ref={table} className="w-full text-sm">
+        <thead className="sticky top-0 bg-card">
+          <tr>
+            {selectable && <th scope="col" className="w-10 px-3 py-3" />}
+            {columns.map((column) => (
+              <th key={column.key} scope="col" style={{ width: column.width }} className={cn("border-b border-border px-3 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground", column.align === "end" && "text-right")}>{column.header}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {loading ? Array.from({ length: 4 }, (_, index) => (
+            <tr key={index}><td colSpan={columns.length + Number(selectable)} className="px-3 py-3"><Skeleton height="1rem" /></td></tr>
+          )) : rows.map((row, index) => {
+            const id = getRowId(row);
+            const selected = selectedIds.includes(id);
+            const rowSelectable = isRowSelectable(row);
+            return (
+              <tr
+                data-row
+                key={id}
+                tabIndex={0}
+                onKeyDown={(event) => keyDown(event, row, index)}
+                onClick={() => onRowClick?.(row)}
+                className={cn(
+                  "h-11 border-b border-border/60 outline-none hover:bg-muted/60",
+                  selected && "border-l-2 border-l-primary bg-primary/5",
+                  highlightedId === id && "bg-primary/10",
+                  onRowClick && "cursor-pointer",
+                )}
+              >
+                {selectable && (
+                  <td className="px-3" onClick={(event) => event.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${id}`}
+                      checked={selected}
+                      disabled={!rowSelectable}
+                      title={!rowSelectable ? getSelectionDisabledReason?.(row) : undefined}
+                      onChange={() => toggle(row)}
+                    />
+                  </td>
+                )}
+                {columns.map((column) => <td key={column.key} className={cn("px-3 py-2", column.align === "end" && "text-right", column.mono && "font-mono text-xs")}>{column.render(row)}</td>)}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {!loading && rows.length === 0 && <div>{empty}</div>}
+    </div>
+  );
 }

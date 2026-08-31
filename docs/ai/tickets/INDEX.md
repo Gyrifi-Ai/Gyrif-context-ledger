@@ -133,7 +133,7 @@ Update this table when a ticket is completed, and write the corresponding entry 
 | GRF-203 | Done | 2026-08-17 | phase-1.md |
 | GRF-204 | Done | 2026-08-31 | phase-1.md |
 | GRF-205 | Done | 2026-08-31 | phase-1.md |
-| GRF-206 | Not started | — | — |
+| GRF-206 | Done | 2026-08-31 | phase-1.md |
 | GRF-207 | Not started | — | — |
 | GRF-208 | Not started | — | — |
 | GRF-209 | Done | 2026-08-31 | phase-1.md |

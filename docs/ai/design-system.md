@@ -462,7 +462,9 @@ A ledger is a governed namespace with its own inbox, proposals, and release hist
 - The active ledger card gets an orange border and an `ACTIVE` badge.
 - Empty state: "No ledgers yet" + description + primary `Create your first ledger`.
 
-### 5.2 Changes
+### 5.2 Changes — implemented by GRF-206
+
+The implemented inbox owns its `PageHeader`, derives its READY/RELEASED/INVALID strip from the fetched list, and filters that list by status, action, and unit. READY rows alone are selectable; selection opens an ordered Proposal drawer through the sticky action bar. Row detail and PUT/DELETE submission use right-hand drawers, with blur/submit JSON validation, visible idempotency keys, exact server errors, stale-data retention, and a three-second accepted-Change confirmation.
 
 ```
 DURABLE INBOX
@@ -482,6 +484,8 @@ Desired-state mutations waiting to be proposed. Nothing here has touched the tar
 - Row click opens a side drawer with the full desired JSON in a `CodeBlock`, both fingerprints, the idempotency key, and timestamps.
 - `Submit change` opens a right-hand drawer: `unit`, `action` segmented control, JSON editor with live validation and a `Format` button, and an auto-generated but editable idempotency key.
 - JSON validation errors appear inline under the editor, not as a generic red line at the bottom of the form.
+
+The sketch's standalone `Build proposal →` header action is intentionally omitted: Proposal creation requires one or more selected READY rows and therefore starts from the selection bar. The detail drawer cannot show the idempotency key because the current `Change` response does not expose it; the submitted desired value, fingerprints, identity, sequence, action, status, and timestamp are shown.
 
 ### 5.3 Proposals
 
