@@ -1,8 +1,12 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { api } from "../../api/client";
 import type { Change } from "../../api/types";
 import { useAppState } from "../../app/providers";
+import { useLedgerEvents } from "../../app/use-ledger-events";
+import { useMutation, useQuery } from "../../app/use-async";
+import { AsyncBoundary } from "../../ui/feedback/async-boundary";
 import { EmptyState } from "../../ui/feedback/empty-state";
+import { ErrorState } from "../../ui/feedback/error-state";
 import { StatusBadge } from "../../ui/patterns/status-badge";
 import { changeTone } from "../shared/status";
 import { Button } from "@/components/ui/button";
@@ -27,19 +31,18 @@ import {
 
 export function ChangesPage() {
   const { ledgerId } = useAppState();
-  const [items, setItems] = useState<Change[]>([]);
   const [unit, setUnit] = useState("");
   const [desired, setDesired] = useState("{}");
-  const [error, setError] = useState("");
-  const load = () => {
-    if (ledgerId) {
-      void api.changes(ledgerId).then((value) => setItems(value.items ?? [])).catch((value: Error) => setError(value.message));
-    }
-  };
-  useEffect(() => { load(); }, [ledgerId]);
-  const create = async (event: FormEvent) => {
-    event.preventDefault(); setError("");
-    try { await api.createChange(ledgerId, { unit, action: "PUT", desired: JSON.parse(desired), idempotencyKey: crypto.randomUUID() }); setUnit(""); await load(); } catch (value) { setError((value as Error).message); }
+  const changesQuery = useQuery("changes", async (signal) => ledgerId ? (await api.changes(ledgerId, { signal })).items ?? [] : [], [ledgerId]);
+  const createMutation = useMutation(async ({ changeUnit, changeDesired }: { changeUnit: string; changeDesired: string }) => {
+    await api.createChange(ledgerId, { unit: changeUnit, action: "PUT", desired: JSON.parse(changeDesired), idempotencyKey: crypto.randomUUID() });
+    setUnit("");
+    changesQuery.refetch();
+  });
+  useLedgerEvents(changesQuery.refetch);
+  const create = (event: FormEvent) => {
+    event.preventDefault();
+    void createMutation.run({ changeUnit: unit, changeDesired: desired });
   };
   if (!ledgerId) return (
     <Card>
@@ -54,12 +57,11 @@ export function ChangesPage() {
             <CardTitle className="text-base">Received changes</CardTitle>
             <CardDescription className="mt-1">Durable inbox for this ledger</CardDescription>
           </div>
-          <span className="text-sm text-muted-foreground">{items.length} received</span>
+          <span className="text-sm text-muted-foreground">{changesQuery.data?.length ?? 0} received</span>
         </CardHeader>
         <CardContent className="p-0">
-          {items.length === 0 ? (
-            <EmptyState title="No Changes yet" description="Submit desired state here or through the versioned API." />
-          ) : (
+          <AsyncBoundary query={changesQuery} empty={<EmptyState title="No Changes yet" description="Submit desired state here or through the versioned API." />}>
+            {(items: Change[]) => (
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -88,7 +90,8 @@ export function ChangesPage() {
                 ))}
               </TableBody>
             </Table>
-          )}
+            )}
+          </AsyncBoundary>
         </CardContent>
       </Card>
       <Card>
@@ -106,8 +109,8 @@ export function ChangesPage() {
               <Label htmlFor="change-desired">JSON value</Label>
               <Textarea id="change-desired" value={desired} onChange={(event) => setDesired(event.target.value)} rows={8} spellCheck={false} />
             </div>
-            {error && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">{error}</p>}
-            <Button type="submit" className="w-full">Accept Change</Button>
+            {createMutation.error && <ErrorState title="Unable to accept Change" message={createMutation.error.message} onRetry={() => void createMutation.run({ changeUnit: unit, changeDesired: desired })} />}
+            <Button type="submit" className="w-full" loading={createMutation.pending}>Accept Change</Button>
           </form>
         </CardContent>
       </Card>

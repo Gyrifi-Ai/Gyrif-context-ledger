@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./client";
+import { ApiError, api } from "./client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -12,7 +12,16 @@ describe("API client", () => {
   });
 
   it("maps structured API errors", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "blocked" } }), { status: 409 })));
-    await expect(api.createLedger({ name: "duplicate" })).rejects.toThrow("blocked");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "CONFLICT", message: "blocked" } }), { status: 409 })));
+    const error = await api.createLedger({ name: "duplicate" }).catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ code: "CONFLICT", message: "blocked", status: 409 } satisfies Partial<ApiError>);
+  });
+
+  it("uses UNKNOWN for malformed error envelopes", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not json", { status: 500 })));
+    const error = await api.ledgers().catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ code: "UNKNOWN", message: "Request failed (500)", status: 500 } satisfies Partial<ApiError>);
   });
 });

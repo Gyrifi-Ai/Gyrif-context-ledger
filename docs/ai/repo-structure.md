@@ -134,6 +134,7 @@ studio/
 ├── index.html                  # <div id="root">, theme-color #06080c
 └── src/
     ├── main.tsx                # imports styles.css, calls bootstrap(root)
+    ├── vite-env.d.ts           # Vite client environment declarations
     ├── styles.css              # Tailwind v4 entry: @theme tokens (design-system palette) + base layer
     ├── lib/utils.ts            # cn() — clsx + tailwind-merge
     ├── app/
@@ -141,6 +142,8 @@ studio/
     │   ├── providers.tsx       # AppState context: selected Ledger, ledger list, refresh handle; id persisted locally
     │   ├── router.tsx          # hash routing: Route union + useRoute()
     │   └── shell.tsx           # maps Route → page component
+    │   ├── use-async.ts        # dependency-free useQuery/useMutation lifecycle primitives
+    │   └── use-ledger-events.ts # optional EventSource invalidation hook (enabled by GRF-210)
     ├── api/
     │   ├── types.ts            # the API contract types (mirror of Go JSON tags)
     │   ├── client.ts           # request<T>() + the `api` object
@@ -152,7 +155,7 @@ studio/
     │   ├── primitives/         # Button, field controls, segmented control, domain-free SVG icons
     │   ├── patterns/           # DataTable, badges, hashes, code, timeline, stats, confirmation dialog
     │   ├── layout/             # slot-based application shell, page header, panel, drawer
-    │   └── feedback/           # loading skeleton, empty state, and retryable error state
+    │   └── feedback/           # loading skeleton, empty/error states, AsyncBoundary query state renderer
     ├── features/               # ALL domain-aware UI
     │   ├── shared/status.ts    # domain status → badge tone mapping (design-system §2.2)
     │   ├── shell/              # Ledger switcher, HEAD chip, navigation, and server-status poller

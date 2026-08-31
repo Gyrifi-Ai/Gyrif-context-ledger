@@ -1,15 +1,24 @@
 import type { Change, Ledger, Proposal, Release, SystemStatus } from "./types";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export class ApiError extends Error {
+  constructor(readonly code: string, message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+type ErrorEnvelope = { error?: { code?: unknown; message?: unknown } };
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-    const error = new Error(body?.error?.message ?? `Request failed (${response.status})`) as Error & { status?: number };
-    error.status = response.status;
-    throw error;
+    const body = await response.json().catch(() => null) as ErrorEnvelope | null;
+    const code = typeof body?.error?.code === "string" ? body.error.code : "UNKNOWN";
+    const message = typeof body?.error?.message === "string" ? body.error.message : `Request failed (${response.status})`;
+    throw new ApiError(code, message, response.status);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -17,15 +26,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   status: (init?: RequestInit) => request<SystemStatus>("/api/v1/system/status", init),
-  ledgers: () => request<{ items: Ledger[] }>("/api/v1/ledgers"),
+  ledgers: (init?: RequestInit) => request<{ items: Ledger[] }>("/api/v1/ledgers", init),
   createLedger: (input: { name: string; description?: string }) => request<Ledger>("/api/v1/ledgers", { method: "POST", body: JSON.stringify(input) }),
-  changes: (ledgerId: string) => request<{ items: Change[] }>(`/api/v1/ledgers/${ledgerId}/changes`),
+  changes: (ledgerId: string, init?: RequestInit) => request<{ items: Change[] }>(`/api/v1/ledgers/${ledgerId}/changes`, init),
   createChange: (ledgerId: string, input: { unit: string; action: "PUT" | "DELETE"; desired?: unknown; idempotencyKey: string }) => request<Change>(`/api/v1/ledgers/${ledgerId}/changes`, { method: "POST", body: JSON.stringify(input) }),
-  proposals: (ledgerId: string) => request<{ items: Proposal[] }>(`/api/v1/ledgers/${ledgerId}/proposals`),
+  proposals: (ledgerId: string, init?: RequestInit) => request<{ items: Proposal[] }>(`/api/v1/ledgers/${ledgerId}/proposals`, init),
   createProposal: (ledgerId: string, input: { title: string; changeIds: string[] }) => request<Proposal>(`/api/v1/ledgers/${ledgerId}/proposals`, { method: "POST", body: JSON.stringify(input) }),
   evaluate: (ledgerId: string, proposalId: string, criteria: string) => request<{ passed: boolean; summary: string }>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/evaluation`, { method: "POST", body: JSON.stringify({ criteria }) }),
   approve: (ledgerId: string, proposalId: string) => request<void>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/approvals`, { method: "POST", body: JSON.stringify({ actor: "local-user" }) }),
   release: (ledgerId: string, proposalId: string) => request<Release>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/release`, { method: "POST" }),
-  releases: (ledgerId: string) => request<{ items: Release[] }>(`/api/v1/ledgers/${ledgerId}/releases`),
+  releases: (ledgerId: string, init?: RequestInit) => request<{ items: Release[] }>(`/api/v1/ledgers/${ledgerId}/releases`, init),
   rollback: (ledgerId: string, releaseId: string) => request<Proposal>(`/api/v1/ledgers/${ledgerId}/releases/${releaseId}/rollback`, { method: "POST" }),
 };

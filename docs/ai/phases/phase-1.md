@@ -12,7 +12,7 @@
 | [GRF-201](../tickets/GRF-201-design-tokens.md) | Mockup-led design token foundation | M | — | Done |
 | [GRF-202](../tickets/GRF-202-ui-library.md) | UI primitive and pattern library | L | GRF-201 | Done |
 | [GRF-203](../tickets/GRF-203-application-shell.md) | Application shell, navigation, real runtime status | M | GRF-202 | Done |
-| [GRF-204](../tickets/GRF-204-async-data-layer.md) | Async data layer | M | — | Not started |
+| [GRF-204](../tickets/GRF-204-async-data-layer.md) | Async data layer | M | — | Done |
 | [GRF-205](../tickets/GRF-205-ledgers-page.md) | Ledgers page redesign | M | GRF-203, GRF-204 | Not started |
 | [GRF-206](../tickets/GRF-206-changes-page.md) | Changes inbox redesign | L | GRF-203, GRF-204 | Not started |
 | [GRF-207](../tickets/GRF-207-proposals-workspace.md) | Proposals review workspace | XL | GRF-203, GRF-204, GRF-211 | Not started |
@@ -312,3 +312,113 @@ Manual browser verification: `#ledgers` rendered at 1440 × 1024 px against a li
 
 - GRF-202 must provide the mockup-specific reusable primitives — grouped navigation, dense DataTable, detail drawer, KPI strip, and floating selection bar — before the shell and workflow pages are rebuilt.
 - The known DELETE `desired = NULL` runtime scan failure remains a server bug; it needs its own Phase 2 ticket before Changes can reliably render DELETE rows.
+
+### GRF-204 — Async data layer with loading, error, and empty states
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Uncommitted workspace change |
+| Deviated from ticket | No |
+
+**What was built**
+
+Studio now has a small dependency-free async state layer. The four feature pages preserve their current layouts but now render loading skeletons, retryable server errors, explicit empty states, and dimmed stale content during refetches. Every mutating action has an in-flight guard, disables itself while pending, and surfaces a server error instead of swallowing it.
+
+**Files added**
+
+- `studio/src/app/use-async.ts` — abort-safe `useQuery` and guarded `useMutation` hooks.
+- `studio/src/app/use-ledger-events.ts` — feature-flagged EventSource query invalidation hook for GRF-210 domain events.
+- `studio/src/ui/feedback/async-boundary.tsx` — loading/error/empty/populated query state renderer.
+- `studio/src/ui/feedback/async-boundary.test.tsx` — rendered coverage of all query boundary branches.
+- `studio/src/vite-env.d.ts` — Vite environment declarations for the event feature flag.
+
+**Files changed**
+
+- `studio/src/api/client.ts` — typed `ApiError`, resilient error-envelope parsing, and signal-capable list reads.
+- `studio/src/api/client.test.ts` — structured and malformed error-envelope coverage.
+- `studio/src/app/providers.tsx` — ledger context list now uses the query primitive rather than swallowing its initial fetch failure.
+- `studio/src/components/ui/button.tsx` — added the existing Studio `loading` control state for mutation buttons.
+- `studio/src/features/{ledgers,changes,proposals,releases}/*-page.tsx` — query boundaries, mutation state, pending buttons, retryable failures, and event invalidation wiring.
+- `studio/src/features/shell/head-chip.tsx` — abort-safe releases query and visible HEAD read failure.
+- `studio/src/styles.css` — `gy-is-refetching` stale-content opacity class.
+- `docs/ai/tech-spec.md`, `docs/ai/repo-structure.md`, `docs/ai/tickets/INDEX.md` — current contracts, source tree, and ticket status.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```ts
+export class ApiError extends Error {
+	constructor(readonly code: string, message: string, readonly status: number);
+}
+
+export function useQuery<T>(
+	key: string,
+	fn: (signal: AbortSignal) => Promise<T>,
+	deps: unknown[],
+): QueryResult<T>;
+
+export function useMutation<TArgs, TResult>(
+	fn: (args: TArgs) => Promise<TResult>,
+): MutationResult<TArgs, TResult>;
+
+export function useLedgerEvents(onInvalidate: () => void): void;
+```
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Keep the hooks cache-free | The ticket permits only active-request lifecycle management at this scale | Add a query library or global cache | New dependencies and cross-screen state are explicitly out of scope |
+| Abort and replace a query for every refetch | Dependency changes and retries cannot commit stale responses | Let overlapping responses race | Older results could overwrite the current ledger data |
+| Gate EventSource invalidation on `VITE_GYRIFI_ENABLE_LEDGER_EVENTS` | The current server event is a connection handshake, not a domain update | Connect every screen now | It produces unnecessary refetches until GRF-210 emits real ledger events |
+
+**Deviations from the ticket**
+
+None. The requested event hook is implemented behind its requested disabled flag; setting `VITE_GYRIFI_ENABLE_LEDGER_EVENTS=true` connects it and invalidates on each `ledger` event.
+
+**Traps for future work**
+
+- `useQuery` callback identity is deliberately not a dependency: callers must list the data inputs in `deps`, and the hook reads the latest callback through a ref.
+- A query's `refetch` aborts the prior request, preserves already-resolved data, and dims it through `gy-is-refetching`; do not replace that content with a spinner.
+- `useMutation.run` captures errors into mutation state rather than rejecting. Trigger it with `void`, then render `error` near the relevant action and call `refetch` only after a confirmed successful request.
+- Keep the ledger event flag disabled until GRF-210 replaces the server's connection `ledger` event with domain invalidations.
+
+**Tests added**
+
+- `studio/src/api/client.test.ts` — confirms `ApiError` preserves a `CONFLICT` envelope and safely labels malformed responses `UNKNOWN`.
+- `studio/src/ui/feedback/async-boundary.test.tsx` — verifies loading skeleton, retryable error, empty, populated, and stale-content class rendering.
+
+**Docs updated**
+
+- `docs/ai/tech-spec.md` §11 — API error, async-hook, boundary, EventSource-flag, and 18080 proxy contracts.
+- `docs/ai/repo-structure.md` §3 — new app infrastructure and feedback boundary files.
+- `docs/ai/tickets/INDEX.md` — GRF-204 completion.
+
+**Verification**
+
+```
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference      1.622s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger         2.605s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant 2.139s
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/tests                    3.334s
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files  4 passed (4)
+Tests       7 passed (7)
+✓ 1905 modules transformed.
+✓ built in 1.01s
+
+$ cd .. && docker build -t gyrifi:local .
+ERROR: failed to solve: failed to fetch anonymous token from auth.docker.io: connection reset by peer
+```
+
+**Follow-ups discovered**
+
+- The Docker image build was blocked by an external Docker Hub authentication connection reset before any build stage ran. Re-run the image portion of the quality gate once registry access is available.

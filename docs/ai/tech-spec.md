@@ -588,18 +588,51 @@ The provider has no access to `Repository` or `TargetAdapter`. Port 8081 is neve
 
 ## 11. Frontend contract
 
-`studio/src/api/client.ts` exposes one `request<T>` helper and the `api` object. Behaviour:
+`studio/src/api/client.ts` exposes `request<T>`, `ApiError`, and the `api` object:
 
-- always sets `Content-Type: application/json`,
-- non-2xx ⇒ throws `Error(body.error.message)` or `Request failed ({status})`,
-- `204` ⇒ resolves `undefined`,
-- all paths are relative; Vite proxies `/api` and `/events` to `127.0.0.1:8080` in dev, and production is same-origin.
+```ts
+class ApiError extends Error {
+    constructor(readonly code: string, message: string, readonly status: number);
+}
+
+function request<T>(path: string, init?: RequestInit): Promise<T>;
+```
+
+`request` always sets `Content-Type: application/json`; a non-2xx response throws `ApiError`, preserving `body.error.code` and `body.error.message`. Malformed error envelopes use `code: "UNKNOWN"` and `Request failed ({status})`. A `204` resolves `undefined`. Read methods accept an optional `RequestInit` so callers can supply an `AbortSignal`. All paths are relative; Vite proxies `/api` and `/events` to `127.0.0.1:18080` in development, and production is same-origin.
 
 `api` methods: `status`, `ledgers`, `createLedger`, `changes`, `createChange`, `proposals`, `createProposal`, `evaluate`, `approve`, `release`, `releases`, `rollback`.
 
-`studio/src/api/events.ts` exposes `subscribeToEvents(onChange)` over `EventSource("/events/v1")` listening for the `ledger` event. It is currently **not wired into any page** (GRF-210).
+`studio/src/app/use-async.ts` owns the dependency-free query and mutation state primitives:
 
-State: a single React context (`app/providers.tsx`) holding `{ ledgerId, ledger, ledgers, setLedgerId, refreshLedgers }`; only `ledgerId` is persisted to `localStorage["gyrifi.ledger"]`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#releases`), defaulting to `ledgers`.
+```ts
+type QueryResult<T> = {
+    data: T | undefined;
+    error: Error | undefined;
+    loading: boolean;
+    refetching: boolean;
+    refetch: () => void;
+};
+
+function useQuery<T>(key: string, fn: (signal: AbortSignal) => Promise<T>, deps: unknown[]): QueryResult<T>;
+
+type MutationResult<TArgs, TResult> = {
+    run: (args: TArgs) => Promise<void>;
+    pending: boolean;
+    error: Error | undefined;
+    result: TResult | undefined;
+    reset: () => void;
+};
+
+function useMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>): MutationResult<TArgs, TResult>;
+```
+
+`useQuery` aborts its active request on dependency change and unmount, does not update unmounted components, and preserves resolved data during a refetch while setting `refetching`. `useMutation` guards duplicate invocations while pending and exposes failures for the caller to render. There is no cache or request deduplication beyond the active request lifecycle.
+
+`ui/feedback/async-boundary.tsx` renders query loading, error/retry, empty, and populated states. It uses `Skeleton` while no data has resolved, `ErrorState` with `refetch` as Retry, defaults to arrays for empty detection, and retains populated content with the `gy-is-refetching` class (`opacity: 0.6`) during refetches.
+
+`studio/src/api/events.ts` exposes `subscribeToEvents(onChange)` over `EventSource("/events/v1")` listening for the `ledger` event. `app/use-ledger-events.ts` wraps it as `useLedgerEvents(onInvalidate)`, but its `VITE_GYRIFI_ENABLE_LEDGER_EVENTS` flag is disabled by default because the current stream only emits its connection handshake and keepalives. GRF-210 enables it when `ledger` carries domain invalidations.
+
+State: a single React context (`app/providers.tsx`) holding `{ ledgerId, ledger, ledgers, setLedgerId, refreshLedgers }`; its ledger list read uses `useQuery`, and only `ledgerId` is persisted to `localStorage["gyrifi.ledger"]`. The four feature pages use `useQuery`, `AsyncBoundary`, `useMutation`, and the event invalidation hook; mutation errors are always rendered through `ErrorState`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#releases`), defaulting to `ledgers`.
 
 `features/shell/use-system-status.ts` polls `api.status()` immediately and every 30 seconds while the document is visible. A successful response in 2 seconds is `Connected`; a slow success or an HTTP error is `Degraded`; a network failure is `Offline`. Each poll has an `AbortController`; it is aborted when hidden, on the next poll, and on unmount. The topbar renders the returned version and inference mode as the status title.
 
