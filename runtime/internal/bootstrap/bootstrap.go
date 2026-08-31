@@ -21,6 +21,9 @@ import (
 )
 
 func Run(ctx context.Context, args []string) error {
+	if handled, err := cli.RunVersion(args, os.Stdout); handled {
+		return err
+	}
 	settings, err := config.Load()
 	if err != nil {
 		return err

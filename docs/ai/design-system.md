@@ -308,7 +308,7 @@ Nav is **disabled except Ledgers** when no ledger is selected, with a tooltip "S
 |---|---|
 | Left | Ledger switcher — a button showing the ledger name plus `⌄`, opening a popover list with search. Shows "Select ledger" when empty. |
 | Centre-left | HEAD chip: `HEAD · rel_1a2b…` in mono, click-to-copy. `No releases yet` when HEAD is empty. |
-| Right | Runtime status dot + label, driven by a real `GET /api/v1/system/status` poll every 30 s. Three states: `Connected` (green), `Degraded` (amber, request slow or non-200), `Offline` (rose, request failed). Tooltip shows version and inference mode. |
+| Right | Runtime status dot + label, driven by a real `GET /api/v1/system/status` poll every 30 s. Three states: `Connected` (green), `Degraded` (amber, request slow or non-200), `Offline` (rose, request failed). A successful response renders its version beside the state; the tooltip shows version, commit, build date, and inference mode. |
 
 The current hardcoded "Runtime connected" text MUST be removed.
 

@@ -146,7 +146,7 @@ Update this table when a ticket is completed, and write the corresponding entry 
 | GRF-220 | Not started | — | — |
 | GRF-221 | Not started | — | — |
 | GRF-222 | Not started | — | — |
-| GRF-223 | In progress | — | — |
+| GRF-223 | Done | 2026-08-31 | b09a8d0 |
 | GRF-224 | Not started | — | — |
 | GRF-225 | Not started | — | — |
 | GRF-226 | Not started | — | — |

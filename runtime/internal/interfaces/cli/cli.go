@@ -11,6 +11,9 @@ import (
 )
 
 func Run(ctx context.Context, args []string, application *engine.Engine, output io.Writer) (bool, error) {
+	if handled, err := RunVersion(args, output); handled {
+		return true, err
+	}
 	if len(args) == 0 {
 		return false, nil
 	}
@@ -21,10 +24,18 @@ func Run(ctx context.Context, args []string, application *engine.Engine, output 
 			return true, err
 		}
 		return true, json.NewEncoder(output).Encode(map[string]any{"status": "ok", "ledgers": len(ledgers), "inference": application.InferenceName()})
-	case "version", "--version", "-version":
-		_, err := fmt.Fprintln(output, buildinfo.String())
-		return true, err
 	default:
 		return true, fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func RunVersion(args []string, output io.Writer) (bool, error) {
+	if len(args) == 0 {
+		return false, nil
+	}
+	if args[0] != "version" && args[0] != "--version" && args[0] != "-version" {
+		return false, nil
+	}
+	_, err := fmt.Fprintln(output, buildinfo.String())
+	return true, err
 }

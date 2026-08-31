@@ -29,3 +29,19 @@ func TestVersionUsesBuildInfo(t *testing.T) {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
+
+func TestRunVersionDefersOtherCommands(t *testing.T) {
+	var output bytes.Buffer
+	for _, args := range [][]string{nil, {"doctor"}, {"unknown"}} {
+		handled, err := RunVersion(args, &output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if handled {
+			t.Fatalf("RunVersion(%q) handled non-version command", args)
+		}
+	}
+	if output.Len() != 0 {
+		t.Fatalf("output = %q", output.String())
+	}
+}

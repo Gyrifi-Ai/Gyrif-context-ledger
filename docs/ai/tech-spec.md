@@ -30,18 +30,19 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 
 `bootstrap.Run` order (`internal/bootstrap/bootstrap.go`):
 
-1. `config.Load()` — fail fast on invalid env.
-2. `os.MkdirAll(DataDirectory, 0o750)` and `os.MkdirAll(dir(SQLitePath), 0o750)`.
-3. Build `slog` JSON logger to stdout at `info` or `debug`.
-4. `repository.OpenSQLite(ctx, SQLitePath, ObjectsPath)` — opens the DB, applies pragmas, runs migrations, creates the object store.
-5. `qdrant.New(QdrantURL, QdrantCollection, QdrantAPIKey)`.
-6. If `EvaluationProvider == "llamacpp"`: `os.Stat(ModelPath)`, then `inference.StartLlamaServer(...)`; `defer llama.Stop()`.
-7. `engine.New(repo, target, provider)` — `provider` is a nil interface when inference is disabled.
-8. `cli.Run(ctx, args, application, os.Stdout)` — **if it handled the args, return here; the HTTP server never starts.**
-9. `application.RecoverReleases(ctx)` — logs and continues on error.
-10. Construct `httpinterface.New(application, logger)`. HTTP reads the process-wide linker-injected `buildinfo` values directly.
-11. `http.Server{BaseContext: signal context, ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and `ListenAndServe`. Cancelling the process context cancels long-lived SSE request contexts before graceful shutdown waits for active connections.
-12. On `ctx.Done()`: `server.Shutdown` with a 10s timeout; deferred closes stop llama-server and the repository.
+1. `cli.RunVersion(args, os.Stdout)` — dispatch version flags before config or storage initialisation.
+2. `config.Load()` — fail fast on invalid env.
+3. `os.MkdirAll(DataDirectory, 0o750)` and `os.MkdirAll(dir(SQLitePath), 0o750)`.
+4. Build `slog` JSON logger to stdout at `info` or `debug`.
+5. `repository.OpenSQLite(ctx, SQLitePath, ObjectsPath)` — opens the DB, applies pragmas, runs migrations, creates the object store.
+6. `qdrant.New(QdrantURL, QdrantCollection, QdrantAPIKey)`.
+7. If `EvaluationProvider == "llamacpp"`: `os.Stat(ModelPath)`, then `inference.StartLlamaServer(...)`; `defer llama.Stop()`.
+8. `engine.New(repo, target, provider)` — `provider` is a nil interface when inference is disabled.
+9. `cli.Run(ctx, args, application, os.Stdout)` — **if it handled application-backed or invalid args, return here; the HTTP server never starts.**
+10. `application.RecoverReleases(ctx)` — logs and continues on error.
+11. Construct `httpinterface.New(application, logger)`. HTTP reads the process-wide linker-injected `buildinfo` values directly.
+12. `http.Server{BaseContext: signal context, ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and `ListenAndServe`. Cancelling the process context cancels long-lived SSE request contexts before graceful shutdown waits for active connections.
+13. On `ctx.Done()`: `server.Shutdown` with a 10s timeout; deferred closes stop llama-server and the repository.
 
 ### Local Docker Compose contract
 
@@ -70,7 +71,7 @@ Empty-or-whitespace values fall back to the default (helper `environment(name, f
 
 ### CLI (`internal/interfaces/cli/cli.go`)
 
-Signature: `Run(ctx, args []string, *engine.Engine, io.Writer) (handled bool, err error)`.
+Signatures: `RunVersion(args []string, io.Writer) (handled bool, err error)` for metadata-only early dispatch, then `Run(ctx, args []string, *engine.Engine, io.Writer) (handled bool, err error)` for application-backed dispatch.
 
 | Args | Behaviour |
 |---|---|
