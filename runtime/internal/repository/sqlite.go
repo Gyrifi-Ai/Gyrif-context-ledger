@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -197,12 +198,16 @@ func (repository *SQLite) LoadChanges(ctx context.Context, ledgerID string, ids 
 }
 
 func (repository *SQLite) InsertProposal(ctx context.Context, value ledger.Proposal) error {
+	changeIDs, err := json.Marshal(value.ChangeIDs)
+	if err != nil {
+		return fmt.Errorf("encode proposal Changes: %w", err)
+	}
 	tx, err := repository.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO proposals(id,ledger_id,title,base_release_id,proposal_hash,status,created_at) VALUES(?,?,?,?,?,?,?)`, value.ID, value.LedgerID, value.Title, value.BaseReleaseID, value.Hash, value.Status, formatTime(value.CreatedAt)); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO proposals(id,ledger_id,title,base_release_id,proposal_hash,status,change_ids,created_at) VALUES(?,?,?,?,?,?,?,?)`, value.ID, value.LedgerID, value.Title, value.BaseReleaseID, value.Hash, value.Status, string(changeIDs), formatTime(value.CreatedAt)); err != nil {
 		return fmt.Errorf("insert proposal: %w", err)
 	}
 	for index, id := range value.ChangeIDs {
@@ -222,66 +227,89 @@ func (repository *SQLite) InsertProposal(ctx context.Context, value ledger.Propo
 
 func scanProposal(scanner interface{ Scan(...any) error }) (ledger.Proposal, error) {
 	var item ledger.Proposal
-	var created string
-	err := scanner.Scan(&item.ID, &item.LedgerID, &item.Title, &item.BaseReleaseID, &item.Hash, &item.Status, &created)
+	var changeIDs, created string
+	err := scanner.Scan(&item.ID, &item.LedgerID, &item.Title, &item.BaseReleaseID, &item.Hash, &item.Status, &changeIDs, &created)
+	if err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal([]byte(changeIDs), &item.ChangeIDs); err != nil {
+		return item, fmt.Errorf("decode proposal Changes: %w", err)
+	}
 	item.CreatedAt = parseTime(created)
+	return item, nil
+}
+func (repository *SQLite) LoadProposal(ctx context.Context, ledgerID, id string) (ledger.Proposal, error) {
+	item, err := scanProposal(repository.db.QueryRowContext(ctx, `SELECT id,ledger_id,title,base_release_id,proposal_hash,status,change_ids,created_at FROM proposals WHERE ledger_id=? AND id=?`, ledgerID, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return item, ErrNotFound
+	}
 	return item, err
 }
-func (repository *SQLite) proposalChanges(ctx context.Context, id string) ([]string, error) {
-	rows, err := repository.db.QueryContext(ctx, `SELECT change_id FROM proposal_changes WHERE proposal_id=? ORDER BY ordinal`, id)
+func (repository *SQLite) ListProposals(ctx context.Context, ledgerID string) ([]ledger.Proposal, error) {
+	rows, err := repository.db.QueryContext(ctx, `SELECT id,ledger_id,title,base_release_id,proposal_hash,status,change_ids,created_at FROM proposals WHERE ledger_id=? ORDER BY created_at DESC`, ledgerID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []string
-	for rows.Next() {
-		var value string
-		if err := rows.Scan(&value); err != nil {
-			return nil, err
-		}
-		ids = append(ids, value)
-	}
-	return ids, rows.Err()
-}
-func (repository *SQLite) LoadProposal(ctx context.Context, ledgerID, id string) (ledger.Proposal, error) {
-	item, err := scanProposal(repository.db.QueryRowContext(ctx, `SELECT id,ledger_id,title,base_release_id,proposal_hash,status,created_at FROM proposals WHERE ledger_id=? AND id=?`, ledgerID, id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return item, ErrNotFound
-	}
-	if err != nil {
-		return item, err
-	}
-	item.ChangeIDs, err = repository.proposalChanges(ctx, id)
-	return item, err
-}
-func (repository *SQLite) ListProposals(ctx context.Context, ledgerID string) ([]ledger.Proposal, error) {
-	rows, err := repository.db.QueryContext(ctx, `SELECT id,ledger_id,title,base_release_id,proposal_hash,status,created_at FROM proposals WHERE ledger_id=? ORDER BY created_at DESC`, ledgerID)
-	if err != nil {
-		return nil, err
-	}
 	var items []ledger.Proposal
 	for rows.Next() {
 		item, err := scanProposal(rows)
 		if err != nil {
-			rows.Close()
 			return nil, err
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return nil, err
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	for index := range items {
-		items[index].ChangeIDs, err = repository.proposalChanges(ctx, items[index].ID)
-		if err != nil {
-			return nil, err
-		}
 	}
 	return items, nil
+}
+
+func (repository *SQLite) HasReleaseIntent(ctx context.Context, proposalID string) (bool, error) {
+	var count int
+	err := repository.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM release_intents WHERE proposal_id=?`, proposalID).Scan(&count)
+	return count > 0, err
+}
+
+func (repository *SQLite) CancelProposal(ctx context.Context, ledgerID, proposalID string) error {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var status ledger.ProposalStatus
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM proposals WHERE ledger_id=? AND id=?`, ledgerID, proposalID).Scan(&status); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if status == ledger.ProposalCancelled {
+		return ErrProposalAlreadyCancelled
+	}
+	if err := ledger.CanCancelProposal(ledger.Proposal{Status: status}); err != nil {
+		if errors.Is(err, ledger.ErrConflict) {
+			if status == ledger.ProposalReleased {
+				return ErrProposalReleased
+			}
+			return ErrProposalNotDraft
+		}
+		return err
+	}
+	var intents int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM release_intents WHERE proposal_id=?`, proposalID).Scan(&intents); err != nil {
+		return err
+	}
+	if intents != 0 {
+		return ErrProposalReleaseStarted
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM proposal_changes WHERE proposal_id=?`, proposalID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE proposals SET status=? WHERE ledger_id=? AND id=?`, ledger.ProposalCancelled, ledgerID, proposalID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (repository *SQLite) SaveCheckResult(ctx context.Context, value ledger.CheckResult) error {
@@ -290,6 +318,13 @@ func (repository *SQLite) SaveCheckResult(ctx context.Context, value ledger.Chec
 		return err
 	}
 	defer tx.Rollback()
+	var status ledger.ProposalStatus
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM proposals WHERE id=?`, value.ProposalID).Scan(&status); err != nil {
+		return err
+	}
+	if status == ledger.ProposalCancelled {
+		return ErrProposalAlreadyCancelled
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO checks(id,proposal_id,proposal_hash,kind,passed,summary,evidence,created_at) VALUES(?,?,?,?,?,?,?,?)`, value.ID, value.ProposalID, value.ProposalHash, value.Kind, value.Passed, value.Summary, value.Evidence, formatTime(value.CreatedAt)); err != nil {
 		return err
 	}
@@ -332,6 +367,13 @@ func (repository *SQLite) SaveApproval(ctx context.Context, value ledger.Approva
 		return err
 	}
 	defer tx.Rollback()
+	var status ledger.ProposalStatus
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM proposals WHERE id=?`, value.ProposalID).Scan(&status); err != nil {
+		return err
+	}
+	if status == ledger.ProposalCancelled {
+		return ErrProposalAlreadyCancelled
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO approvals(id,proposal_id,proposal_hash,actor,created_at) VALUES(?,?,?,?,?) ON CONFLICT(proposal_id,proposal_hash,actor) DO NOTHING`, value.ID, value.ProposalID, value.ProposalHash, value.Actor, formatTime(value.CreatedAt)); err != nil {
 		return err
 	}

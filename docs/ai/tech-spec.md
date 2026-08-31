@@ -127,6 +127,7 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | 200 | — | `{ "items": Approval[] }` (newest first) |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation` | 200 | `{ "criteria" }` | `{ "passed", "summary", "previewFidelity", "findings"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | **204** | `{ "actor" }` | — |
+| POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/cancel` | **204** | — | — |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/release` | 201 | — | `Release` |
 | GET | `/api/v1/ledgers/{ledgerID}/release-intents` | 200 | — | `{ "items": ReleaseIntent[] }` (newest first; optional `?status=`) |
 | GET | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}` | 200 | — | `ReleaseIntent` with expanded Plan and per-operation `hasBeforeImage` |
@@ -160,6 +161,7 @@ data: {"kind":"proposal.created","ledgerId":"ldg_…","subjectId":"pr_…","at":
 | `proposal.created` | a Proposal and its ordered claims are inserted | Proposal ID |
 | `proposal.evaluated` | evaluation evidence is saved | Proposal ID |
 | `proposal.approved` | approval bound to the current hash is saved | Proposal ID |
+| `proposal.cancelled` | a Draft Proposal becomes `CANCELLED` and releases its Change claims | Proposal ID |
 | `release.started` | a Release Intent is saved | Intent ID |
 | `release.completed` | finalization advances HEAD, including successful startup or operator recovery | Release ID |
 | `release.failed` | apply or verification fails and requires recovery | Intent ID |
@@ -275,6 +277,7 @@ type ProposalGates struct {
     Reason                 string     `json:"reason"`
     ApprovalAction         ActionGate `json:"approvalAction"`
     ReleaseAction          ActionGate `json:"releaseAction"`
+    CancelAction           ActionGate `json:"cancelAction"`
 }
 
 type ProposalDetail struct {
@@ -293,10 +296,10 @@ The read-API `CheckResult` exposes `id`, `proposalHash`, `kind`, `passed`, `summ
 |---|---|
 | `ChangeAction` | `PUT`, `DELETE` |
 | `ChangeStatus` | `ACCEPTED`, `READY`, `INVALID`, `RELEASED` |
-| `ProposalStatus` | `DRAFT`, `REVIEWED`, `APPROVED`, `RELEASED`, `BLOCKED` |
+| `ProposalStatus` | `DRAFT`, `REVIEWED`, `APPROVED`, `RELEASED`, `BLOCKED`, `CANCELLED` |
 | `ReleaseIntentStatus` | `READY`, `APPLYING`, `VERIFYING`, `FINALIZED`, `RECOVERY_REQUIRED`, `ABANDONED` |
 
-`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, and `RELEASED` after finalization. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, and HEAD predicates. `Change.status` is only ever written as `READY` or `RELEASED`.
+`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, `RELEASED` after finalization, and `CANCELLED` by Draft cancellation. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, HEAD, and terminal-state predicates. `Change.status` is only ever written as `READY` or `RELEASED`.
 
 ---
 
@@ -327,7 +330,7 @@ Object store hashes are **different**: `sha256(kind || 0x00 || value)`, prefixed
 
 ### Sentinel errors
 
-`ErrInvalid`, `ErrConflict`, `ErrStaleEvidence`, `ErrReleaseNotReady` in `ledger`; `ErrNotFound`, `ErrIdempotencyConflict`, `ErrChangeClaimed` in `repository`.
+`ErrInvalid`, `ErrConflict`, `ErrStaleEvidence`, `ErrReleaseNotReady` in `ledger`; `ErrNotFound`, `ErrIdempotencyConflict`, `ErrChangeClaimed`, and Proposal cancellation sentinels in `repository`.
 
 ---
 
@@ -342,6 +345,7 @@ func (e *Engine) CreateChange(ctx, ledgerID string, r CreateChangeRequest) (ledg
 func (e *Engine) ListChanges(ctx, ledgerID string) ([]ledger.Change, error)
 func (e *Engine) CreateProposal(ctx, ledgerID string, r CreateProposalRequest) (ledger.Proposal, error)
 func (e *Engine) ListProposals(ctx, ledgerID string) ([]ledger.Proposal, error)
+func (e *Engine) CancelProposal(ctx, ledgerID, proposalID string) error
 func (e *Engine) LoadProposalDetail(ctx, ledgerID, proposalID string) (ProposalDetail, error)
 func (e *Engine) ListCheckResults(ctx, ledgerID, proposalID string) ([]CheckResult, error)
 func (e *Engine) ListApprovals(ctx, ledgerID, proposalID string) ([]Approval, error)
@@ -380,6 +384,11 @@ func (e *Engine) Close() error
 - Hash computed **after** `ChangeIDs` is copied; order is preserved from the request.
 - `InsertProposal` failure is reported as `CONFLICT` ("already in another active Proposal") because the unique claim is the expected failure mode.
 
+**`CancelProposal`**
+- Takes the same process-wide mutex as release work, then delegates the status, Intent, claim deletion, and terminal status write to one repository transaction.
+- Only `DRAFT` may transition. `CANCELLED` is an idempotent success; `RELEASED` and any existing Release Intent return their specific conflict messages.
+- Publishes `proposal.cancelled` only after the first successful commit. Evaluation and approval persistence reject `CANCELLED`, so concurrent work cannot revive it.
+
 **`EvaluateProposal`**
 - Calls `target.Preview` only — never `Apply`.
 - Builds `{proposal, changes, preview}` as the evidence context.
@@ -392,7 +401,7 @@ func (e *Engine) Close() error
 
 **`LoadProposalDetail`**
 - Loads the Proposal through `(ledgerID, proposalID)`, so a cross-Ledger ID is `NOT_FOUND`.
-- Returns ordered Changes, current HEAD, and server-authoritative approval/release action gates.
+- Returns ordered Changes, current HEAD, and server-authoritative approval/release/cancel action gates.
 - The release gate and `ReleaseProposal` share `evaluateGates`; missing passing evidence, missing approval, and moved HEAD therefore return identical reason strings.
 - Gate booleans read current hash-bound evidence and approval rows; Proposal status is not a gate predicate.
 
@@ -417,6 +426,8 @@ type Repository interface {
     InsertProposal(context.Context, ledger.Proposal) error
     LoadProposal(ctx, ledgerID, proposalID string) (ledger.Proposal, error)
     ListProposals(ctx, ledgerID string) ([]ledger.Proposal, error)
+    CancelProposal(ctx, ledgerID, proposalID string) error
+    HasReleaseIntent(ctx, proposalID string) (bool, error)
     SaveCheckResult(context.Context, ledger.CheckResult) error
     ListCheckResults(ctx, proposalID string) ([]ledger.CheckResult, error)
     HasPassingCheck(ctx, proposalID, proposalHash string) (bool, error)
@@ -513,6 +524,7 @@ CREATE TABLE proposals (
     base_release_id TEXT NOT NULL DEFAULT '',
     proposal_hash TEXT NOT NULL,
     status TEXT NOT NULL,
+    change_ids TEXT NOT NULL DEFAULT '[]', -- added by migration 003; ordered JSON snapshot
     created_at TEXT NOT NULL
 );
 CREATE INDEX proposals_by_ledger ON proposals(ledger_id, created_at DESC);
@@ -574,6 +586,10 @@ All timestamps are TEXT in UTC (`time.Now().UTC()`).
 ### Migration 002 — Release Intent resolution
 
 `002_release_intent_resolution.sql` adds nullable `resolution`, `resolution_note`, and `resolved_at` TEXT columns to `release_intents`. `ABANDONED` rows store `resolution = "ABANDONED"`, the trimmed operator note, and an RFC 3339 timestamp. `ListUnfinishedReleaseIntents` treats both `FINALIZED` and `ABANDONED` as terminal. The migration uses `002` rather than the ticket's planned `003` because GRF-213 landed before GRF-212; migration numbers follow actual apply order.
+
+### Migration 003 — Proposal cancellation
+
+`003_proposal_cancellation.sql` adds `proposals.change_ids TEXT NOT NULL DEFAULT '[]'` and backfills every existing Proposal from `proposal_changes`, ordered by `ordinal`. New Proposal inserts write this JSON snapshot in the same transaction as the unique claim rows. Proposal reads use the snapshot; cancellation can therefore delete the active claims without deleting historical membership. The ticket's planned filename was `002_proposal_cancellation.sql`, but immutable migration 002 had already landed for GRF-213, so actual apply order requires 003.
 
 **Migration rules:** never edit an applied migration. Add `00N_description.sql`. SQLite cannot drop or alter most constraints — prefer additive columns with defaults, or a create-copy-rename table rebuild inside one transaction.
 

@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | [GRF-210](../tickets/GRF-210-event-stream.md) | Real domain event stream | M | — | Done |
 | [GRF-211](../tickets/GRF-211-proposal-detail-api.md) | Proposal detail and evidence read API | M | — | Done |
-| [GRF-212](../tickets/GRF-212-proposal-cancellation.md) | Proposal cancellation and claim release | M | — | Not started |
+| [GRF-212](../tickets/GRF-212-proposal-cancellation.md) | Proposal cancellation and claim release | M | — | Done |
 | [GRF-213](../tickets/GRF-213-release-intent-api.md) | Release intent inspection and recovery API | L | — | Done |
 | [GRF-214](../tickets/GRF-214-pagination.md) | Pagination and filtering for list endpoints | M | — | Not started |
 | [GRF-215](../tickets/GRF-215-lifecycle-management.md) | Ledger and Change lifecycle management | M | GRF-212 | Not started |
@@ -20,6 +20,7 @@
 - **GRF-211 and GRF-213 are prerequisites for Phase 1 work** (GRF-207 and GRF-208 respectively). Schedule them accordingly — the recommended order in [INDEX.md](../tickets/INDEX.md) interleaves the phases for this reason.
 - This phase introduces the first migrations after `001_initial.sql`. `001_initial.sql` is frozen; every schema change is a new numbered file. Migration numbers are allocated in ticket order: 002 (GRF-212), 003 (GRF-213), 004 (GRF-214), 007 (GRF-215). If tickets land out of order, renumber to match the actual apply order and record it here.
 - GRF-213 landed before GRF-212, so its migration uses the next actual apply-order number, `002_release_intent_resolution.sql`, instead of the ticket's planned `003`.
+- GRF-212 consequently uses `003_proposal_cancellation.sql`, instead of the ticket's planned `002`.
 - Three tickets add enum members — `ProposalStatus.CANCELLED` (GRF-212), `ReleaseIntentStatus.ABANDONED` (GRF-213), and `ChangeStatus.WITHDRAWN` (GRF-215). All must be reflected in `design-system.md` §2.2 status tone mapping and in the exhaustive TypeScript mapping, or the frontend build breaks. That breakage is intentional and desirable.
 - GRF-212 and GRF-215 both manipulate `proposal_changes` claims. Do GRF-212 first; GRF-215's withdrawal guard depends on cancellation existing as the escape hatch for a claimed Change.
 - No new Go dependencies are permitted in this phase.
@@ -480,4 +481,160 @@ $ git diff --check
 
 - GRF-208 should render the API's `hasBeforeImage` and mismatch values directly and use `intent.resolved` only as a refetch hint.
 - GRF-222 should define retention for before-image objects referenced by abandoned intents.
+
+### GRF-212 — Proposal cancellation and claim release
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | Yes — migration renumbered from planned 002 to actual apply-order 003 because immutable migration 002 had already landed |
+
+**What was built**
+
+Draft Proposals can now be cancelled without deleting their audit history. Cancellation atomically verifies terminal and release state, deletes only the active Change claims, writes `CANCELLED`, and preserves ordered membership through an immutable JSON snapshot. Runtime exposes the operation and its server-authored gate, publishes one durable event, and prevents later evaluation or approval writes from reviving a cancelled Proposal. Studio renders that gate verbatim and requires destructive confirmation before returning the affected Changes to the inbox.
+
+**Files added**
+
+- `runtime/migrations/003_proposal_cancellation.sql` — ordered Proposal membership snapshot column and existing-row backfill.
+- `runtime/tests/proposal_cancellation_test.go` — HTTP, Engine, event, gate, idempotency, claim-release, re-proposal, release-history, and Ledger-scope coverage.
+
+**Files changed**
+
+- `runtime/internal/ledger/proposal.go`, `runtime/internal/ledger/invariants.go` — terminal `CANCELLED` status and pure cancellation rule.
+- `runtime/internal/repository/repository.go`, `runtime/internal/repository/sqlite.go` — cancellation sentinels, snapshot persistence/reads, Intent inspection, transactional cancellation, and terminal write guards.
+- `runtime/internal/engine/proposals.go`, `runtime/internal/engine/proposal_detail.go`, `runtime/internal/engine/evaluation.go`, `runtime/internal/engine/events.go` — cancellation orchestration, server action gate, cancelled-state protections, and event.
+- `runtime/internal/interfaces/http/server.go` — Ledger-scoped 204 cancellation route.
+- `runtime/internal/ledger/invariants_test.go`, `runtime/internal/repository/sqlite_test.go` — pure rule, migration, audit-retention, and persistence tests.
+- `studio/src/api/{types,client,events}.ts` and tests — cancellation gate, endpoint, event vocabulary, and parser/client coverage.
+- `studio/src/features/proposals/{gates,proposal-detail}.tsx` and tests — verbatim cancellation gate and confirmed mutation flow.
+- `studio/src/features/proposals/release-panel.test.tsx`, `studio/src/features/shared/{status,status.test}.ts`, `studio/src/test/api-mock.ts` — complete gate fixtures, neutral status tone, and typed test API.
+- `docs/ai/product.md`, `docs/ai/tech-spec.md`, `docs/ai/design-system.md`, `docs/ai/repo-structure.md`, `docs/ai/tickets/GRF-212-proposal-cancellation.md`, `docs/ai/tickets/INDEX.md` — current workflow, contracts, schema, UI behavior, tree, acceptance, and status.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```go
+const ProposalCancelled ProposalStatus = "CANCELLED"
+
+func CanCancelProposal(proposal Proposal) error
+func (engine *Engine) CancelProposal(ctx context.Context, ledgerID, proposalID string) error
+
+type ProposalGates struct {
+	HasCurrentPassingCheck bool       `json:"hasCurrentPassingCheck"`
+	HasCurrentApproval     bool       `json:"hasCurrentApproval"`
+	BaseMatchesHead        bool       `json:"baseMatchesHead"`
+	Releasable             bool       `json:"releasable"`
+	Reason                 string     `json:"reason"`
+	ApprovalAction         ActionGate `json:"approvalAction"`
+	ReleaseAction          ActionGate `json:"releaseAction"`
+	CancelAction           ActionGate `json:"cancelAction"`
+}
+
+type Repository interface {
+	CancelProposal(context.Context, string, string) error
+	HasReleaseIntent(context.Context, string) (bool, error)
+}
+
+const EventProposalCancelled EventKind = "proposal.cancelled"
+```
+
+```ts
+type ProposalGates = {
+  hasCurrentPassingCheck: boolean;
+  hasCurrentApproval: boolean;
+  baseMatchesHead: boolean;
+  releasable: boolean;
+  reason: string;
+  approvalAction: ActionGate;
+  releaseAction: ActionGate;
+  cancelAction: ActionGate;
+};
+
+cancelProposal: (ledgerId: string, proposalId: string) => Promise<void>;
+```
+
+HTTP: `POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/cancel` returns `204 No Content`.
+
+Schema: `proposals.change_ids TEXT NOT NULL DEFAULT '[]'`; the value is an ordered JSON array written transactionally with active `proposal_changes` claims.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Keep immutable membership in `proposals.change_ids` and delete only claim rows | A cancelled Proposal must remain readable while releasing `UNIQUE(change_id)` for reuse | Keep claim rows or delete the Proposal | Keeping claims strands Changes; deleting the Proposal destroys audit history |
+| Restrict cancellation to `DRAFT` and serialize it with release work | Evidence or approval means governance review has started, and cancellation must not race Release Intent creation | Permit any unreleased status or rely only on a preflight check | Later workflow states need explicit governance handling; check-then-act races can forge terminal history |
+| Re-check status and any Intent in one SQLite transaction | The claim deletion and terminal status must share one authoritative decision | Load in Engine and issue independent writes | Concurrent operations could pass stale checks and corrupt workflow state |
+| Guard check and approval persistence against `CANCELLED` | Engine preflight alone cannot prevent an in-flight writer committing after cancellation | Trust request ordering | Concurrent requests can otherwise revive the status to `REVIEWED`, `BLOCKED`, or `APPROVED` |
+| Publish only after the first successful cancellation commit | Events are advisory refetch hints for durable state; idempotent repeats are not transitions | Publish before persistence or on every 204 | Failed or repeated operations would announce false transitions |
+
+**Deviations from the ticket**
+
+- The migration is `003_proposal_cancellation.sql`, not `002_proposal_cancellation.sql`. GRF-213 had already landed immutable migration 002, so actual apply order requires 003. `001_initial.sql` remains untouched and the required schema/backfill behavior is unchanged.
+- Cancellation is restricted to `DRAFT` exactly as the repository acceptance criterion states. The pure rule and server gate also make this explicit for `REVIEWED`, `BLOCKED`, and `APPROVED` states.
+- No behavior or acceptance criterion was omitted.
+
+**Traps for future work**
+
+- `proposal_changes` now represents active claims, not durable membership. Read Proposal membership only from `proposals.change_ids`; otherwise cancelled Proposals appear empty.
+- The `UNIQUE(change_id)` constraint remains load-bearing. Claim reuse comes only from transactional row deletion; never weaken the constraint.
+- Cancellation and release share `Engine.releaseMu`. Any new path that creates a Release Intent or changes terminal Proposal state must preserve that serialization or provide equivalent repository-level arbitration.
+- A second cancellation returns the repository sentinel `ErrProposalAlreadyCancelled`, which Engine intentionally maps to success without emitting another event.
+- SQLite query row iterators must be closed explicitly or with `defer`; snapshot list reads introduced another iterator-bearing path.
+
+**Tests added**
+
+- `runtime/tests/proposal_cancellation_test.go` — 204 success and idempotency, one event, retained ordered membership, READY Changes, immediate re-proposal, terminal gates, evaluation rejection, released/Intent/non-Draft conflicts, and cross-Ledger 404.
+- `runtime/internal/repository/sqlite_test.go` — ordered migration backfill, snapshot list/load behavior, claim deletion, checks/approvals retention, replacement insertion, and repeated-cancel sentinel.
+- `runtime/internal/ledger/invariants_test.go` — Draft/idempotent cancellation and every rejected status.
+- `studio/src/features/proposals/proposal-detail.test.tsx` — confirmed cancellation mutation, success refresh, and disabled server reason.
+- Studio API/event/gate/status tests — exact endpoint, named event parsing, verbatim gate projection, and exhaustive neutral tone.
+
+**Docs updated**
+
+- `docs/ai/product.md` §2 / §5 / §6 / §7 — cancellation lifecycle, active-claim invariant, Studio capability, and closed gap.
+- `docs/ai/tech-spec.md` §3 / §4 / §6 / §7 / §8 — endpoint/event, status/gate, Engine and repository signatures, schema, and migration.
+- `docs/ai/design-system.md` §2.2 / §5.3 — neutral status tone and confirmed, server-gated interaction.
+- `docs/ai/repo-structure.md` §2 — migration inventory.
+- `docs/ai/tickets/GRF-212-proposal-cancellation.md`, `docs/ai/tickets/INDEX.md` — acceptance and completion bookkeeping.
+- `docs/ai/phases/phase-2.md` — apply-order note, completion status, and this entry.
+
+**Verification**
+
+```text
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine 1.614s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http 2.486s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger 2.779s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository 3.691s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests 4.786s
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm coverage && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files 47 passed (47)
+Tests 148 passed (148)
+All files: 86.07% statements, 85.81% branches, 71.05% functions, 86.07% lines
+✓ 1867 modules transformed.
+✓ built in 823ms
+
+$ docker build -t gyrifi:local .
+[+] Building 47.1s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+
+$ diff <ticket files> <INDEX status rows>
+tickets consistent
+
+$ git diff --check
+(no output)
+```
+
+**Follow-ups discovered**
+
+- GRF-215 must treat `proposal_changes` as active claims and use the immutable snapshot when it needs historical Proposal membership.
 

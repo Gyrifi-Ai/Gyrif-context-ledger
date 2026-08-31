@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
+	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository"
 )
 
 type CreateProposalRequest struct {
@@ -51,6 +53,30 @@ func (engine *Engine) CreateProposal(ctx context.Context, ledgerID string, reque
 	engine.publish(EventProposalCreated, ledgerID, value.ID)
 	return value, nil
 }
+
+func (engine *Engine) CancelProposal(ctx context.Context, ledgerID, proposalID string) error {
+	engine.releaseMu.Lock()
+	defer engine.releaseMu.Unlock()
+	if err := engine.repository.CancelProposal(ctx, ledgerID, proposalID); err != nil {
+		switch {
+		case errors.Is(err, repository.ErrProposalAlreadyCancelled):
+			return nil
+		case errors.Is(err, repository.ErrNotFound):
+			return wrap(CodeNotFound, "Proposal was not found.", err)
+		case errors.Is(err, repository.ErrProposalReleased):
+			return wrap(CodeConflict, "A released Proposal cannot be cancelled.", err)
+		case errors.Is(err, repository.ErrProposalNotDraft):
+			return wrap(CodeConflict, "Only a Draft Proposal can be cancelled.", err)
+		case errors.Is(err, repository.ErrProposalReleaseStarted):
+			return wrap(CodeConflict, "Release has already started for this Proposal.", err)
+		default:
+			return wrap(CodeInternal, "Could not cancel Proposal.", err)
+		}
+	}
+	engine.publish(EventProposalCancelled, ledgerID, proposalID)
+	return nil
+}
+
 func (engine *Engine) ApproveProposal(ctx context.Context, ledgerID, proposalID, actor string) error {
 	proposal, err := engine.repository.LoadProposal(ctx, ledgerID, proposalID)
 	if err != nil {
@@ -72,6 +98,9 @@ func (engine *Engine) ApproveProposal(ctx context.Context, ledgerID, proposalID,
 		approval.Actor = "local-user"
 	}
 	if err := engine.repository.SaveApproval(ctx, approval); err != nil {
+		if errors.Is(err, repository.ErrProposalAlreadyCancelled) {
+			return wrap(CodeConflict, cancelledApproval, err)
+		}
 		return wrap(CodeInternal, "Could not save approval.", err)
 	}
 	engine.publish(EventProposalApproved, ledgerID, proposal.ID)

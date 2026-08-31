@@ -57,6 +57,7 @@ func (server *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals", server.proposalApprovals)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation", server.evaluateProposal)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals", server.approveProposal)
+	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/cancel", server.cancelProposal)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals/{proposalID}/release", server.releaseProposal)
 	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/release-intents", server.listReleaseIntents)
 	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/release-intents/{intentID}", server.releaseIntentDetail)
@@ -239,6 +240,13 @@ func (server *Server) approveProposal(writer http.ResponseWriter, request *http.
 		return
 	}
 	if err := server.engine.ApproveProposal(request.Context(), request.PathValue("ledgerID"), request.PathValue("proposalID"), input.Actor); err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+func (server *Server) cancelProposal(writer http.ResponseWriter, request *http.Request) {
+	if err := server.engine.CancelProposal(request.Context(), request.PathValue("ledgerID"), request.PathValue("proposalID")); err != nil {
 		server.writeEngineError(writer, err)
 		return
 	}

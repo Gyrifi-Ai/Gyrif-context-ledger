@@ -91,6 +91,7 @@ runtime/
 ├── migrations/
 │   ├── 001_initial.sql              # full schema
 │   ├── 002_release_intent_resolution.sql # additive operator-resolution fields
+│   ├── 003_proposal_cancellation.sql # immutable ordered membership snapshots for claim release
 │   └── migrations.go                # //go:embed + ordered application
 └── tests/
     ├── change_flow_test.go          # end-to-end governance flow against fakes

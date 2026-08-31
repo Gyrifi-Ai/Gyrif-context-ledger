@@ -16,6 +16,7 @@ export const mockApi: MockApi = {
   proposalApprovals: vi.fn<Api["proposalApprovals"]>(),
   evaluate: vi.fn<Api["evaluate"]>(),
   approve: vi.fn<Api["approve"]>(),
+  cancelProposal: vi.fn<Api["cancelProposal"]>(),
   release: vi.fn<Api["release"]>(),
   releaseIntents: vi.fn<Api["releaseIntents"]>(),
   releaseIntent: vi.fn<Api["releaseIntent"]>(),
@@ -57,6 +58,8 @@ async function route(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)\/approvals$/);
     if (values && method === "GET") return response(await mockApi.proposalApprovals(values[0], values[1], init));
     if (values && method === "POST") return response(await mockApi.approve(values[0], values[1], String(body(init).actor ?? "")));
+    values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)\/cancel$/);
+    if (values && method === "POST") return response(await mockApi.cancelProposal(values[0], values[1]));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)\/evaluation$/);
     if (values && method === "POST") return response(await mockApi.evaluate(values[0], values[1], String(body(init).criteria ?? "")));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)\/release$/);

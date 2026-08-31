@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CheckResult, ProposalDetail } from "../../api/types";
 import { evidenceView, moveOrdered, progressSteps } from "./proposal-view";
-import { approvalGate, releaseGate } from "./gates";
+import { approvalGate, cancelGate, releaseGate } from "./gates";
 
 function detail(overrides: Partial<ProposalDetail["gates"]> = {}, status: ProposalDetail["proposal"]["status"] = "DRAFT"): ProposalDetail {
   return {
@@ -16,6 +16,7 @@ function detail(overrides: Partial<ProposalDetail["gates"]> = {}, status: Propos
       reason: "A current passing evaluation is required.",
       approvalAction: { enabled: false, reason: "A current passing evaluation is required before approval." },
       releaseAction: { enabled: false, reason: "A current passing evaluation is required." },
+      cancelAction: { enabled: true, reason: "" },
       ...overrides,
     },
   };
@@ -28,6 +29,7 @@ describe("Proposal server-state projections", () => {
     const value = detail().gates;
     expect(approvalGate(value)).toBe(value.approvalAction);
     expect(releaseGate(value)).toBe(value.releaseAction);
+    expect(cancelGate(value)).toBe(value.cancelAction);
   });
   it.each([
     { name: "no evidence", gates: {}, status: "DRAFT" as const, states: ["complete", "current", "pending", "pending"] },

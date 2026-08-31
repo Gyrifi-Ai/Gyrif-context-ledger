@@ -22,6 +22,10 @@ afterEach(() => {
 });
 
 describe("event subscription", () => {
+  it("accepts Proposal cancellation as a typed invalidation event", () => {
+    expect(parseDomainEvent('{"kind":"proposal.cancelled","ledgerId":"ldg_one","subjectId":"pr_one","at":"2026-08-31T00:00:00Z"}')).toMatchObject({ kind: "proposal.cancelled", subjectId: "pr_one" });
+  });
+
   it("reports reconnect state and refetches after reopening", () => {
     vi.useFakeTimers();
     vi.stubGlobal("EventSource", FakeEventSource);

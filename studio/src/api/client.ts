@@ -74,6 +74,7 @@ export const api = {
   proposalApprovals: (ledgerId: string, proposalId: string, init?: RequestInit) => request<{ items: Approval[] }>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/approvals`, init),
   evaluate: (ledgerId: string, proposalId: string, criteria: string) => request<EvaluationResponse>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/evaluation`, { method: "POST", body: JSON.stringify({ criteria }) }),
   approve: (ledgerId: string, proposalId: string, actor = "local-user") => request<void>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/approvals`, { method: "POST", body: JSON.stringify({ actor }) }),
+  cancelProposal: (ledgerId: string, proposalId: string) => request<void>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/cancel`, { method: "POST" }),
   release: (ledgerId: string, proposalId: string) => request<Release>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}/release`, { method: "POST" }),
   releaseIntents: (ledgerId: string, status?: ReleaseIntentStatus, init?: RequestInit) => request<{ items: ReleaseIntent[] }>(`/api/v1/ledgers/${ledgerId}/release-intents${status ? `?status=${encodeURIComponent(status)}` : ""}`, init),
   releaseIntent: (ledgerId: string, intentId: string, init?: RequestInit) => request<ReleaseIntent>(`/api/v1/ledgers/${ledgerId}/release-intents/${intentId}`, init),

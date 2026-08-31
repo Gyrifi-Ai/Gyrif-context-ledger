@@ -49,6 +49,17 @@ func ApprovalIsCurrent(approval Approval, proposal Proposal) bool {
 	return approval.ProposalID == proposal.ID && approval.ProposalHash == proposal.Hash
 }
 
+func CanCancelProposal(proposal Proposal) error {
+	switch proposal.Status {
+	case ProposalDraft, ProposalCancelled:
+		return nil
+	case ProposalReleased:
+		return fmt.Errorf("%w: released Proposal cannot be cancelled", ErrConflict)
+	default:
+		return fmt.Errorf("%w: only a Draft Proposal can be cancelled", ErrConflict)
+	}
+}
+
 func ValidateReleaseParent(current Head, intent ReleaseIntent) error {
 	if current.LedgerID != intent.LedgerID || current.ReleaseID != intent.ParentID {
 		return fmt.Errorf("%w: proposal base no longer matches HEAD", ErrConflict)

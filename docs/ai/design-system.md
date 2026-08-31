@@ -152,6 +152,7 @@ Components use **only** these.
 | `DRAFT` | neutral |
 | `REVIEWED` | review |
 | `APPROVED` | success |
+| `CANCELLED` | neutral |
 | Intent `READY`, `APPLYING`, `VERIFYING` | warning |
 | Intent `FINALIZED` | success |
 | Intent `RECOVERY_REQUIRED` | danger |
@@ -523,7 +524,8 @@ Review batched changes, attach evidence, approve, and release.
 Required behaviours:
 
 - **A four-step progress rail** across the top of the detail pane: Changes → Evidence → Approval → Release. Completed steps are orange, the current step is outlined, later steps are muted. This is the single clearest expression of the governance model.
-- **Gate reasons are explicit and server-authored.** Disabled `Approve` and `Release` controls render `ProposalDetail.gates.approvalAction` and `.releaseAction` verbatim. The Studio never duplicates the Runtime's evidence, approval, or HEAD predicates.
+- **Gate reasons are explicit and server-authored.** Disabled `Approve`, `Release`, and `Cancel Proposal` controls render `ProposalDetail.gates.approvalAction`, `.releaseAction`, and `.cancelAction` verbatim. The Studio never duplicates the Runtime's evidence, approval, HEAD, status, or Release Intent predicates.
+- **Draft cancellation is deliberate.** `Cancel Proposal` opens a destructive confirmation stating that the affected Changes return to the inbox and that existing evidence and approvals remain in the audit trail. Success refreshes the detail/list and the `proposal.cancelled` event invalidates Ledger-scoped REST surfaces.
 - **Criteria is user input**, persisted per proposal in `localStorage`, with 3–4 starter presets. The current hardcoded criteria string must go.
 - **Evidence renders findings** as a list of `{severity, unit, message}` rows with severity tones, plus the model identity and the bound proposal hash.
 - **Stale evidence is loud.** If the displayed evidence hash ≠ the proposal hash, show an amber banner: "Evidence was recorded for a different proposal hash and no longer applies."

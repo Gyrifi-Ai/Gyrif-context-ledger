@@ -9,9 +9,13 @@ import (
 )
 
 var (
-	ErrNotFound            = errors.New("not found")
-	ErrIdempotencyConflict = errors.New("idempotency key reused with different request")
-	ErrChangeClaimed       = errors.New("change is already claimed by an active proposal")
+	ErrNotFound                 = errors.New("not found")
+	ErrIdempotencyConflict      = errors.New("idempotency key reused with different request")
+	ErrChangeClaimed            = errors.New("change is already claimed by an active proposal")
+	ErrProposalAlreadyCancelled = errors.New("proposal is already cancelled")
+	ErrProposalNotDraft         = errors.New("proposal is not a draft")
+	ErrProposalReleased         = errors.New("proposal is released")
+	ErrProposalReleaseStarted   = errors.New("proposal release has started")
 )
 
 type Repository interface {
@@ -24,6 +28,8 @@ type Repository interface {
 	InsertProposal(context.Context, ledger.Proposal) error
 	LoadProposal(context.Context, string, string) (ledger.Proposal, error)
 	ListProposals(context.Context, string) ([]ledger.Proposal, error)
+	CancelProposal(context.Context, string, string) error
+	HasReleaseIntent(context.Context, string) (bool, error)
 	SaveCheckResult(context.Context, ledger.CheckResult) error
 	ListCheckResults(context.Context, string) ([]ledger.CheckResult, error)
 	HasPassingCheck(context.Context, string, string) (bool, error)

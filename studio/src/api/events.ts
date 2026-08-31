@@ -32,6 +32,7 @@ const eventKinds: EventKind[] = [
   "proposal.created",
   "proposal.evaluated",
   "proposal.approved",
+  "proposal.cancelled",
   "release.started",
   "release.completed",
   "release.failed",

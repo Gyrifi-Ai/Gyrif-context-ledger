@@ -24,7 +24,7 @@ export type Proposal = {
   title: string;
   baseReleaseId?: string;
   hash: string;
-  status: "DRAFT" | "REVIEWED" | "APPROVED" | "RELEASED" | "BLOCKED";
+  status: "DRAFT" | "REVIEWED" | "APPROVED" | "RELEASED" | "BLOCKED" | "CANCELLED";
   changeIds: string[];
   createdAt: string;
 };
@@ -42,6 +42,7 @@ export type ProposalGates = {
   reason: string;
   approvalAction: ActionGate;
   releaseAction: ActionGate;
+  cancelAction: ActionGate;
 };
 
 export type ProposalDetail = {
@@ -106,6 +107,7 @@ export type EventKind =
   | "proposal.created"
   | "proposal.evaluated"
   | "proposal.approved"
+  | "proposal.cancelled"
   | "release.started"
   | "release.completed"
   | "release.failed"

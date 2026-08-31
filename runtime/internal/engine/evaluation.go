@@ -3,10 +3,12 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
+	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository"
 )
 
 type EvaluationResponse struct {
@@ -20,6 +22,9 @@ func (engine *Engine) EvaluateProposal(ctx context.Context, ledgerID, proposalID
 	proposal, err := engine.repository.LoadProposal(ctx, ledgerID, proposalID)
 	if err != nil {
 		return EvaluationResponse{}, wrap(CodeNotFound, "Proposal was not found.", err)
+	}
+	if proposal.Status == ledger.ProposalCancelled {
+		return EvaluationResponse{}, wrap(CodeConflict, "A cancelled Proposal cannot be evaluated.", ledger.ErrConflict)
 	}
 	changes, err := engine.repository.LoadChanges(ctx, ledgerID, proposal.ChangeIDs)
 	if err != nil {
@@ -59,6 +64,9 @@ func (engine *Engine) EvaluateProposal(ctx context.Context, ledgerID, proposalID
 	}
 	check := ledger.CheckResult{ID: id, ProposalID: proposal.ID, ProposalHash: proposal.Hash, Kind: kind, Passed: response.Passed, Summary: response.Summary, Evidence: evidence, CreatedAt: time.Now().UTC()}
 	if err := engine.repository.SaveCheckResult(ctx, check); err != nil {
+		if errors.Is(err, repository.ErrProposalAlreadyCancelled) {
+			return EvaluationResponse{}, wrap(CodeConflict, "A cancelled Proposal cannot be evaluated.", err)
+		}
 		return EvaluationResponse{}, wrap(CodeInternal, "Could not persist evaluation evidence.", err)
 	}
 	engine.publish(EventProposalEvaluated, ledgerID, proposal.ID)

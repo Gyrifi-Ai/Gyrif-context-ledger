@@ -13,6 +13,7 @@ const (
 	EventProposalCreated        EventKind = "proposal.created"
 	EventProposalEvaluated      EventKind = "proposal.evaluated"
 	EventProposalApproved       EventKind = "proposal.approved"
+	EventProposalCancelled      EventKind = "proposal.cancelled"
 	EventReleaseStarted         EventKind = "release.started"
 	EventReleaseCompleted       EventKind = "release.completed"
 	EventReleaseFailed          EventKind = "release.failed"

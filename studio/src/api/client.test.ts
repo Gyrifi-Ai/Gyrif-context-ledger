@@ -33,6 +33,14 @@ describe("API client", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/ledgers/ldg_one/proposals/pr_one/approvals", expect.objectContaining({ method: "POST", body: JSON.stringify({ actor: "reviewer@example.com" }) }));
   });
 
+  it("posts Proposal cancellation without a request body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.cancelProposal("ldg_one", "pr_one");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/ledgers/ldg_one/proposals/pr_one/cancel", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock.mock.calls[0][1]).not.toHaveProperty("body");
+  });
+
   it("uses the Release Intent inspection and recovery endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } })));
     vi.stubGlobal("fetch", fetchMock);
