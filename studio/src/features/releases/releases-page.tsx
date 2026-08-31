@@ -19,7 +19,7 @@ export function ReleasesPage() {
     await api.rollback(ledgerId, releaseId);
     window.location.hash = "proposals";
   });
-  useLedgerEvents(releasesQuery.refetch);
+  useLedgerEvents(ledgerId, releasesQuery.refetch);
   const rollback = (releaseId: string) => { setLastReleaseId(releaseId); void rollbackMutation.run(releaseId); };
   if (!ledgerId) return <Card><EmptyState title="Select a ledger" description="Release history is scoped to a ledger." /></Card>;
   return (

@@ -242,9 +242,14 @@ func (server *Server) events(writer http.ResponseWriter, request *http.Request) 
 		server.writeError(writer, engine.CodeInternal, "Events are unavailable.", http.StatusInternalServerError)
 		return
 	}
+	events, unsubscribe := server.engine.Events().Subscribe(16)
+	defer unsubscribe()
+	ledgerID := request.URL.Query().Get("ledgerId")
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.Header().Set("Cache-Control", "no-cache")
-	fmt.Fprint(writer, "event: ledger\ndata: {\"status\":\"connected\"}\n\n")
+	if _, err := fmt.Fprint(writer, "event: ledger\ndata: {\"status\":\"connected\"}\n\n"); err != nil {
+		return
+	}
 	flusher.Flush()
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
@@ -252,8 +257,25 @@ func (server *Server) events(writer http.ResponseWriter, request *http.Request) 
 		select {
 		case <-request.Context().Done():
 			return
+		case event, open := <-events:
+			if !open {
+				return
+			}
+			if ledgerID != "" && event.LedgerID != ledgerID {
+				continue
+			}
+			data, err := json.Marshal(event)
+			if err != nil {
+				continue
+			}
+			if _, err := fmt.Fprintf(writer, "event: %s\ndata: %s\n\n", event.Kind, data); err != nil {
+				return
+			}
+			flusher.Flush()
 		case <-ticker.C:
-			fmt.Fprint(writer, ": keepalive\n\n")
+			if _, err := fmt.Fprint(writer, ": keepalive\n\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}

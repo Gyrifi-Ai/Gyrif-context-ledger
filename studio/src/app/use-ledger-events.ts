@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { useReachability } from "./reachability";
 
-export function useLedgerEvents(onInvalidate: () => void): void {
+export function useLedgerEvents(ledgerId: string | undefined, onInvalidate: () => void): void {
   const { registerInvalidation } = useReachability();
   useEffect(() => {
-    return registerInvalidation(onInvalidate);
-  }, [onInvalidate, registerInvalidation]);
+    return registerInvalidation(ledgerId, onInvalidate);
+  }, [ledgerId, onInvalidate, registerInvalidation]);
 }

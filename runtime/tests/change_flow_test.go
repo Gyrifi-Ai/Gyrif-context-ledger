@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
@@ -15,9 +17,10 @@ import (
 )
 
 type memoryTarget struct {
-	mu        sync.Mutex
-	values    map[string]json.RawMessage
-	failApply bool
+	mu         sync.Mutex
+	values     map[string]json.RawMessage
+	failApply  bool
+	failVerify bool
 }
 
 func (target *memoryTarget) Read(_ context.Context, unit string) (targets.Value, error) {
@@ -62,6 +65,9 @@ func (target *memoryTarget) Apply(_ context.Context, plan targets.Plan) error {
 	return nil
 }
 func (target *memoryTarget) Verify(ctx context.Context, plan targets.Plan) error {
+	if target.failVerify {
+		return errors.New("injected verify failure")
+	}
 	for _, operation := range plan.Operations {
 		value, _ := target.Read(ctx, operation.Unit)
 		if operation.Action == ledger.ChangeDelete && value.Exists {
@@ -96,10 +102,23 @@ func newEngine(t *testing.T, target *memoryTarget) (*engine.Engine, string) {
 	return application, ledgerValue.ID
 }
 
+func nextEvent(t *testing.T, events <-chan engine.Event) engine.Event {
+	t.Helper()
+	select {
+	case event := <-events:
+		return event
+	case <-time.After(time.Second):
+		t.Fatal("expected domain event")
+		return engine.Event{}
+	}
+}
+
 func TestChangeProposalEvaluationApprovalReleaseFlow(t *testing.T) {
 	ctx := context.Background()
 	target := &memoryTarget{values: map[string]json.RawMessage{}}
 	application, ledgerID := newEngine(t, target)
+	events, unsubscribe := application.Events().Subscribe(16)
+	defer unsubscribe()
 	request := engine.CreateChangeRequest{Unit: "42", Action: ledger.ChangePut, Desired: json.RawMessage(`{"id":42,"payload":{"answer":"yes"}}`), IdempotencyKey: "request-1"}
 	change, err := application.CreateChange(ctx, ledgerID, request)
 	if err != nil {
@@ -132,6 +151,36 @@ func TestChangeProposalEvaluationApprovalReleaseFlow(t *testing.T) {
 	}
 	if release.ParentID != "" {
 		t.Fatal("first release must have empty parent")
+	}
+	wantKinds := []engine.EventKind{
+		engine.EventChangeAccepted,
+		engine.EventProposalCreated,
+		engine.EventProposalEvaluated,
+		engine.EventProposalApproved,
+		engine.EventReleaseStarted,
+		engine.EventReleaseCompleted,
+	}
+	wantSubjects := []string{change.ID, proposal.ID, proposal.ID, proposal.ID, "intent_", release.ID}
+	for index, wantKind := range wantKinds {
+		event := nextEvent(t, events)
+		if event.Kind != wantKind || event.LedgerID != ledgerID {
+			t.Fatalf("event %d = %#v, want kind %s for ledger %s", index, event, wantKind, ledgerID)
+		}
+		if index == 4 {
+			if !strings.HasPrefix(event.SubjectID, wantSubjects[index]) {
+				t.Fatalf("release.started subject = %q", event.SubjectID)
+			}
+		} else if event.SubjectID != wantSubjects[index] {
+			t.Fatalf("event %d subject = %q, want %q", index, event.SubjectID, wantSubjects[index])
+		}
+		if event.At.IsZero() {
+			t.Fatalf("event %d has zero timestamp", index)
+		}
+	}
+	select {
+	case event := <-events:
+		t.Fatalf("unexpected event after idempotent replay: %#v", event)
+	default:
 	}
 	second, err := application.CreateChange(ctx, ledgerID, engine.CreateChangeRequest{Unit: "42", Action: ledger.ChangePut, Desired: json.RawMessage(`{"id":42,"payload":{"answer":"no"}}`), IdempotencyKey: "request-2"})
 	if err != nil {
@@ -195,8 +244,16 @@ func TestTargetApplyFailureLeavesUnfinishedIntent(t *testing.T) {
 	if err := application.ApproveProposal(ctx, ledgerID, proposal.ID, "reviewer"); err != nil {
 		t.Fatal(err)
 	}
+	events, unsubscribe := application.Events().Subscribe(4)
+	defer unsubscribe()
 	if _, err := application.ReleaseProposal(ctx, ledgerID, proposal.ID); err == nil {
 		t.Fatal("release should fail")
+	}
+	if event := nextEvent(t, events); event.Kind != engine.EventReleaseStarted {
+		t.Fatalf("first failure event = %s", event.Kind)
+	}
+	if event := nextEvent(t, events); event.Kind != engine.EventReleaseFailed {
+		t.Fatalf("second failure event = %s", event.Kind)
 	}
 	releases, err := application.ListReleases(ctx, ledgerID)
 	if err != nil {
@@ -204,5 +261,44 @@ func TestTargetApplyFailureLeavesUnfinishedIntent(t *testing.T) {
 	}
 	if len(releases) != 0 {
 		t.Fatal("HEAD history advanced after apply failure")
+	}
+	recoveryEvents, unsubscribeRecovery := application.Events().Subscribe(1)
+	defer unsubscribeRecovery()
+	if err := application.RecoverReleases(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if event := nextEvent(t, recoveryEvents); event.Kind != engine.EventIntentRecoveryRequired {
+		t.Fatalf("recovery event = %s", event.Kind)
+	}
+}
+
+func TestTargetVerifyFailurePublishesReleaseFailed(t *testing.T) {
+	ctx := context.Background()
+	target := &memoryTarget{values: map[string]json.RawMessage{}, failVerify: true}
+	application, ledgerID := newEngine(t, target)
+	change, err := application.CreateChange(ctx, ledgerID, engine.CreateChangeRequest{Unit: "8", Action: ledger.ChangePut, Desired: json.RawMessage(`{"id":8}`), IdempotencyKey: "verify-fail"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Verification failure", ChangeIDs: []string{change.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := application.EvaluateProposal(ctx, ledgerID, proposal.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := application.ApproveProposal(ctx, ledgerID, proposal.ID, "reviewer"); err != nil {
+		t.Fatal(err)
+	}
+	events, unsubscribe := application.Events().Subscribe(2)
+	defer unsubscribe()
+	if _, err := application.ReleaseProposal(ctx, ledgerID, proposal.ID); err == nil {
+		t.Fatal("release should fail verification")
+	}
+	if event := nextEvent(t, events); event.Kind != engine.EventReleaseStarted {
+		t.Fatalf("first failure event = %s", event.Kind)
+	}
+	if event := nextEvent(t, events); event.Kind != engine.EventReleaseFailed {
+		t.Fatalf("second failure event = %s", event.Kind)
 	}
 }

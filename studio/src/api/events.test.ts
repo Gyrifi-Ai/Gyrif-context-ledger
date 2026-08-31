@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { eventRetryDelay, subscribeToEvents, type EventStreamState } from "./events";
+import { eventRetryDelay, parseDomainEvent, subscribeToEvents, subscribeToLedgerEvents, type EventStreamState } from "./events";
 
 class FakeEventSource {
   static readonly CLOSED = 2;
@@ -7,6 +7,13 @@ class FakeEventSource {
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
   close = vi.fn();
+  listeners = new Map<string, Array<(event: Event) => void>>();
+  addEventListener = vi.fn((type: string, listener: (event: Event) => void) => {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  });
+  emit(type: string, data: string) {
+    this.listeners.get(type)?.forEach((listener) => listener({ data } as MessageEvent<string>));
+  }
 }
 
 afterEach(() => {
@@ -96,5 +103,32 @@ describe("event subscription", () => {
     expect(eventRetryDelay(1, () => 0.5)).toBe(1_000);
     expect(eventRetryDelay(3, () => 0.5)).toBe(4_000);
     expect(eventRetryDelay(10, () => 0.5)).toBe(30_000);
+  });
+
+  it("parses and dispatches typed domain events for the requested ledger", () => {
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const source = new FakeEventSource();
+    const handler = vi.fn();
+    let requestedURL = "";
+    const subscription = subscribeToLedgerEvents("ldg one", handler, {
+      createSource: (url) => {
+        requestedURL = url;
+        return source;
+      },
+    });
+    source.readyState = 1;
+    source.onopen?.();
+    source.emit("change.accepted", JSON.stringify({ kind: "change.accepted", ledgerId: "ldg one", subjectId: "chg_one", at: "2026-08-31T07:00:00Z" }));
+    source.emit("change.accepted", "not-json");
+
+    expect(requestedURL).toBe("/events/v1?ledgerId=ldg%20one");
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledWith({ kind: "change.accepted", ledgerId: "ldg one", subjectId: "chg_one", at: "2026-08-31T07:00:00Z" });
+    subscription.close();
+  });
+
+  it("rejects unknown or incomplete domain event payloads", () => {
+    expect(parseDomainEvent(JSON.stringify({ kind: "unknown", ledgerId: "ldg", subjectId: "id", at: "now" }))).toBeUndefined();
+    expect(parseDomainEvent(JSON.stringify({ kind: "release.completed", ledgerId: "ldg" }))).toBeUndefined();
   });
 });

@@ -71,11 +71,13 @@ func (engine *Engine) ReleaseProposal(ctx context.Context, ledgerID, proposalID 
 	if err := engine.repository.SaveReleaseIntent(ctx, intent); err != nil {
 		return ledger.Release{}, wrap(CodeInternal, "Could not persist Release Intent.", err)
 	}
+	engine.publish(EventReleaseStarted, ledgerID, intent.ID)
 	if err := engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentApplying); err != nil {
 		return ledger.Release{}, err
 	}
 	if err := engine.target.Apply(ctx, plan); err != nil {
 		_ = engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentRecoveryRequired)
+		engine.publish(EventReleaseFailed, ledgerID, intent.ID)
 		return ledger.Release{}, wrap(CodeUnavailable, "Target apply failed; recovery is required.", err)
 	}
 	if err := engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentVerifying); err != nil {
@@ -83,6 +85,7 @@ func (engine *Engine) ReleaseProposal(ctx context.Context, ledgerID, proposalID 
 	}
 	if err := engine.target.Verify(ctx, plan); err != nil {
 		_ = engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentRecoveryRequired)
+		engine.publish(EventReleaseFailed, ledgerID, intent.ID)
 		return ledger.Release{}, wrap(CodeUnavailable, "Target verification failed; recovery is required.", err)
 	}
 	value, err := engine.newRelease(intent)
@@ -92,6 +95,7 @@ func (engine *Engine) ReleaseProposal(ctx context.Context, ledgerID, proposalID 
 	if err := engine.repository.FinalizeRelease(ctx, intent, value); err != nil {
 		return ledger.Release{}, wrap(CodeConflict, "Target applied, but HEAD finalization requires recovery.", err)
 	}
+	engine.publish(EventReleaseCompleted, ledgerID, value.ID)
 	return value, nil
 }
 func (engine *Engine) newRelease(intent ledger.ReleaseIntent) (ledger.Release, error) {
@@ -116,11 +120,15 @@ func (engine *Engine) RecoverReleases(ctx context.Context) error {
 		}
 		var plan targets.Plan
 		if err := json.Unmarshal(intent.Plan, &plan); err != nil {
-			_ = engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentRecoveryRequired)
+			if updateErr := engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentRecoveryRequired); updateErr == nil {
+				engine.publish(EventIntentRecoveryRequired, intent.LedgerID, intent.ID)
+			}
 			continue
 		}
 		if err := engine.target.Verify(ctx, plan); err != nil {
-			_ = engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentRecoveryRequired)
+			if updateErr := engine.repository.UpdateReleaseIntent(ctx, intent.ID, ledger.IntentRecoveryRequired); updateErr == nil {
+				engine.publish(EventIntentRecoveryRequired, intent.LedgerID, intent.ID)
+			}
 			continue
 		}
 		value, err := engine.newRelease(intent)
@@ -130,6 +138,7 @@ func (engine *Engine) RecoverReleases(ctx context.Context) error {
 		if err := engine.repository.FinalizeRelease(ctx, intent, value); err != nil {
 			return fmt.Errorf("finalize recovered release %s: %w", intent.ID, err)
 		}
+		engine.publish(EventReleaseCompleted, intent.LedgerID, value.ID)
 	}
 	return nil
 }

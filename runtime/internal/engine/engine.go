@@ -48,10 +48,11 @@ type Engine struct {
 	target     targets.TargetAdapter
 	inference  inference.Provider
 	releaseMu  sync.Mutex
+	events     *Broker
 }
 
 func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider) *Engine {
-	return &Engine{repository: repo, target: target, inference: provider}
+	return &Engine{repository: repo, target: target, inference: provider, events: &Broker{}}
 }
 func (engine *Engine) InferenceName() string {
 	if engine.inference == nil {

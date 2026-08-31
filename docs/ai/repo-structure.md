@@ -54,6 +54,8 @@ runtime/
 │   │   └── invariants_test.go
 │   ├── engine/                      # application facade. one Engine, shared by HTTP and CLI.
 │   │   ├── engine.go                #   Engine struct, ErrorCode, Error, wrap, PublicError, list methods
+│   │   ├── events.go                #   typed advisory events + non-blocking in-process Broker
+│   │   ├── events_test.go           #   delivery, slow-subscriber, unsubscribe concurrency
 │   │   ├── changes.go               #   CreateChange + idempotency
 │   │   ├── proposals.go             #   CreateProposal, ApproveProposal
 │   │   ├── evaluation.go            #   EvaluateProposal
@@ -76,6 +78,7 @@ runtime/
 │       ├── cli/cli.go               #   doctor, version
 │       └── http/
 │           ├── server.go            #   routes, middleware, encoding, SSE, SPA fallback
+│           ├── events_test.go       #   SSE forwarding, Ledger filtering, cancellation
 │           └── static/              #   embedded Studio assets (index.html fallback in git)
 ├── migrations/
 │   ├── 001_initial.sql              # full schema

@@ -246,7 +246,6 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 
 | Gap | Ticket |
 |---|---|
-| Live event stream is a keepalive stub; Studio never refreshes automatically | GRF-210 |
 | No Proposal detail view; evidence and findings cannot be read back | GRF-211 |
 | Proposals cannot be cancelled; claimed Changes are stuck forever | GRF-212 |
 | `RECOVERY_REQUIRED` intents are invisible and unresolvable | GRF-213 |

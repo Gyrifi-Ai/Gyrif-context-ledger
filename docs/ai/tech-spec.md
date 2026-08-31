@@ -129,16 +129,32 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 
 Unknown paths under `/api/` or `/events/` return `404 NOT_FOUND`. Everything else falls through to the embedded Studio file server, which serves `index.html` for unmatched paths (SPA fallback).
 
-### `/events/v1` — current behaviour
+### `/events/v1`
 
-Sends once:
+The stream sends this backwards-compatible frame once after subscribing:
 
 ```text
 event: ledger
 data: {"status":"connected"}
 ```
 
-then `: keepalive` every 20 seconds until the request context is cancelled. **No domain events are emitted** (GRF-210).
+then `: keepalive` every 20 seconds until the request context is cancelled. An optional `?ledgerId=ldg_…` query parameter limits domain frames to that Ledger. Each subscriber has a 16-event buffer; a full buffer drops that subscriber's event rather than blocking a governance operation. Events are advisory refetch hints, not a replayable source of truth; `Last-Event-ID` is not supported.
+
+```text
+event: proposal.created
+data: {"kind":"proposal.created","ledgerId":"ldg_…","subjectId":"pr_…","at":"2026-08-31T07:00:00Z"}
+```
+
+| Event kind | Durable transition | `subjectId` |
+|---|---|---|
+| `change.accepted` | a new Change is inserted; idempotent replays do not emit | Change ID |
+| `proposal.created` | a Proposal and its ordered claims are inserted | Proposal ID |
+| `proposal.evaluated` | evaluation evidence is saved | Proposal ID |
+| `proposal.approved` | approval bound to the current hash is saved | Proposal ID |
+| `release.started` | a Release Intent is saved | Intent ID |
+| `release.completed` | finalization advances HEAD, including successful startup recovery | Release ID |
+| `release.failed` | apply or verification fails and requires recovery | Intent ID |
+| `intent.recovery_required` | startup recovery durably marks an Intent for operator recovery | Intent ID |
 
 ---
 
@@ -276,6 +292,7 @@ func (e *Engine) ReleaseProposal(ctx, ledgerID, proposalID string) (ledger.Relea
 func (e *Engine) ListReleases(ctx, ledgerID string) ([]ledger.Release, error)
 func (e *Engine) CreateRollbackProposal(ctx, ledgerID, targetReleaseID string) (ledger.Proposal, error)
 func (e *Engine) RecoverReleases(ctx) error
+func (e *Engine) Events() *Broker
 func (e *Engine) TargetCapabilities() targets.Capabilities
 func (e *Engine) InferenceName() string   // "disabled" when provider is nil
 func (e *Engine) Close() error
@@ -640,9 +657,16 @@ function useMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult>): Mut
 
 `ui/feedback/async-boundary.tsx` renders query loading, error/retry, empty, and populated states. It uses `Skeleton` while no data has resolved, `ErrorState` with `refetch` as Retry, defaults to arrays for empty detection, and retains populated content with the `gy-is-refetching` class (`opacity: 0.6`) during refetches.
 
-`studio/src/api/events.ts` exposes a stateful `subscribeToEvents({ onState, onReconnect, onExhausted })` subscription over `EventSource("/events/v1")`. Native reconnect handles transient `CONNECTING` errors. A permanently `CLOSED` source is replaced explicitly with jittered exponential delays from 1 second to a 30-second cap and a six-attempt ceiling; after the ceiling, the topbar exposes `Reconnect`. Closing the subscription closes the source and clears its timer. Reopening invokes every active callback registered by `useLedgerEvents(onInvalidate)`, because events may have been missed. GRF-210 extends this same subscription with typed domain-event dispatch; reconnect is already active while the server emits only its handshake and keepalives.
+`studio/src/api/events.ts` exposes the stateful `subscribeToEvents` lifecycle and the ledger-aware domain contract:
 
-`app/reachability.tsx` owns the application-level Runtime and stream state. It probes `api.status()` immediately, every 30 seconds while connected, and with a 1, 2, 4, 8, 16, 30-second retry sequence while offline. Polling and active probes stop while `document.hidden`; visibility restoration triggers an immediate retry. Any successful request clears the persistent transport banner. The provider also owns the one stream subscription and fans reconnect invalidations out to the active page. `features/shell/runtime-status.tsx` renders HTTP and stream state together; `app/reachability-banner.tsx` renders the offline message and immediate Retry action.
+```ts
+type DomainEvent = { kind: EventKind; ledgerId: string; subjectId: string; at: string };
+function subscribeToLedgerEvents(ledgerId: string, handler: (event: DomainEvent) => void): EventSubscription;
+```
+
+Named SSE frames are parsed against the exact event-kind union; malformed or unknown frames are ignored. Native reconnect handles transient `CONNECTING` errors. A permanently `CLOSED` source is replaced explicitly with jittered exponential delays from 1 second to a 30-second cap and a six-attempt ceiling; after the ceiling, the topbar exposes `Reconnect`. Closing the subscription closes the source and clears its timer.
+
+`app/reachability.tsx` owns the application-level Runtime and the one unfiltered stream subscription. It dispatches each domain event only to active invalidation callbacks registered for the matching Ledger; callbacks refetch REST state and never apply event payloads directly. A reconnect fans out to every callback because events may have been missed. The provider probes `api.status()` immediately, every 30 seconds while connected, and with a 1, 2, 4, 8, 16, 30-second retry sequence while offline. Polling and active probes stop while `document.hidden`; visibility restoration triggers an immediate retry. Any successful request clears the persistent transport banner. `features/shell/runtime-status.tsx` renders HTTP and stream state together; `app/reachability-banner.tsx` renders the offline message and immediate Retry action.
 
 `app/error-boundary.tsx` is the class-based `ErrorBoundary({ fallback, onError?, children })`. The root boundary is inside `Providers` and renders a full-page `ErrorState`, error `CodeBlock`, and last failed request ID. The current routed page has a separately keyed section boundary, so navigation survives a page render error and reset remounts only that subtree. The boundary owns once-per-error logging; React's root `onCaughtError` default logger is disabled to avoid duplicate console entries.
 
@@ -654,12 +678,14 @@ State composition: `Providers` nests reachability around the AppState context `{
 
 | Location | Covers |
 |---|---|
-| `runtime/tests/change_flow_test.go` | full Change → Proposal → Evaluation → Approval → Release flow; idempotent re-submission; idempotency-key conflict; rollback produces a forward Proposal; apply failure leaves HEAD unchanged |
+| `runtime/internal/engine/events_test.go` | broker delivery, full-buffer drops, idempotent unsubscribe, and concurrent publish/unsubscribe safety |
+| `runtime/internal/interfaces/http/events_test.go` | SSE connected frame, domain forwarding, Ledger filtering, flushing, and context cancellation |
+| `runtime/tests/change_flow_test.go` | full Change → Proposal → Evaluation → Approval → Release and event sequence; idempotent re-submission; rollback; apply/verify failure and recovery events |
 | `runtime/internal/ledger/invariants_test.go` | Proposal hash determinism and order sensitivity; approval staleness after re-hash |
 | `runtime/internal/targets/qdrant/qdrant_test.go` | collection path construction, `api-key` header, cosine vector equivalence |
 | `runtime/internal/inference/llamacpp_test.go` | structured-output requirement, free-form rejection |
 | `studio/src/api/client.test.ts` | versioned endpoint path, structured/request-ID error mapping, transport versus HTTP reachability |
-| `studio/src/api/events.test.ts` | stream state, bounded CLOSED retry, manual reconnect, timer/source teardown |
+| `studio/src/api/events.test.ts` | stream state, bounded CLOSED retry, manual reconnect, timer/source teardown, typed named-event parsing and dispatch |
 | `studio/src/app/error-boundary.test.tsx` | fallback/reset contract and once-per-error logging |
 | `studio/src/app/reachability.test.ts` | exact bounded reachability backoff schedule |
 | `studio/src/test/` | **empty** (GRF-230) |
@@ -692,7 +718,6 @@ docker build -t gyrifi:dev .
 
 | Gap | Ticket |
 |---|---|
-| `/events/v1` emits no domain events | GRF-210 |
 | No `GET` for a single Proposal, its checks, or its approvals | GRF-211 |
 | No Proposal cancellation, so claims are permanent | GRF-212 |
 | No API for listing or resolving `RECOVERY_REQUIRED` intents | GRF-213 |

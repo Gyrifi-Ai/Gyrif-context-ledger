@@ -39,7 +39,7 @@ export function ChangesPage() {
     setUnit("");
     changesQuery.refetch();
   });
-  useLedgerEvents(changesQuery.refetch);
+  useLedgerEvents(ledgerId, changesQuery.refetch);
   const create = (event: FormEvent) => {
     event.preventDefault();
     void createMutation.run({ changeUnit: unit, changeDesired: desired });

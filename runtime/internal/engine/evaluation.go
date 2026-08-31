@@ -61,5 +61,6 @@ func (engine *Engine) EvaluateProposal(ctx context.Context, ledgerID, proposalID
 	if err := engine.repository.SaveCheckResult(ctx, check); err != nil {
 		return EvaluationResponse{}, wrap(CodeInternal, "Could not persist evaluation evidence.", err)
 	}
+	engine.publish(EventProposalEvaluated, ledgerID, proposal.ID)
 	return response, nil
 }

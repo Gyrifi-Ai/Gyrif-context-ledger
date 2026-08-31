@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ApiError, api, subscribeToRequestHealth } from "../api/client";
-import { subscribeToEvents, type EventStreamState, type EventSubscription } from "../api/events";
+import { subscribeToLedgerEvents, type EventStreamState, type EventSubscription } from "../api/events";
 import type { SystemStatus } from "../api/types";
 
 export const runtimeUnavailableMessage = "Cannot reach the Gyrifi runtime. Displayed data may be out of date.";
@@ -18,7 +18,7 @@ type Reachability = {
   streamState: EventStreamState;
   streamExhausted: boolean;
   reconnectStream: () => void;
-  registerInvalidation: (listener: () => void) => () => void;
+  registerInvalidation: (ledgerId: string | undefined, listener: () => void) => () => void;
 };
 
 const Context = createContext<Reachability | null>(null);
@@ -38,7 +38,7 @@ export function ReachabilityProvider({ children }: { children: ReactNode }) {
   const probingRef = useRef(false);
   const probeRef = useRef<() => void>(() => undefined);
   const streamRef = useRef<EventSubscription | undefined>(undefined);
-  const invalidationsRef = useRef(new Set<() => void>());
+  const invalidationsRef = useRef(new Set<{ ledgerId: string | undefined; listener: () => void }>());
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
@@ -97,9 +97,10 @@ export function ReachabilityProvider({ children }: { children: ReactNode }) {
     probeRef.current();
   }, [clearTimer]);
 
-  const registerInvalidation = useCallback((listener: () => void) => {
-    invalidationsRef.current.add(listener);
-    return () => invalidationsRef.current.delete(listener);
+  const registerInvalidation = useCallback((ledgerId: string | undefined, listener: () => void) => {
+    const registration = { ledgerId, listener };
+    invalidationsRef.current.add(registration);
+    return () => invalidationsRef.current.delete(registration);
   }, []);
 
   const reconnectStream = useCallback(() => streamRef.current?.reconnect(), []);
@@ -138,10 +139,14 @@ export function ReachabilityProvider({ children }: { children: ReactNode }) {
   }, [clearTimer, retry, schedule]);
 
   useEffect(() => {
-    const subscription = subscribeToEvents({
+    const subscription = subscribeToLedgerEvents("", (event) => {
+      invalidationsRef.current.forEach((registration) => {
+        if (!registration.ledgerId || registration.ledgerId === event.ledgerId) registration.listener();
+      });
+    }, {
       onState: setStreamState,
       onExhausted: setStreamExhausted,
-      onReconnect: () => invalidationsRef.current.forEach((listener) => listener()),
+      onReconnect: () => invalidationsRef.current.forEach((registration) => registration.listener()),
     });
     streamRef.current = subscription;
     return () => {

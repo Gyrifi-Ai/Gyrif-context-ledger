@@ -33,6 +33,8 @@ function LedgerCard({ ledger, active, onSelect }: { ledger: Ledger; active: bool
     async (signal) => (await api.releases(ledger.id, { signal })).items?.length ?? 0,
     [ledger.id],
   );
+  useLedgerEvents(ledger.id, readyQuery.refetch);
+  useLedgerEvents(ledger.id, releasesQuery.refetch);
 
   return (
     <article className={cn(
@@ -121,7 +123,6 @@ export function LedgersPage() {
     showConfirmation(ledger);
     return ledger;
   });
-  useLedgerEvents(ledgerQuery.refetch);
 
   const showConfirmation = (ledger: Ledger) => {
     if (confirmationTimerRef.current) clearTimeout(confirmationTimerRef.current);

@@ -44,5 +44,22 @@ export type SystemStatus = {
   inference: string;
 };
 
+export type EventKind =
+  | "change.accepted"
+  | "proposal.created"
+  | "proposal.evaluated"
+  | "proposal.approved"
+  | "release.started"
+  | "release.completed"
+  | "release.failed"
+  | "intent.recovery_required";
+
+export type DomainEvent = {
+  kind: EventKind;
+  ledgerId: string;
+  subjectId: string;
+  at: string;
+};
+
 export type APIError = { error: { code: string; message: string } };
 export type ReleaseIntentStatus = "READY" | "APPLYING" | "VERIFYING" | "FINALIZED" | "RECOVERY_REQUIRED";

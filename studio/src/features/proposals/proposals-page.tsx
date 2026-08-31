@@ -38,7 +38,7 @@ export function ProposalsPage() {
     if (action === "release") await api.release(ledgerId, proposal.id);
     workspaceQuery.refetch();
   });
-  useLedgerEvents(workspaceQuery.refetch);
+  useLedgerEvents(ledgerId, workspaceQuery.refetch);
   const create = (event: FormEvent) => { event.preventDefault(); void createMutation.run({ proposalTitle: title, changeIds: selected }); };
   const act = (action: "evaluate" | "approve" | "release", proposal: Proposal) => { const next = { action, proposal }; setLastAction(next); void actionMutation.run(next); };
   if (!ledgerId) return <Card><EmptyState title="Select a ledger" description="Proposals are scoped to a ledger." /></Card>;

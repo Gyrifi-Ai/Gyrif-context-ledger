@@ -48,6 +48,7 @@ func (engine *Engine) CreateProposal(ctx context.Context, ledgerID string, reque
 	if err := engine.repository.InsertProposal(ctx, value); err != nil {
 		return ledger.Proposal{}, wrap(CodeConflict, "One or more Changes are already in another active Proposal.", err)
 	}
+	engine.publish(EventProposalCreated, ledgerID, value.ID)
 	return value, nil
 }
 func (engine *Engine) ApproveProposal(ctx context.Context, ledgerID, proposalID, actor string) error {
@@ -73,5 +74,6 @@ func (engine *Engine) ApproveProposal(ctx context.Context, ledgerID, proposalID,
 	if err := engine.repository.SaveApproval(ctx, approval); err != nil {
 		return wrap(CodeInternal, "Could not save approval.", err)
 	}
+	engine.publish(EventProposalApproved, ledgerID, proposal.ID)
 	return nil
 }
