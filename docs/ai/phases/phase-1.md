@@ -2,7 +2,7 @@
 
 **Goal:** turn the functional-but-unfinished Studio into a mockup-led, light SaaS interface that makes the governance model obvious. The runtime already enforces the rules; Phase 1 makes them visible, explicable, and hard to get wrong.
 
-**Status:** Not started
+**Status:** In progress
 
 ## Tickets
 
@@ -422,3 +422,85 @@ ERROR: failed to solve: failed to fetch anonymous token from auth.docker.io: con
 **Follow-ups discovered**
 
 - The Docker image build was blocked by an external Docker Hub authentication connection reset before any build stage ran. Re-run the image portion of the quality gate once registry access is available.
+
+### GRF-204 — Post-completion StrictMode audit correction
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | No |
+
+**What was built**
+
+The approval audit found that `useMutation` left its mounted guard false after React StrictMode's development setup/cleanup/setup cycle. Mutation requests still ran, but their pending, success, and error state could not update. The effect now restores the mounted guard during every setup, and a live StrictMode ledger creation confirmed that mutation state, dialog closure, refetch, active-ledger selection, and focus restoration complete normally.
+
+**Files added**
+
+None.
+
+**Files changed**
+
+- `studio/src/app/use-async.ts` — restore the mutation mounted guard during each effect setup.
+- `docs/ai/phases/phase-1.md` — record the audit correction and replace the stale phase status.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+None. The existing `useMutation<TArgs, TResult>(fn): MutationResult<TArgs, TResult>` contract is unchanged.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Reset `mountedRef.current` in the effect setup | React StrictMode deliberately replays effect setup and cleanup in development | Remove the mounted guard | Async completion could update state after a real unmount |
+| Keep this as a focused correction | The rest of the GRF-204 implementation and documentation matched the ticket | Reimplement the async layer | It would add risk and exceed the audit scope |
+
+**Deviations from the ticket**
+
+None.
+
+**Traps for future work**
+
+An effect-owned mounted guard must be set in the effect setup, not only in the ref initializer. Initializers do not run again during StrictMode's effect replay.
+
+**Tests added**
+
+None. GRF-230 adds the DOM hook harness required for an automated StrictMode lifecycle regression test. This correction was exercised manually through the current StrictMode root against a live runtime.
+
+**Docs updated**
+
+- `docs/ai/phases/phase-1.md` — correction, verification evidence, and current phase status.
+
+**Verification**
+
+```
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference       (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger          (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant  (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/tests                    (cached)
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Already up to date
+Test Files  4 passed (4)
+Tests       7 passed (7)
+✓ 1905 modules transformed.
+✓ built in 1.13s
+
+$ docker build -t gyrifi:local .
+[+] Building 62.0s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+
+$ cd docs/ai/tickets && diff <ticket files> <INDEX status rows>
+tickets consistent
+```
+
+Manual browser verification: with the React StrictMode root active, creating `grf-204-audit` closed the dialog, returned focus to `New ledger`, refetched the list from two to three Ledgers, selected the new Ledger, and enabled the ledger-scoped navigation.
+
+**Follow-ups discovered**
+
+- GRF-230 should include an automated StrictMode replay regression for `useMutation` once its jsdom and Testing Library harness lands.

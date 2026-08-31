@@ -75,7 +75,10 @@ export function useMutation<TArgs, TResult>(fn: (args: TArgs) => Promise<TResult
 
   fnRef.current = fn;
 
-  useEffect(() => () => { mountedRef.current = false; }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const run = useCallback(async (args: TArgs) => {
     if (pendingRef.current) return;
