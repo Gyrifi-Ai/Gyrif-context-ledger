@@ -1,0 +1,12 @@
+# syntax=docker/dockerfile:1.7
+# Dev-only image: Go runtime with Air live-reload.
+# Source is volume-mounted at /src at runtime; changes trigger automatic recompile.
+FROM golang:1.24-bookworm
+WORKDIR /src
+
+RUN go install github.com/air-verse/air@latest
+
+ENV CGO_ENABLED=0
+
+EXPOSE 8080
+CMD ["air"]

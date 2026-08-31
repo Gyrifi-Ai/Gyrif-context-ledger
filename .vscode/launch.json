@@ -7,6 +7,13 @@
       "request": "launch",
       "cwd": "${workspaceFolder}",
       "command": "docker compose up --build --remove-orphans"
+    },
+    {
+      "name": "Gyrifi: Start development stack",
+      "type": "node-terminal",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "command": "docker compose -f compose.dev.yaml up --build --remove-orphans"
     }
   ]
 }

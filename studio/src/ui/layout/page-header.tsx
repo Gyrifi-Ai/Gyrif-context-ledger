@@ -1,0 +1,2 @@
+import type { ReactNode } from "react";
+export function PageHeader({ eyebrow, title, description, actions }: { eyebrow: string; title: string; description: string; actions?: ReactNode }) { return <header className="mb-6 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{eyebrow}</p><h1 className="text-2xl font-semibold tracking-tight">{title}</h1><p className="mt-2 max-w-[68ch] text-sm text-muted-foreground">{description}</p></div>{actions}</header>; }

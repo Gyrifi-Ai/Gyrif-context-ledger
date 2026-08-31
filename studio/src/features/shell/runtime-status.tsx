@@ -1,0 +1,3 @@
+import { useSystemStatus } from "./use-system-status";
+import { cn } from "@/lib/utils";
+export function RuntimeStatus() { const health = useSystemStatus(); const label = health.state === "connected" ? "Connected" : health.state === "degraded" ? "Degraded" : "Offline"; return <span title={health.version ? `Runtime ${health.version} · inference ${health.inference}` : "Runtime unreachable"} className="inline-flex items-center gap-2 text-xs text-muted-foreground"><span className={cn("size-2 rounded-full", health.state === "connected" ? "bg-success" : health.state === "degraded" ? "bg-warning" : "bg-destructive")} />{label}</span>; }

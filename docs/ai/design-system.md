@@ -325,6 +325,8 @@ Title `--text-xl`, description `--text-base` / `--text-muted`, bottom margin `--
 
 ## 4. Component specifications
 
+**Implemented by GRF-202.** The domain-free components below live in `studio/src/ui/`; status mapping remains in `features/shared/status.ts` so no domain vocabulary leaks into a visual primitive.
+
 All components live in `studio/src/ui/`. Props are typed, minimal, and domain-free.
 
 ### 4.1 `Button` (`ui/primitives/button.tsx`)

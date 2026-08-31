@@ -10,8 +10,8 @@
 |---|---|---|---|---|
 | [GRF-240](../tickets/GRF-240-mockup-led-studio-product-system.md) | Mockup-led Studio product system | XL | — | In progress |
 | [GRF-201](../tickets/GRF-201-design-tokens.md) | Mockup-led design token foundation | M | — | Done |
-| [GRF-202](../tickets/GRF-202-ui-library.md) | UI primitive and pattern library | L | GRF-201 | Not started |
-| [GRF-203](../tickets/GRF-203-application-shell.md) | Application shell, navigation, real runtime status | M | GRF-202 | Not started |
+| [GRF-202](../tickets/GRF-202-ui-library.md) | UI primitive and pattern library | L | GRF-201 | Done |
+| [GRF-203](../tickets/GRF-203-application-shell.md) | Application shell, navigation, real runtime status | M | GRF-202 | Done |
 | [GRF-204](../tickets/GRF-204-async-data-layer.md) | Async data layer | M | — | Not started |
 | [GRF-205](../tickets/GRF-205-ledgers-page.md) | Ledgers page redesign | M | GRF-203, GRF-204 | Not started |
 | [GRF-206](../tickets/GRF-206-changes-page.md) | Changes inbox redesign | L | GRF-203, GRF-204 | Not started |
@@ -123,6 +123,90 @@ Visual verification: all four pages exercised in the browser against a live runt
 - Ticket needed: `ListChanges` NULL-desired scan failure for DELETE changes (see traps).
 - Ticket needed (or fold into GRF-204): server should return `"items": []` instead of `null` for empty lists.
 - GRF-201/202/203 are partially pre-empted by this change; their acceptance criteria should be re-scoped against `components/ui/` when picked up.
+
+### GRF-202 — UI primitive and pattern library; GRF-203 — Application shell
+
+| | |
+|---|---|
+| Completed | 2026-08-17 |
+| Commit / PR | Uncommitted workspace change |
+| Deviated from ticket | No |
+
+**What was built**
+
+Implemented the domain-free Studio component library: accessible controls, field wrappers, table, feedback states, panels, drawers, confirmation dialogs, copyable hashes/JSON, timeline, stats, and inline SVG icons. Rebuilt the application shell as a slot-based layout, then added domain-aware navigation, selected-ledger switching, HEAD display, and a real 30-second runtime probe. The side navigation prevents entry to ledger-scoped pages until a Ledger is selected.
+
+**Files added**
+
+- `studio/src/ui/primitives/`, `studio/src/ui/patterns/`, `studio/src/ui/feedback/`, `studio/src/ui/layout/` — GRF-202 component library
+- `studio/src/features/shell/` — ledger switcher, HEAD chip, nav, status display, and polling hook
+- `studio/src/ui/ui-smoke.test.tsx` and `studio/src/features/shared/status.test.ts` — component and status-mapping smoke coverage
+
+**Files changed**
+
+- `studio/src/app/providers.tsx` — selected Ledger object, ledger list, and refresh handle
+- `studio/src/app/shell.tsx` / `studio/src/ui/layout/application-shell.tsx` — domain-aware composition around the slot-only layout
+- `studio/src/api/client.ts` / `studio/src/api/types.ts` — request status classification and typed lifecycle values
+- `studio/src/features/{ledgers,changes,proposals,releases}/` — explicit empty state and caller-owned status tone usage
+- `studio/src/styles.css` — shell geometry tokens
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```ts
+type AppState = { ledgerId: string; ledger: Ledger | null; ledgers: Ledger[]; setLedgerId(id: string): void; refreshLedgers(): Promise<void> };
+function ApplicationShell({ sidebar, topbar, header, children, rail }: { sidebar: ReactNode; topbar: ReactNode; header: ReactNode; children: ReactNode; rail?: ReactNode }): ReactNode;
+function changeTone(status: Change["status"]): StatusTone;
+function proposalTone(status: Proposal["status"]): StatusTone;
+function intentTone(status: ReleaseIntentStatus): StatusTone;
+```
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Keep `ui/` domain-free | Prevents browser vocabulary from re-deriving governance semantics | Status regex in badge component | It drifts when server enums change. |
+| Classify HTTP failure as degraded and transport failure as offline | Operators can distinguish a responding but unhealthy runtime from an unreachable one | Treat all failed polls as offline | It hides a useful operational distinction. |
+| Use the newest Release as temporary HEAD | The API has no Head endpoint yet | Add a client-side governance model | The server remains authoritative. |
+
+**Deviations from the ticket**
+
+None. Native `<dialog>` supplies its modal focus containment; the destructive confirmation action is never autofocusable.
+
+**Traps for future work**
+
+- `api.status()` must retain `RequestInit` support and HTTP `status` metadata so the runtime indicator can distinguish degradation from a network outage.
+- HEAD is derived from the newest Release until an explicit API contract is added; do not independently calculate governance readiness in Studio.
+- The shell uses the mobile horizontal navigation strip below the desktop breakpoint; optional side rails are supplied through the domain-free `rail` slot.
+
+**Tests added**
+
+- `studio/src/ui/ui-smoke.test.tsx` — renders every primitive, pattern, layout, and feedback component, including loading/disabled controls
+- `studio/src/features/shared/status.test.ts` — protects exhaustive normative lifecycle tone mappings
+
+**Docs updated**
+
+- `docs/ai/design-system.md` §4 — component specification implementation status
+- `docs/ai/product.md` §6–§7 — selected Ledger/HEAD/status product surface and closed hardcoded-status gap
+- `docs/ai/tech-spec.md` §11 — expanded AppState and runtime polling contract
+- `docs/ai/repo-structure.md` §3 — current Studio file tree
+
+**Verification**
+
+```
+$ cd studio && pnpm typecheck && pnpm test && pnpm build
+Test Files  3 passed (3)
+Tests  4 passed (4)
+✓ 1899 modules transformed.
+✓ built in 1.05s
+```
+
+**Follow-ups discovered**
+
+GRF-204 must consolidate per-page list fetching into its async state layer. The shell intentionally owns only Ledger selection and runtime health.
 
 ### GRF-201 — Mockup-led design token foundation
 

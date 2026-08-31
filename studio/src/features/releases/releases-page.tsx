@@ -13,7 +13,7 @@ export function ReleasesPage() {
   const [error, setError] = useState("");
   useEffect(() => { if (ledgerId) api.releases(ledgerId).then((value) => setItems(value.items ?? [])).catch((value: Error) => setError(value.message)); }, [ledgerId]);
   const rollback = async (releaseId: string) => { try { await api.rollback(ledgerId, releaseId); window.location.hash = "proposals"; } catch (value) { setError((value as Error).message); } };
-  if (!ledgerId) return <Card><EmptyState title="Select a ledger">Release history is scoped to a ledger.</EmptyState></Card>;
+  if (!ledgerId) return <Card><EmptyState title="Select a ledger" description="Release history is scoped to a ledger." /></Card>;
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0 border-b">
@@ -26,7 +26,7 @@ export function ReleasesPage() {
       <CardContent className="pt-6">
         {error && <p role="alert" className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">{error}</p>}
         {items.length === 0 ? (
-          <EmptyState title="No Releases yet">Approved Proposals become immutable Releases here.</EmptyState>
+          <EmptyState title="No Releases yet" description="Approved Proposals become immutable Releases here." />
         ) : (
           <ol className="relative ml-2 space-y-8 border-l border-border pb-2">
             {items.map((release, index) => {

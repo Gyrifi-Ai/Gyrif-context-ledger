@@ -138,7 +138,7 @@ studio/
     ├── lib/utils.ts            # cn() — clsx + tailwind-merge
     ├── app/
     │   ├── bootstrap.tsx       # createRoot + StrictMode + Providers + Shell
-    │   ├── providers.tsx       # AppState context: { ledgerId, setLedgerId } persisted to localStorage
+    │   ├── providers.tsx       # AppState context: selected Ledger, ledger list, refresh handle; id persisted locally
     │   ├── router.tsx          # hash routing: Route union + useRoute()
     │   └── shell.tsx           # maps Route → page component
     ├── api/
@@ -149,11 +149,13 @@ studio/
     ├── components/ui/          # shadcn/ui components (button, card, badge, input, textarea, label,
     │                           #  table, dialog, checkbox, separator, skeleton, tooltip)
     ├── ui/                     # VISUAL ONLY. must not know about ledgers/changes/etc.
-    │   ├── patterns/status-badge.tsx
-    │   ├── layout/application-shell.tsx
-    │   └── feedback/empty-state.tsx
+    │   ├── primitives/         # Button, field controls, segmented control, domain-free SVG icons
+    │   ├── patterns/           # DataTable, badges, hashes, code, timeline, stats, confirmation dialog
+    │   ├── layout/             # slot-based application shell, page header, panel, drawer
+    │   └── feedback/           # loading skeleton, empty state, and retryable error state
     ├── features/               # ALL domain-aware UI
     │   ├── shared/status.ts    # domain status → badge tone mapping (design-system §2.2)
+    │   ├── shell/              # Ledger switcher, HEAD chip, navigation, and server-status poller
     │   ├── ledgers/ledgers-page.tsx
     │   ├── changes/changes-page.tsx
     │   ├── proposals/proposals-page.tsx

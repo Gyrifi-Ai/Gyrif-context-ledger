@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1.7
+# Dev-only image: Studio with node_modules baked in at build time.
+# At runtime only source files are volume-mounted, giving Vite HMR without
+# reinstalling packages on every container start.
+FROM node:24-bookworm-slim
+WORKDIR /workspace
+
+RUN npm install --global pnpm@11.15.1
+
+# Install deps from workspace root so pnpm resolves the lockfile correctly.
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY studio/package.json studio/package.json
+RUN pnpm install --frozen-lockfile
+
+WORKDIR /workspace/studio
+EXPOSE 5173
+CMD ["node", "node_modules/vite/bin/vite.js", "--host"]

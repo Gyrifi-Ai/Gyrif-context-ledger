@@ -1,0 +1,2 @@
+import { Button } from "../primitives/button";
+export function ErrorState({ title = "Unable to load data", message, onRetry }: { title?: string; message: string; onRetry: () => void }) { return <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-4"><p className="font-medium text-destructive">{title}</p><p className="mt-1 font-mono text-xs text-destructive">{message}</p><Button variant="secondary" size="sm" className="mt-3" onClick={onRetry}>Retry</Button></div>; }

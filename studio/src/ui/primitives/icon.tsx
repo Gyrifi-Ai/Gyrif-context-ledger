@@ -1,0 +1,13 @@
+import type { SVGProps } from "react";
+type IconProps = SVGProps<SVGSVGElement>;
+const Icon = ({ children, ...props }: IconProps) => <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" {...props}>{children}</svg>;
+export const LedgerIcon = (p: IconProps) => <Icon {...p}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></Icon>;
+export const ChangeIcon = (p: IconProps) => <Icon {...p}><path d="M5 7h12M13 3l4 4-4 4M19 17H7M11 13l-4 4 4 4"/></Icon>;
+export const ProposalIcon = (p: IconProps) => <Icon {...p}><path d="M6 3h9l3 3v15H6zM15 3v4h4M9 12h6M9 16h6"/></Icon>;
+export const ReleaseIcon = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="8"/><path d="m9 12 2 2 4-4"/></Icon>;
+export const CheckIcon = (p: IconProps) => <Icon {...p}><path d="m5 12 4 4L19 6"/></Icon>;
+export const AlertIcon = (p: IconProps) => <Icon {...p}><path d="M12 3 2.8 20h18.4zM12 9v4M12 17h.01"/></Icon>;
+export const CopyIcon = (p: IconProps) => <Icon {...p}><rect x="9" y="9" width="11" height="11" rx="1"/><path d="M15 9V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h4"/></Icon>;
+export const ChevronIcon = (p: IconProps) => <Icon {...p}><path d="m7 10 5 5 5-5"/></Icon>;
+export const PlusIcon = (p: IconProps) => <Icon {...p}><path d="M12 5v14M5 12h14"/></Icon>;
+export const SpinnerIcon = (p: IconProps) => <Icon {...p}><path d="M20 12a8 8 0 1 1-2.34-5.66"/></Icon>;

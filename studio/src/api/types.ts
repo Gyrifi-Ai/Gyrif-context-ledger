@@ -14,7 +14,7 @@ export type Change = {
   desired: unknown;
   baseFingerprint: string;
   desiredFingerprint: string;
-  status: string;
+  status: "ACCEPTED" | "READY" | "INVALID" | "RELEASED";
   createdAt: string;
 };
 
@@ -24,7 +24,7 @@ export type Proposal = {
   title: string;
   baseReleaseId?: string;
   hash: string;
-  status: string;
+  status: "DRAFT" | "REVIEWED" | "APPROVED" | "RELEASED" | "BLOCKED";
   changeIds: string[];
   createdAt: string;
 };
@@ -45,3 +45,4 @@ export type SystemStatus = {
 };
 
 export type APIError = { error: { code: string; message: string } };
+export type ReleaseIntentStatus = "READY" | "APPLYING" | "VERIFYING" | "FINALIZED" | "RECOVERY_REQUIRED";

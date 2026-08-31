@@ -4,6 +4,7 @@ import type { Change, Proposal } from "../../api/types";
 import { useAppState } from "../../app/providers";
 import { EmptyState } from "../../ui/feedback/empty-state";
 import { StatusBadge } from "../../ui/patterns/status-badge";
+import { proposalTone } from "../shared/status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -22,7 +23,7 @@ export function ProposalsPage() {
   useEffect(() => { void load(); }, [ledgerId]);
   const create = async (event: FormEvent) => { event.preventDefault(); try { await api.createProposal(ledgerId, { title, changeIds: selected }); setTitle(""); setSelected([]); await load(); } catch (value) { setError((value as Error).message); } };
   const act = async (action: "evaluate" | "approve" | "release", proposal: Proposal) => { try { if (action === "evaluate") await api.evaluate(ledgerId, proposal.id, "The proposed context is accurate, internally consistent, and safe to release."); if (action === "approve") await api.approve(ledgerId, proposal.id); if (action === "release") await api.release(ledgerId, proposal.id); await load(); } catch (value) { setError((value as Error).message); } };
-  if (!ledgerId) return <Card><EmptyState title="Select a ledger">Proposals are scoped to a ledger.</EmptyState></Card>;
+  if (!ledgerId) return <Card><EmptyState title="Select a ledger" description="Proposals are scoped to a ledger." /></Card>;
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <Card>
@@ -32,13 +33,13 @@ export function ProposalsPage() {
         </CardHeader>
         <CardContent className="p-0">
           {items.length === 0 ? (
-            <EmptyState title="No Proposals">Select Ready Changes to create a reviewable Context PR.</EmptyState>
+            <EmptyState title="No Proposals" description="Select Ready Changes to create a reviewable Context PR." />
           ) : (
             <ul className="divide-y divide-border/60">
               {items.map((proposal) => (
                 <li key={proposal.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-muted/40">
                   <div className="min-w-0 space-y-1.5">
-                    <StatusBadge value={proposal.status} />
+                    <StatusBadge label={proposal.status} tone={proposalTone(proposal.status)} />
                     <p className="font-medium leading-tight">{proposal.title}</p>
                     <code className="block text-xs text-muted-foreground">{proposal.hash.slice(0, 18)} · {proposal.changeIds.length} changes</code>
                   </div>

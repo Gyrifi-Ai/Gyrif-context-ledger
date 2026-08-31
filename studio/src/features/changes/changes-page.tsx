@@ -4,6 +4,7 @@ import type { Change } from "../../api/types";
 import { useAppState } from "../../app/providers";
 import { EmptyState } from "../../ui/feedback/empty-state";
 import { StatusBadge } from "../../ui/patterns/status-badge";
+import { changeTone } from "../shared/status";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,7 +43,7 @@ export function ChangesPage() {
   };
   if (!ledgerId) return (
     <Card>
-      <EmptyState title="Select a ledger">Choose or create a ledger before submitting Changes.</EmptyState>
+      <EmptyState title="Select a ledger" description="Choose or create a ledger before submitting Changes." />
     </Card>
   );
   return (
@@ -57,7 +58,7 @@ export function ChangesPage() {
         </CardHeader>
         <CardContent className="p-0">
           {items.length === 0 ? (
-            <EmptyState title="No Changes yet">Submit desired state here or through the versioned API.</EmptyState>
+            <EmptyState title="No Changes yet" description="Submit desired state here or through the versioned API." />
           ) : (
             <Table>
               <TableHeader>
@@ -81,7 +82,7 @@ export function ChangesPage() {
                       {change.action}
                     </TableCell>
                     <TableCell className="text-right">
-                      <StatusBadge value={change.status} />
+                      <StatusBadge label={change.status} tone={changeTone(change.status)} />
                     </TableCell>
                   </TableRow>
                 ))}

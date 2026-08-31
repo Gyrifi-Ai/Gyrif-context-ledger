@@ -15,12 +15,12 @@ export function LedgersPage() {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
-  const { ledgerId, setLedgerId } = useAppState();
+  const { ledgerId, refreshLedgers, setLedgerId } = useAppState();
   const load = () => api.ledgers().then((value) => setItems(value.items ?? [])).catch((value: Error) => setError(value.message));
   useEffect(() => { void load(); }, []);
   const create = async (event: FormEvent) => {
     event.preventDefault(); setError("");
-    try { const ledger = await api.createLedger({ name }); setName(""); setOpen(false); setLedgerId(ledger.id); await load(); } catch (value) { setError((value as Error).message); }
+    try { const ledger = await api.createLedger({ name }); setName(""); setOpen(false); setLedgerId(ledger.id); await Promise.all([load(), refreshLedgers()]); } catch (value) { setError((value as Error).message); }
   };
   return (
     <div className="space-y-4">
@@ -45,7 +45,7 @@ export function LedgersPage() {
         </Dialog>
       </div>
       {items.length === 0 ? (
-        <Card><EmptyState title="No ledgers yet">A ledger is a governed namespace with its own inbox, proposals, and release history. Create the first one to begin.</EmptyState></Card>
+        <Card><EmptyState title="No ledgers yet" description="A ledger is a governed namespace with its own inbox, proposals, and release history. Create the first one to begin." /></Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {items.map((ledger) => {

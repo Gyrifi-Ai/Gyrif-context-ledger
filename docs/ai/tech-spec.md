@@ -599,7 +599,9 @@ The provider has no access to `Repository` or `TargetAdapter`. Port 8081 is neve
 
 `studio/src/api/events.ts` exposes `subscribeToEvents(onChange)` over `EventSource("/events/v1")` listening for the `ledger` event. It is currently **not wired into any page** (GRF-210).
 
-State: a single React context (`app/providers.tsx`) holding `{ ledgerId, setLedgerId }`, persisted to `localStorage["gyrifi.ledger"]`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#releases`), defaulting to `ledgers`.
+State: a single React context (`app/providers.tsx`) holding `{ ledgerId, ledger, ledgers, setLedgerId, refreshLedgers }`; only `ledgerId` is persisted to `localStorage["gyrifi.ledger"]`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#releases`), defaulting to `ledgers`.
+
+`features/shell/use-system-status.ts` polls `api.status()` immediately and every 30 seconds while the document is visible. A successful response in 2 seconds is `Connected`; a slow success or an HTTP error is `Degraded`; a network failure is `Offline`. Each poll has an `AbortController`; it is aborted when hidden, on the next poll, and on unmount. The topbar renders the returned version and inference mode as the status title.
 
 ---
 

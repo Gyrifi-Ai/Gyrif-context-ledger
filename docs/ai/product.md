@@ -238,6 +238,8 @@ Four top-level areas, nothing else:
 
 There are deliberately **no** top-level pages for SQLite, object storage, target operations, inference processes, or Release Intents. Those are implementation concerns, not product concerns. Release Intent *recovery* is the one exception and belongs **inside** Releases (GRF-213).
 
+The Studio topbar exposes the selected Ledger switcher, the current HEAD Release when one exists, and a server-probed runtime state. Ledger selection remains a local preference (`localStorage["gyrifi.ledger"]`); the Ledger list, HEAD, version, and inference mode are API-backed.
+
 ---
 
 ## 7. Known product gaps
@@ -253,7 +255,6 @@ There are deliberately **no** top-level pages for SQLite, object storage, target
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
 | No retention limits, quotas, or backup command | GRF-222 |
 | Evaluation criteria is hardcoded in Studio | GRF-207 |
-| Studio "Runtime connected" indicator is hardcoded, not real | GRF-203 |
 | A render error blanks Studio; a dropped event stream is never noticed | GRF-209 |
 | Ledgers and Changes are create-only — a mistaken ingestion is permanent | GRF-215 |
 | No liveness or readiness signal an orchestrator can use | GRF-224 |

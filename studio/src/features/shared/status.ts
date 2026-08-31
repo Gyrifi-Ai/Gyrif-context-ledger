@@ -1,21 +1,7 @@
-// Domain status → badge tone, per the normative table in design-system.md §2.2.
-export type StatusTone = "neutral" | "info" | "review" | "success" | "warning" | "danger";
+import type { Change, Proposal, ReleaseIntentStatus } from "../../api/types";
+import type { StatusTone } from "../../ui/patterns/status-badge";
 
-const tones: Record<string, StatusTone> = {
-  ACCEPTED: "info",
-  READY: "neutral",
-  INVALID: "danger",
-  BLOCKED: "danger",
-  RELEASED: "success",
-  DRAFT: "neutral",
-  REVIEWED: "review",
-  APPROVED: "success",
-  APPLYING: "warning",
-  VERIFYING: "warning",
-  FINALIZED: "success",
-  RECOVERY_REQUIRED: "danger",
-};
-
-export function statusTone(value: string): StatusTone {
-  return tones[value.toUpperCase()] ?? "neutral";
-}
+function assertNever(value: never): never { throw new Error(`Unhandled value: ${String(value)}`); }
+export function changeTone(status: Change["status"]): StatusTone { switch (status) { case "ACCEPTED": return "info"; case "READY": return "neutral"; case "INVALID": return "danger"; case "RELEASED": return "success"; default: return assertNever(status); } }
+export function proposalTone(status: Proposal["status"]): StatusTone { switch (status) { case "DRAFT": return "neutral"; case "REVIEWED": return "review"; case "APPROVED": case "RELEASED": return "success"; case "BLOCKED": return "danger"; default: return assertNever(status); } }
+export function intentTone(status: ReleaseIntentStatus): StatusTone { switch (status) { case "READY": case "APPLYING": case "VERIFYING": return "warning"; case "FINALIZED": return "success"; case "RECOVERY_REQUIRED": return "danger"; default: return assertNever(status); } }

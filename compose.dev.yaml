@@ -1,0 +1,96 @@
+# Dev-only compose stack. Run with:
+#   docker compose -f compose.dev.yaml up --build
+#
+# Changes to Go source are picked up automatically by Air (live reload).
+# Changes to studio/src are picked up automatically by Vite HMR.
+# If studio/package.json or Go go.mod change, rebuild the affected image:
+#   docker compose -f compose.dev.yaml build gyrifi
+#   docker compose -f compose.dev.yaml build studio
+
+services:
+
+  # ── Vector store ──────────────────────────────────────────────────────────
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+  qdrant-init:
+    image: curlimages/curl:8.12.1
+    depends_on:
+      - qdrant
+    restart: "no"
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        until curl --fail --silent --output /dev/null http://qdrant:6333/; do
+          echo 'Waiting for Qdrant...'; sleep 1
+        done
+        if curl --fail --silent --output /dev/null http://qdrant:6333/collections/gyrifi; then
+          echo 'Qdrant collection gyrifi already exists.'
+        else
+          curl --fail --silent --show-error \
+            --request PUT http://qdrant:6333/collections/gyrifi \
+            --header 'Content-Type: application/json' \
+            --data '{"vectors":{"size":3,"distance":"Cosine"}}'
+        fi
+
+  # ── Go runtime (live reload via Air) ──────────────────────────────────────
+
+  gyrifi:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./runtime:/src                      # source — Air watches for changes
+      - go-mod-cache:/go/pkg/mod            # module download cache
+      - go-build-cache:/root/.cache/go-build  # incremental build cache
+      - gyrifi-data:/data
+    environment:
+      GYRIFI_HTTP_ADDRESS: ":8080"
+      GYRIFI_DATA_DIR: /data
+      GYRIFI_EVALUATION_PROVIDER: disabled
+      GYRIFI_QDRANT_URL: http://qdrant:6333
+      GYRIFI_QDRANT_COLLECTION: gyrifi
+      GYRIFI_LOG_LEVEL: debug
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      qdrant-init:
+        condition: service_completed_successfully
+
+  # ── Studio (Vite HMR) ─────────────────────────────────────────────────────
+
+  studio:
+    build:
+      context: .
+      dockerfile: studio/Dockerfile.dev
+    volumes:
+      - ./studio/src:/workspace/studio/src
+      - ./studio/index.html:/workspace/studio/index.html
+      - ./studio/vite.config.ts:/workspace/studio/vite.config.ts
+      - ./studio/tsconfig.json:/workspace/studio/tsconfig.json
+    environment:
+      # Vite proxy target — points to the gyrifi service inside the compose network.
+      API_PROXY_TARGET: http://gyrifi:8080
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - gyrifi
+
+  # ── Log monitoring (dev only) ─────────────────────────────────────────────
+
+  dozzle:
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:9999:8080"   # open http://localhost:9999 to view all container logs
+
+volumes:
+  qdrant-data:
+  gyrifi-data:
+  go-mod-cache:
+  go-build-cache:

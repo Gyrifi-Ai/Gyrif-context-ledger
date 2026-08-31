@@ -7,14 +7,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-    throw new Error(body?.error?.message ?? `Request failed (${response.status})`);
+    const error = new Error(body?.error?.message ?? `Request failed (${response.status})`) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
 export const api = {
-  status: () => request<SystemStatus>("/api/v1/system/status"),
+  status: (init?: RequestInit) => request<SystemStatus>("/api/v1/system/status", init),
   ledgers: () => request<{ items: Ledger[] }>("/api/v1/ledgers"),
   createLedger: (input: { name: string; description?: string }) => request<Ledger>("/api/v1/ledgers", { method: "POST", body: JSON.stringify(input) }),
   changes: (ledgerId: string) => request<{ items: Change[] }>(`/api/v1/ledgers/${ledgerId}/changes`),
