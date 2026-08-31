@@ -176,7 +176,7 @@ Go supervises `llama-server` on loopback `8081`, waits for `/health`, and termin
 
 Requirements: Go 1.24+, Node.js 24+, pnpm 11. Docker only for the image.
 
-The CI workflow runs the Runtime, Studio, coverage, and shipping-image gates on every push to `main` and every pull request. Run the same checks locally before pushing; CI reports failures but is not a substitute for local verification.
+The CI workflow runs the Runtime, Studio, coverage, and shipping-image gates on every push and pull request. Run the same checks locally before pushing; CI reports failures but is not a substitute for local verification.
 
 ```sh
 # Studio

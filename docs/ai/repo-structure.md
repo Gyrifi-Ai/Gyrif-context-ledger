@@ -217,7 +217,7 @@ Test files are co-located as `*.test.ts` or `*.test.tsx`; only shared test infra
 
 ### Continuous integration
 
-`.github/workflows/ci.yml` runs on pushes to `main` and pull requests with workflow-level `contents: read` permission and ref-scoped cancellation. Runtime and Studio execute independently; the image job starts only after both pass. Every external action is pinned to a full commit SHA.
+`.github/workflows/ci.yml` runs on pushes and pull requests with workflow-level `contents: read` permission and ref-scoped cancellation. Runtime and Studio execute independently; the image job starts only after both pass. Every external action is pinned to a full commit SHA.
 
 The Runtime job uses Go 1.24 from `runtime/go.mod` and enforces gofmt without rewriting files, a clean `go mod tidy`, `go vet`, race-enabled tests, and `go build`. The Studio job pins Node 24 and pnpm 11.15.1, installs the root workspace with `--frozen-lockfile`, and invokes the direct-entry `typecheck`, `test`, `coverage`, and `build` scripts. The image job uses Buildx cache, accepts `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, smoke-tests the loaded image through the system status endpoint, and uploads a one-day Docker image artifact.
 

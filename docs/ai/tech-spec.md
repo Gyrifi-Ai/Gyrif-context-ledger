@@ -807,7 +807,7 @@ Large model downloads are never part of tests.
 
 ## 13. Quality gate
 
-`.github/workflows/ci.yml` enforces the Runtime, Studio, coverage, and shipping-image portions on pushes to `main` and on pull requests. It grants only `contents: read`, cancels superseded runs for the same ref, and pins every external action to an immutable commit SHA. Runtime and Studio run in parallel; the image job depends on both and exports its smoke-tested `gyrifi:ci` image as a one-day artifact.
+`.github/workflows/ci.yml` enforces the Runtime, Studio, coverage, and shipping-image portions on pushes and pull requests. It grants only `contents: read`, cancels superseded runs for the same ref, and pins every external action to an immutable commit SHA. Runtime and Studio run in parallel; the image job depends on both and exports its smoke-tested `gyrifi:ci` image as a one-day artifact.
 
 The Runtime job reads Go 1.24 from `runtime/go.mod`, fails on unformatted files or a dirty `go mod tidy`, then runs `go vet ./...`, `go test ./... -race`, and `go build ./...`. The Studio job pins Node 24 and pnpm 11.15.1, performs a frozen root-workspace install, and calls the direct-entry package scripts for typechecking, tests, coverage, and build. The image job passes `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, uses Buildx GHA caching, and polls the embedded Runtime rather than sleeping for a fixed startup interval. GRF-223 will tighten the smoke assertion from a non-empty reported version to exact linker-injected build metadata.
 
