@@ -53,47 +53,47 @@ Nothing enforces it. A commit that fails `go vet` merges silently.
 
 **Workflow**
 
-- [ ] `.github/workflows/ci.yml` triggers on `push` to the default branch and on `pull_request`.
-- [ ] `concurrency` cancels superseded runs for the same ref.
-- [ ] Jobs: `runtime`, `studio`, `image`. `image` depends on the other two.
-- [ ] Go version is pinned to the `go.mod` version (`1.24`) via `actions/setup-go` with `go-version-file: runtime/go.mod`.
-- [ ] Node and pnpm versions are pinned; pnpm is `11.15.1` matching `package.json`.
-- [ ] Caching: Go build and module cache; pnpm store keyed on `pnpm-lock.yaml`.
+- [x] `.github/workflows/ci.yml` triggers on `push` and on `pull_request`. Push coverage includes the default branch and feature branches so the workflow can be qualified where Enterprise Managed User policy prevents PR creation.
+- [x] `concurrency` cancels superseded runs for the same ref.
+- [x] Jobs: `runtime`, `studio`, `image`. `image` depends on the other two.
+- [x] Go version is pinned to the `go.mod` version (`1.24`) via `actions/setup-go` with `go-version-file: runtime/go.mod`.
+- [x] Node and pnpm versions are pinned; pnpm is `11.15.1` matching `package.json`.
+- [x] Caching: Go build and module cache; pnpm store keyed on `pnpm-lock.yaml`.
 
 **Runtime job**
 
-- [ ] Runs `go vet ./...`, `go test ./... -race`, and `go build ./...` in `runtime/`.
-- [ ] Formatting is checked as a **failure**, not a fixup: `test -z "$(gofmt -l .)"` and print the offending files. `go fmt` writing files in CI is useless.
-- [ ] `go mod tidy` produces no diff — a job step verifies `go.mod` and `go.sum` are clean.
-- [ ] `-race` is enabled. The runtime spawns goroutines for SSE, inference supervision, and (after GRF-221) preparation; races here corrupt an audit trail.
+- [x] Runs `go vet ./...`, `go test ./... -race`, and `go build ./...` in `runtime/`.
+- [x] Formatting is checked as a **failure**, not a fixup: `gofmt -l` prints offending files and exits non-zero.
+- [x] `go mod tidy` produces no diff — a job step verifies `go.mod` and `go.sum` are clean.
+- [x] `-race` is enabled. The runtime spawns goroutines for SSE, inference supervision, and (after GRF-221) preparation; races here corrupt an audit trail.
 
 **Studio job**
 
-- [ ] `pnpm install --frozen-lockfile` — a lockfile mismatch fails the build rather than silently resolving.
-- [ ] `pnpm typecheck`, `pnpm test`, `pnpm build`.
-- [ ] Coverage thresholds enforced once GRF-230 lands.
-- [ ] The workspace-path quirk (`:` in the local directory) does not apply in CI, but the scripts must still work unmodified — do **not** "fix" the scripts back to bare `vite`/`tsc` for CI. Confirm the direct-entry-point form runs correctly.
+- [x] `pnpm install --frozen-lockfile` — a lockfile mismatch fails the build rather than silently resolving.
+- [x] `pnpm typecheck`, `pnpm test`, `pnpm build`.
+- [x] Coverage thresholds enforced through GRF-230's `pnpm coverage` entry point.
+- [x] The direct-entry-point scripts run unmodified in CI and locally in the colon-bearing workspace path.
 
 **Image job**
 
-- [ ] `docker build` using the repository `Dockerfile` with buildx layer caching.
-- [ ] Build args wired for GRF-223: `VERSION` from the tag or short SHA, `COMMIT` from `github.sha`, `BUILD_DATE` from the run timestamp.
-- [ ] The built image is smoke-tested: run it, poll `/api/v1/system/status` until healthy or fail after a bounded wait, assert the reported version matches the injected one, then stop it.
-- [ ] The image is exported as an artefact (or loaded into the runner's daemon) so GRF-232 can consume it without rebuilding.
+- [x] `docker build` uses the repository `Dockerfile` through Buildx with GitHub Actions layer caching.
+- [x] Build args wired for GRF-223: `VERSION` from the tag or 12-character SHA, `COMMIT` from `github.sha`, `BUILD_DATE` from the run timestamp.
+- [x] The built image is smoke-tested by polling `/api/v1/system/status` for at most 30 seconds and requiring its version to equal the injected value before cleanup.
+- [x] The image is loaded for smoke testing, exported as `gyrifi-ci-image`, and retained for one day.
 
 **Hygiene**
 
-- [ ] `permissions:` is set to least privilege at the workflow level (`contents: read`).
-- [ ] No secrets are required for the default pipeline. If a job needs one later, it must not run on `pull_request` from forks.
-- [ ] All third-party actions are pinned to a full commit SHA, not a tag — tags are mutable and this is a supply-chain surface.
-- [ ] Total pipeline duration stays bounded; jobs run in parallel where they are independent.
-- [ ] A `README.md` badge links to the workflow.
+- [x] `permissions:` is set to least privilege at the workflow level (`contents: read`).
+- [x] No secrets are required for the default pipeline.
+- [x] All third-party actions are pinned to a full commit SHA, not a tag.
+- [x] Every job has a timeout; Runtime and Studio run in parallel before Image.
+- [x] A `README.md` badge links to the workflow.
 
 **Extension points**
 
-- [ ] A commented, disabled `integration` job stub with the `qdrant/qdrant` service container, ready for GRF-231 to enable.
-- [ ] A commented, disabled `e2e` job stub, ready for GRF-232 to enable.
-- [ ] Both stubs include a note that they must become **required** checks when enabled.
+- [x] A commented, disabled `integration` job stub has the pinned `qdrant/qdrant` service container ready for GRF-231.
+- [x] A commented, disabled `e2e` job stub is ready for separate activation; it remains disabled as explicitly requested.
+- [x] Both stubs state that they must become required checks when enabled.
 
 ## Implementation notes
 
