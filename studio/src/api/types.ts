@@ -63,6 +63,19 @@ export type CheckResult = {
   current: boolean;
 };
 
+export type Finding = {
+  severity: string;
+  unit?: string;
+  message: string;
+};
+
+export type EvaluationResponse = {
+  passed: boolean;
+  summary: string;
+  previewFidelity: string;
+  findings?: Finding[];
+};
+
 export type Approval = {
   id: string;
   proposalHash: string;

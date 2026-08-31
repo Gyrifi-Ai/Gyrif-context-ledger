@@ -1,112 +1,94 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
+import { Plus } from "lucide-react";
 import { api } from "../../api/client";
 import type { Change, Proposal } from "../../api/types";
 import { useAppState } from "../../app/providers";
 import { useLedgerEvents } from "../../app/use-ledger-events";
-import { useMutation, useQuery } from "../../app/use-async";
-import { AsyncBoundary } from "../../ui/feedback/async-boundary";
+import { useQuery, type QueryResult } from "../../app/use-async";
 import { EmptyState } from "../../ui/feedback/empty-state";
 import { ErrorState } from "../../ui/feedback/error-state";
+import { Skeleton } from "../../ui/feedback/skeleton";
+import { Button } from "../../ui/primitives/button";
+import { PageHeader } from "../../ui/layout/page-header";
+import { Panel } from "../../ui/layout/panel";
 import { StatusBadge } from "../../ui/patterns/status-badge";
+import { formatAge } from "../shared/time";
 import { proposalTone } from "../shared/status";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
+import { CreateProposalDrawer } from "./create-proposal-drawer";
+import { ProposalDetail } from "./proposal-detail";
 
-export function ProposalsPage() {
-  const { ledgerId } = useAppState();
-  const [selected, setSelected] = useState<string[]>([]);
-  const [title, setTitle] = useState("");
-  const [lastAction, setLastAction] = useState<{ action: "evaluate" | "approve" | "release"; proposal: Proposal } | null>(null);
-  const workspaceQuery = useQuery("proposals", async (signal) => {
-    if (!ledgerId) return { proposals: [] as Proposal[], changes: [] as Change[] };
-    const [proposalResult, changeResult] = await Promise.all([api.proposals(ledgerId, { signal }), api.changes(ledgerId, { signal })]);
-    return { proposals: proposalResult.items ?? [], changes: (changeResult.items ?? []).filter((change) => change.status === "READY") };
-  }, [ledgerId]);
-  const createMutation = useMutation(async ({ proposalTitle, changeIds }: { proposalTitle: string; changeIds: string[] }) => {
-    await api.createProposal(ledgerId, { title: proposalTitle, changeIds });
-    setTitle("");
-    setSelected([]);
-    workspaceQuery.refetch();
-  });
-  const actionMutation = useMutation(async ({ action, proposal }: { action: "evaluate" | "approve" | "release"; proposal: Proposal }) => {
-    if (action === "evaluate") await api.evaluate(ledgerId, proposal.id, "The proposed context is accurate, internally consistent, and safe to release.");
-    if (action === "approve") await api.approve(ledgerId, proposal.id);
-    if (action === "release") await api.release(ledgerId, proposal.id);
-    workspaceQuery.refetch();
-  });
-  useLedgerEvents(ledgerId, workspaceQuery.refetch);
-  const create = (event: FormEvent) => { event.preventDefault(); void createMutation.run({ proposalTitle: title, changeIds: selected }); };
-  const act = (action: "evaluate" | "approve" | "release", proposal: Proposal) => { const next = { action, proposal }; setLastAction(next); void actionMutation.run(next); };
-  if (!ledgerId) return <Card><EmptyState title="Select a ledger" description="Proposals are scoped to a ledger." /></Card>;
+type ProposalWorkspace = { proposals: Proposal[]; readyChanges: Change[] };
+
+function ProposalList({ query, selectedId, onSelect, onCreate }: { query: QueryResult<ProposalWorkspace>; selectedId?: string; onSelect: (proposal: Proposal) => void; onCreate: () => void }) {
+  if (query.loading && query.data === undefined) return <Panel padding="none"><div className="grid gap-3 p-4" aria-label="Loading Proposals">{Array.from({ length: 5 }, (_, index) => <Skeleton key={index} height="4rem" />)}</div></Panel>;
+  if (query.error) return <ErrorState title="Unable to load Proposals" message={query.error.message} onRetry={query.refetch} />;
+  if (query.data === undefined) return <div className={query.unavailable ? "gy-is-refetching" : undefined}><Panel><Skeleton height="18rem" /></Panel></div>;
+  if (query.data.proposals.length === 0) return <Panel><EmptyState title="No Proposals" description="Select READY Changes from the inbox or start a new ordered Proposal here." action={<Button onClick={onCreate}>New proposal</Button>} /></Panel>;
+
+  const keyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const nextIndex = Math.max(0, Math.min(query.data!.proposals.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+    onSelect(query.data!.proposals[nextIndex]);
+    event.currentTarget.parentElement?.parentElement?.querySelectorAll<HTMLButtonElement>("button[data-proposal]")[nextIndex]?.focus();
+  };
+
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle className="text-base">Review queue</CardTitle>
-          <CardDescription>Evaluate, approve, and release batched changes.</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          {actionMutation.error && <div className="p-5"><ErrorState title="Unable to update Proposal" message={actionMutation.error.message} onRetry={() => { if (lastAction) void actionMutation.run(lastAction); }} retryDisabled={actionMutation.blocked} retryTitle={actionMutation.disabledReason} /></div>}
-          <AsyncBoundary query={workspaceQuery} empty={<EmptyState title="No Proposals" description="Select Ready Changes to create a reviewable Context PR." />} isEmpty={(workspace) => workspace.proposals.length === 0}>
-            {(workspace) => (
-            <ul className="divide-y divide-border/60">
-              {workspace.proposals.map((proposal) => (
-                <li key={proposal.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 transition-colors hover:bg-muted/40">
-                  <div className="min-w-0 space-y-1.5">
-                    <StatusBadge label={proposal.status} tone={proposalTone(proposal.status)} />
-                    <p className="font-medium leading-tight">{proposal.title}</p>
-                    <code className="block text-xs text-muted-foreground">{proposal.hash.slice(0, 18)} · {proposal.changeIds.length} changes</code>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button variant="secondary" size="sm" loading={actionMutation.pending} disabled={actionMutation.blocked} title={actionMutation.disabledReason} onClick={() => act("evaluate", proposal)}>Evaluate</Button>
-                    <Button variant="secondary" size="sm" loading={actionMutation.pending} disabled={actionMutation.blocked} title={actionMutation.disabledReason} onClick={() => act("approve", proposal)}>Approve</Button>
-                    <Button variant="destructive" size="sm" loading={actionMutation.pending} disabled={actionMutation.blocked} title={actionMutation.disabledReason} onClick={() => act("release", proposal)}>Release</Button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            )}
-          </AsyncBoundary>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader className="border-b">
-          <CardTitle className="text-base">New proposal</CardTitle>
-          <CardDescription>Batch Ready Changes into a reviewable unit.</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-5">
-          <form onSubmit={create} className="grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="proposal-title">Title</Label>
-              <Input id="proposal-title" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="August refund policy refresh" required />
-            </div>
-            <div className="grid gap-2">
-              <Label>Ready changes</Label>
-              <div className="grid max-h-44 gap-1 overflow-auto rounded-md border bg-background/60 p-2">
-                {(workspaceQuery.data?.changes ?? []).length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">No Ready Changes in this ledger.</p>}
-                {(workspaceQuery.data?.changes ?? []).map((change) => (
-                  <label key={change.id} className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent">
-                    <Checkbox
-                      checked={selected.includes(change.id)}
-                      onCheckedChange={(checked) => setSelected((old) => checked === true ? [...old, change.id] : old.filter((id) => id !== change.id))}
-                    />
-                    <span className="truncate">{change.unit}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            {createMutation.error && <ErrorState title="Unable to create Proposal" message={createMutation.error.message} onRetry={() => void createMutation.run({ proposalTitle: title, changeIds: selected })} retryDisabled={createMutation.blocked} retryTitle={createMutation.disabledReason} />}
-            <Separator />
-            <Button type="submit" className="w-full" disabled={selected.length === 0 || createMutation.blocked} title={createMutation.disabledReason} loading={createMutation.pending}>
-              Create Proposal{selected.length > 0 ? ` (${selected.length})` : ""}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+    <div className={query.refetching || query.unavailable ? "gy-is-refetching" : undefined}>
+      <Panel padding="none" title="Review queue" description="Select a Context PR to inspect its evidence and gates.">
+        <ul className="divide-y divide-border">
+          {query.data.proposals.map((proposal, index) => (
+            <li key={proposal.id}>
+              <button
+                type="button"
+                data-proposal
+                onClick={() => onSelect(proposal)}
+                onKeyDown={(event) => keyDown(event, index)}
+                className={`grid w-full gap-2 border-l-2 px-4 py-4 text-left hover:bg-muted/60 ${selectedId === proposal.id ? "border-l-primary bg-primary/5" : "border-l-transparent"}`}
+                aria-current={selectedId === proposal.id ? "true" : undefined}
+              >
+                <span className="flex items-center justify-between gap-3"><span className="truncate font-medium">{proposal.title}</span><StatusBadge label={proposal.status} tone={proposalTone(proposal.status)} /></span>
+                <span className="flex items-center justify-between gap-3 text-xs text-muted-foreground"><span>{proposal.changeIds.length} changes</span><time dateTime={proposal.createdAt} title={proposal.createdAt}>{formatAge(proposal.createdAt)}</time></span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </Panel>
     </div>
+  );
+}
+
+export function ProposalsPage({ proposalId }: { proposalId?: string }) {
+  const { ledgerId, openLedgerSwitcher } = useAppState();
+  const [createOpen, setCreateOpen] = useState(false);
+  const workspaceQuery = useQuery("proposals", async (signal) => {
+    if (!ledgerId) return { proposals: [], readyChanges: [] };
+    const [proposals, changes] = await Promise.all([api.proposals(ledgerId, { signal }), api.changes(ledgerId, { signal })]);
+    return { proposals: proposals.items ?? [], readyChanges: (changes.items ?? []).filter((change) => change.status === "READY") };
+  }, [ledgerId]);
+  useLedgerEvents(ledgerId, workspaceQuery.refetch);
+
+  useEffect(() => {
+    if (!proposalId && workspaceQuery.data?.proposals[0]) window.location.hash = `proposals/${workspaceQuery.data.proposals[0].id}`;
+  }, [proposalId, workspaceQuery.data]);
+
+  const select = (proposal: Proposal) => { window.location.hash = `proposals/${proposal.id}`; };
+  const created = (proposal: Proposal) => {
+    setCreateOpen(false);
+    workspaceQuery.refetch();
+    select(proposal);
+  };
+
+  if (!ledgerId) return <><PageHeader eyebrow="CONTEXT PRs" title="Proposals" description="Review batched changes, attach evidence, approve, and release." /><Panel><EmptyState title="Select a ledger" description="Choose a governed namespace before reviewing Proposals." action={<Button onClick={openLedgerSwitcher}>Select ledger</Button>} /></Panel></>;
+
+  return (
+    <>
+      <PageHeader eyebrow="CONTEXT PRs" title="Proposals" description="Review batched changes, attach evidence, approve, and release." actions={<Button size="sm" iconLeft={<Plus className="size-4" aria-hidden="true" />} onClick={() => setCreateOpen(true)}>New proposal</Button>} />
+      <div className="gy-proposal-workspace">
+        <ProposalList query={workspaceQuery} selectedId={proposalId} onSelect={select} onCreate={() => setCreateOpen(true)} />
+        {proposalId ? <ProposalDetail ledgerId={ledgerId} proposalId={proposalId} onUpdated={workspaceQuery.refetch} /> : <Panel><EmptyState title="Select a Proposal" description="Choose a Context PR from the review queue to inspect its evidence, approval, and release gates." /></Panel>}
+      </div>
+      <CreateProposalDrawer open={createOpen} ledgerId={ledgerId} changes={workspaceQuery.data?.readyChanges ?? []} onClose={() => setCreateOpen(false)} onCreated={created} onConflict={workspaceQuery.refetch} />
+    </>
   );
 }

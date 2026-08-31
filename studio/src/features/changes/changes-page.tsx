@@ -24,6 +24,7 @@ import { changeTone } from "../shared/status";
 import { formatAge } from "../shared/time";
 import { countChangeStatuses, filterChanges, moveOrdered, newIdempotencyKey, prepareChangeSubmission, validateDesiredJson, type ChangeFilters, type ChangeSubmission } from "./changes-page.logic";
 import { SelectionActionBar } from "./selection-action-bar";
+import { ChangeDetailDrawer } from "./change-detail-drawer";
 
 const confirmationDuration = 3_000;
 const statusOptions: ChangeFilters["status"][] = ["ALL", "ACCEPTED", "READY", "INVALID", "RELEASED"];
@@ -242,23 +243,7 @@ export function ChangesPage() {
 
       <SelectionActionBar count={selectedIds.length} onClear={() => setSelectedIds([])} onCreateProposal={openProposal} />
 
-      <Drawer open={detail !== null} onClose={() => setDetail(null)} title="Change detail">
-        {detail && (
-          <div className="grid gap-5 text-sm">
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3">
-              <dt className="text-muted-foreground">ID</dt><dd className="font-mono text-xs break-all">{detail.id}</dd>
-              <dt className="text-muted-foreground">Sequence</dt><dd>{detail.sequence}</dd>
-              <dt className="text-muted-foreground">Unit</dt><dd className="font-mono text-xs break-all">{detail.unit}</dd>
-              <dt className="text-muted-foreground">Action</dt><dd>{detail.action}</dd>
-              <dt className="text-muted-foreground">Status</dt><dd><StatusBadge label={detail.status} tone={changeTone(detail.status)} /></dd>
-              <dt className="text-muted-foreground">Created</dt><dd><time dateTime={detail.createdAt}>{detail.createdAt}</time></dd>
-            </dl>
-            <div><p className="mb-2 text-xs font-medium text-muted-foreground">Base fingerprint</p>{detail.baseFingerprint ? <HashChip value={detail.baseFingerprint} /> : <p>Not captured — base fingerprints are recorded from GRF-221 onward.</p>}</div>
-            <div><p className="mb-2 text-xs font-medium text-muted-foreground">Desired fingerprint</p><HashChip value={detail.desiredFingerprint} /></div>
-            <div><p className="mb-2 text-xs font-medium text-muted-foreground">Desired value</p><CodeBlock value={detail.desired ?? null} /></div>
-          </div>
-        )}
-      </Drawer>
+      <ChangeDetailDrawer change={detail} onClose={() => setDetail(null)} />
 
       <Drawer
         open={submitOpen}

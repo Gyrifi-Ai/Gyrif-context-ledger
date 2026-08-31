@@ -663,9 +663,9 @@ function subscribeToRequestHealth(listener: (health: { reachable: true } | { rea
 
 `request` always sets `Content-Type: application/json`. A rejected `fetch` throws a `transport` `ApiError` with status `0` and publishes an unreachable request-health event; an intentional `AbortError` is passed through without changing reachability. Any HTTP response first publishes reachable, then a non-2xx response throws an `http` `ApiError` preserving `body.error.code`, `body.error.message`, and `X-Request-ID` when present. Malformed error envelopes use `code: "UNKNOWN"` and `Request failed ({status})`. A `204` resolves `undefined`. Read methods accept an optional `RequestInit` so callers can supply an `AbortSignal`. All paths are relative; Vite proxies `/api` and `/events` to `127.0.0.1:18080` in development, and production is same-origin.
 
-`api` methods: `status`, `ledgers`, `createLedger`, `changes`, `createChange`, `proposals`, `createProposal`, `proposal`, `proposalChecks`, `proposalApprovals`, `evaluate`, `approve`, `release`, `releases`, `rollback`.
+`api` methods: `status`, `ledgers`, `createLedger`, `changes`, `createChange`, `proposals`, `createProposal`, `proposal`, `proposalChecks`, `proposalApprovals`, `evaluate`, `approve`, `release`, `releases`, `rollback`. `evaluate` exposes the full persisted evidence payload (`passed`, `summary`, `previewFidelity`, optional `findings`, `model`, and `evidence`); `approve` sends the Studio's editable actor.
 
-`ProposalDetail.gates` contains aggregate release predicates plus `approvalAction` and `releaseAction` `{ enabled, reason }` values. Feature code renders these values verbatim and never derives governance permissions from Proposal status.
+`ProposalDetail.gates` contains aggregate release predicates plus `approvalAction` and `releaseAction` `{ enabled, reason }` values. `features/proposals/gates.ts` projects those per-action values by identity; feature code renders them verbatim and never derives governance permissions from Proposal status.
 
 `studio/src/app/use-async.ts` owns the dependency-free query and mutation state primitives:
 
@@ -711,7 +711,7 @@ Named SSE frames are parsed against the exact event-kind union; malformed or unk
 
 `app/error-boundary.tsx` is the class-based `ErrorBoundary({ fallback, onError?, children })`. The root boundary is inside `Providers` and renders a full-page `ErrorState`, error `CodeBlock`, and last failed request ID. The current routed page has a separately keyed section boundary, so navigation survives a page render error and reset remounts only that subtree. The boundary owns once-per-error logging; React's root `onCaughtError` default logger is disabled to avoid duplicate console entries.
 
-State composition: `Providers` nests reachability around the AppState context `{ ledgerId, ledger, ledgers, setLedgerId, refreshLedgers, openLedgerSwitcher, ledgerSwitcherRequest }`; `openLedgerSwitcher()` increments the request token so ledger-scoped empty states can focus and open the shared topbar switcher. Its ledger list read uses `useQuery`, and only `ledgerId` is persisted to `localStorage["gyrifi.ledger"]`. The four feature pages use `useQuery`, `AsyncBoundary`, `useMutation`, and reconnect invalidation; mutation errors are rendered through `ErrorState`, and every mutation control consumes `blocked` and `disabledReason`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#releases`), defaulting to `ledgers`.
+State composition: `Providers` nests reachability around the AppState context `{ ledgerId, ledger, ledgers, setLedgerId, refreshLedgers, openLedgerSwitcher, ledgerSwitcherRequest }`; `openLedgerSwitcher()` increments the request token so ledger-scoped empty states can focus and open the shared topbar switcher. Its ledger list read uses `useQuery`, and only `ledgerId` is persisted to `localStorage["gyrifi.ledger"]`. The four feature pages use `useQuery`, `AsyncBoundary`, `useMutation`, and reconnect invalidation; mutation errors are rendered through `ErrorState`, and every mutation control consumes `blocked` and `disabledReason`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#proposals/{proposalId}`, `#releases`), defaulting to `ledgers`. The structured route parser returns `{ area, id? }`, preserving Proposal detail selection across reloads.
 
 ---
 
@@ -732,6 +732,7 @@ State composition: `Providers` nests reachability around the AppState context `{
 | `studio/src/app/error-boundary.test.tsx` | fallback/reset contract and once-per-error logging |
 | `studio/src/app/reachability.test.ts` | exact bounded reachability backoff schedule |
 | `studio/src/features/changes/*.test.ts(x)` | Changes inbox states, eligibility, selection-bar contract, filtering, JSON validation, DELETE omission, ordering, and conflict placement |
+| `studio/src/features/proposals/*.test.ts(x)` | Proposal route/list states, server-gate projection, progress and stale evidence/approval, ordered creation, confirmation, and HTTP-503 recovery guidance |
 | `studio/src/features/shared/time.test.ts` | relative minute/hour/day age formatting and malformed/future timestamps |
 | `studio/src/test/` | **empty** (GRF-230) |
 | `e2e/` | **empty** (GRF-232) |

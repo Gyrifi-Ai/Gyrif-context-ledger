@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
 
-export type Route = "ledgers" | "changes" | "proposals" | "releases";
+export type RouteArea = "ledgers" | "changes" | "proposals" | "releases";
+export type Route = { area: RouteArea; id?: string };
+
+export function parseRoute(hash: string): Route {
+  const [area, id, ...rest] = hash.replace(/^#/, "").split("/");
+  if (area === "proposals" && id && rest.length === 0) return { area, id };
+  if ((["ledgers", "changes", "proposals", "releases"] as string[]).includes(area) && !id) return { area: area as RouteArea };
+  return { area: "ledgers" };
+}
 
 function currentRoute(): Route {
-  const route = window.location.hash.slice(1);
-  return (["ledgers", "changes", "proposals", "releases"] as Route[]).includes(route as Route) ? route as Route : "ledgers";
+  return parseRoute(window.location.hash);
 }
 
 export function useRoute() {

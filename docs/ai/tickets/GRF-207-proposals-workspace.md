@@ -49,55 +49,55 @@ Replace the Proposals list-with-three-buttons with the two-pane review workspace
 
 **Layout and list**
 
-- [ ] `PageHeader` with eyebrow `CONTEXT PRs`, title `Proposals`, the design-system §5.3 description, and a `+ New proposal` primary action.
-- [ ] Left list shows each proposal's status badge (tone from `features/shared/status.ts`), title, `{n} changes`, and relative age. The selected item has a jade left rail.
-- [ ] Selecting a proposal updates the detail pane and the URL hash (e.g. `#proposals/pr_7c1e…`) so the view is linkable and survives reload.
+- [x] `PageHeader` with eyebrow `CONTEXT PRs`, title `Proposals`, the design-system §5.3 description, and a `+ New proposal` primary action.
+- [x] Left list shows each proposal's status badge (tone from `features/shared/status.ts`), title, `{n} changes`, and relative age. The selected item has the current primary orange left rail.
+- [x] Selecting a proposal updates the detail pane and the URL hash (e.g. `#proposals/pr_7c1e…`) so the view is linkable and survives reload.
 
 **Detail header**
 
-- [ ] Shows title, status badge, `HashChip` for the proposal id, `HashChip` for the proposal hash, and the base release (`HashChip` or `initial HEAD`).
+- [x] Shows title, status badge, `HashChip` for the proposal id, `HashChip` for the proposal hash, and the base release (`HashChip` or `initial HEAD`).
 
 **Progress rail**
 
-- [ ] Four steps rendered horizontally. A step is `complete` (jade filled), `current` (jade outline), or `pending` (muted).
-- [ ] Step completion is derived from **server data only**: Changes = always complete; Evidence = a current passing check exists for the proposal hash; Approval = a current approval exists; Release = `status === "RELEASED"`.
+- [x] Four steps rendered horizontally. A step is `complete` (primary filled), `current` (primary outline), or `pending` (muted).
+- [x] Step completion is derived from **server data only**: Changes = always complete; Evidence = a current passing check exists for the proposal hash; Approval = a current approval exists; Release = `status === "RELEASED"`.
 
 **Changes section**
 
-- [ ] Ordered table of the proposal's Changes: ordinal, unit, action, desired fingerprint, status. Row click opens the same detail drawer used in GRF-206.
+- [x] Ordered table of the proposal's Changes: ordinal, unit, action, desired fingerprint, status. Row click opens the same detail drawer used in GRF-206.
 
 **Evidence section**
 
-- [ ] A `Textarea` for criteria, seeded from `localStorage["gyrifi.criteria." + proposalId]`, with 3–4 preset chips (e.g. "No PII", "Claims cite a source", "Schema and payload keys unchanged", "No duplicate units").
-- [ ] `Run evaluation` uses `useMutation`, shows a loading state, and renders the result in a card: pass/fail badge, `summary`, `previewFidelity`, model identity, and a list of `findings` as `{severity, unit, message}` rows with severity tones.
-- [ ] When `previewFidelity === "FAST"`, show an inline note: "Preview is an overlay summary, not a simulated query result."
-- [ ] When inference is disabled (from `useSystemStatus`), the evidence card states that the check was deterministic and that natural-language evaluation is off.
-- [ ] If the evidence's bound hash differs from the current proposal hash, an amber banner reads: "Evidence was recorded for a different proposal hash and no longer applies." and the Approval step is forced back to `pending`.
+- [x] A `Textarea` for criteria, seeded from `localStorage["gyrifi.criteria." + proposalId]`, with 3–4 preset chips (e.g. "No PII", "Claims cite a source", "Schema and payload keys unchanged", "No duplicate units").
+- [x] `Run evaluation` uses `useMutation`, shows a loading state, and renders the result in a card: pass/fail badge, `summary`, `previewFidelity`, model identity, and a list of `findings` as `{severity, unit, message}` rows with severity tones.
+- [x] When `previewFidelity === "FAST"`, show an inline note: "Preview is an overlay summary, not a simulated query result."
+- [x] When inference is disabled (from `useSystemStatus`), the evidence card states that the check was deterministic and that natural-language evaluation is off.
+- [x] If the evidence's bound hash differs from the current proposal hash, an amber banner reads: "Evidence was recorded for a different proposal hash and no longer applies." and the Approval step is forced back to `pending`.
 
 **Approval section**
 
-- [ ] Shows actor, timestamp, and bound hash when an approval exists.
-- [ ] `Approve` is disabled with the visible reason "Run an evaluation first." when no current passing check exists.
-- [ ] The approving actor is an editable field defaulting to the last used value in `localStorage`, not the hardcoded `local-user`.
+- [x] Shows actor, timestamp, and bound hash when an approval exists.
+- [x] `Approve` is disabled with the server-computed visible reason when no current passing check exists.
+- [x] The approving actor is an editable field defaulting to the last used value in `localStorage`, not the hardcoded `local-user`.
 
 **Release section**
 
-- [ ] `Release to Qdrant` is a `danger` `Button` behind a `ConfirmDialog` stating: the target collection is mutated, `{n}` units are affected, before-images are retained, and `HEAD` will advance.
-- [ ] `Release` is disabled with the visible reason "Approval required." or "Ledger HEAD moved after this proposal was created — it can no longer be released." The HEAD condition is detected by comparing `proposal.baseReleaseId` with the current HEAD **and** by surfacing the server's `409` message if it happens anyway.
-- [ ] On success, the detail pane refreshes, the status becomes `RELEASED`, and a `View release` link navigates to `#releases`.
-- [ ] On `503 UNAVAILABLE` ("Target apply failed; recovery is required.") the UI shows a persistent danger banner pointing at the Releases recovery surface (GRF-213), **not** a transient toast.
+- [x] `Release to Qdrant` is a `danger` `Button` behind a `ConfirmDialog` stating: the target collection is mutated, `{n}` units are affected, before-images are retained, and `HEAD` will advance.
+- [x] `Release` is disabled with the server-computed visible reason. No HEAD or governance predicate is recomputed in the browser; an authoritative `409` message is surfaced if the server observes a race.
+- [x] On success, the detail pane refreshes, the status becomes `RELEASED`, and a `View release` link navigates to `#releases`.
+- [x] On `503 UNAVAILABLE` ("Target apply failed; recovery is required.") the UI shows a persistent danger banner pointing at the Releases recovery surface (GRF-213), **not** a transient toast.
 
 **Creation**
 
-- [ ] `+ New proposal` opens a `Drawer` with a `title` `Field` and the selectable `DataTable` of `READY` Changes with explicit ordering controls and a visible note that order affects the proposal hash.
-- [ ] Creation errors surface the server message verbatim.
+- [x] `+ New proposal` opens a `Drawer` with a `title` `Field` and the selectable `DataTable` of `READY` Changes with explicit ordering controls and a visible note that order affects the proposal hash.
+- [x] Creation errors surface the server message verbatim.
 
 **General**
 
-- [ ] All five interaction states in both panes.
-- [ ] Full keyboard path: list navigation with arrows, section expansion with `Enter`, dialog focus trap.
-- [ ] No governance decision is computed client-side beyond rendering what the server reported.
-- [ ] `pnpm typecheck && pnpm test && pnpm build` pass.
+- [x] All five interaction states in both panes.
+- [x] Full keyboard path: list navigation with arrows, native section expansion with `Enter`, dialog focus trap.
+- [x] No governance decision is computed client-side beyond rendering what the server reported.
+- [x] `pnpm typecheck && pnpm test && pnpm build` pass.
 
 ## Implementation notes
 

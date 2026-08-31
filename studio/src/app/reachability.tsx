@@ -173,3 +173,7 @@ export function useReachability(): Reachability {
   if (!value) throw new Error("Reachability provider is missing");
   return value;
 }
+
+export function useSystemStatus(): RuntimeHealth {
+  return useReachability().health;
+}

@@ -491,6 +491,8 @@ The sketch's standalone `Build proposal →` header action is intentionally omit
 
 This is the most important screen in the product and needs a **two-pane review workspace**, not a list of cards with three buttons.
 
+**Implemented (GRF-207).** The route is linkable as `#proposals/{proposalId}`. The 380 px review queue and detail pane expose identity, the four-step progress rail, ordered Changes with the shared Change drawer, Evidence, Approval, and confirmed Release sections. Creation uses a right-hand ordered READY-Change drawer. Each pane retains stale data during refetch and renders loading, empty, error, stale, and populated states.
+
 ```
 CONTEXT PRs
 Proposals                                                  [ + New proposal ]
@@ -518,7 +520,7 @@ Review batched changes, attach evidence, approve, and release.
 Required behaviours:
 
 - **A four-step progress rail** across the top of the detail pane: Changes → Evidence → Approval → Release. Completed steps are orange, the current step is outlined, later steps are muted. This is the single clearest expression of the governance model.
-- **Gate reasons are explicit.** A disabled `Approve` button must be accompanied by the literal reason: "Run an evaluation first." A disabled `Release` shows "Approval required" or "HEAD moved after this proposal was created — this proposal can no longer be released."
+- **Gate reasons are explicit and server-authored.** Disabled `Approve` and `Release` controls render `ProposalDetail.gates.approvalAction` and `.releaseAction` verbatim. The Studio never duplicates the Runtime's evidence, approval, or HEAD predicates.
 - **Criteria is user input**, persisted per proposal in `localStorage`, with 3–4 starter presets. The current hardcoded criteria string must go.
 - **Evidence renders findings** as a list of `{severity, unit, message}` rows with severity tones, plus the model identity and the bound proposal hash.
 - **Stale evidence is loud.** If the displayed evidence hash ≠ the proposal hash, show an amber banner: "Evidence was recorded for a different proposal hash and no longer applies."

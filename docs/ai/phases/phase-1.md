@@ -15,7 +15,7 @@
 | [GRF-204](../tickets/GRF-204-async-data-layer.md) | Async data layer | M | — | Done |
 | [GRF-205](../tickets/GRF-205-ledgers-page.md) | Ledgers page redesign | M | GRF-203, GRF-204 | Done |
 | [GRF-206](../tickets/GRF-206-changes-page.md) | Changes inbox redesign | L | GRF-203, GRF-204 | Done |
-| [GRF-207](../tickets/GRF-207-proposals-workspace.md) | Proposals review workspace | XL | GRF-203, GRF-204, GRF-211 | Not started |
+| [GRF-207](../tickets/GRF-207-proposals-workspace.md) | Proposals review workspace | XL | GRF-203, GRF-204, GRF-211 | Done |
 | [GRF-208](../tickets/GRF-208-releases-timeline.md) | Releases timeline and rollback flow | L | GRF-203, GRF-204, GRF-213 | Not started |
 | [GRF-209](../tickets/GRF-209-studio-resilience.md) | Studio resilience: error boundary, offline state, stream reconnection | M | GRF-202, GRF-204 | Done |
 
@@ -197,7 +197,7 @@ None. Native `<dialog>` supplies its modal focus containment; the destructive co
 **Verification**
 
 ```
-$ cd studio && pnpm typecheck && pnpm test && pnpm build
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
 Test Files  3 passed (3)
 Tests  4 passed (4)
 ✓ 1899 modules transformed.
@@ -906,3 +906,131 @@ Manual browser verification used the current Runtime with live PUT and DELETE ro
 
 - GRF-214 must replace the visible client-side fetched-page filter limitation with bounded server pagination/filtering.
 - GRF-230 should synthesize selection, blur/submit validation, drawer focus, timers, and switcher-open requests under jsdom; GRF-232 should retain the full keyboard flow in a real browser.
+
+### GRF-207 — Proposals review workspace
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | Yes — current primary orange supersedes interim jade wording; gate copy remains server-authored |
+
+**What was built**
+
+Proposals is now a linkable two-pane review workspace. The left review queue shows status, title, Change count, and relative age with arrow-key navigation. The selected Proposal opens a detailed governance path containing identity, a four-step progress rail, ordered Changes with the shared drawer, persisted user criteria and complete evidence, editable hash-bound approval, and confirmed Release. A separate drawer creates Proposals from explicitly ordered READY Changes.
+
+Every action uses authoritative Runtime state. The Studio projects `approvalAction` and `releaseAction` without recreating their rules, treats non-current checks and approvals as stale, surfaces server conflict text, and distinguishes an HTTP 503 recovery-required response from a Runtime transport outage.
+
+**Files added**
+
+- `studio/src/app/router.test.ts` — structured Proposal detail route coverage.
+- `studio/src/features/changes/change-detail-drawer.tsx` — shared Change inspection reused by Changes and Proposals.
+- `studio/src/features/proposals/{proposal-detail,evidence-panel,approval-panel,release-panel,progress-rail,create-proposal-drawer}.tsx` — decomposed review and creation surfaces.
+- `studio/src/features/proposals/{proposal-view,gates,criteria-presets}.ts` — defensive evidence/progress projections, verbatim server gates, ordering, and presets.
+- `studio/src/features/proposals/{proposals-page,proposal-detail,release-panel,create-proposal-drawer,gates}.test.ts(x)` — focused state and contract coverage.
+
+**Files changed**
+
+- `studio/src/api/{types,client,client.test}.ts` — complete evaluation result and editable approval actor contracts.
+- `studio/src/app/{router,shell,reachability}.tsx` — structured detail routes, page-owned header, and Proposal event invalidation.
+- `studio/src/features/proposals/proposals-page.tsx` — replaced flat cards and action buttons with the review queue/workspace.
+- `studio/src/features/changes/changes-page.tsx` and `studio/src/ui/patterns/data-table.tsx` — extracted reusable Change detail and permitted Proposal selection behavior.
+- `studio/src/features/shell/nav.tsx` and `studio/src/styles.css` — detail-route navigation and responsive two-pane layout.
+- Reference docs, ticket status, and this phase log — current product and implementation state.
+
+**Contracts introduced or changed**
+
+```ts
+type Route = { area: Area; id?: string };
+
+function approvalGate(gates: ProposalGates): ActionGate;
+function releaseGate(gates: ProposalGates): ActionGate;
+
+interface EvaluationResponse {
+	passed: boolean;
+	summary: string;
+	previewFidelity: string;
+	findings?: Finding[];
+	model?: string;
+	evidence?: unknown;
+}
+```
+
+`api.approve(ledgerId, proposalId, actor)` now sends the editable actor. No Runtime endpoint or persistence schema changed.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Project `approvalAction` and `releaseAction` by identity | GRF-211 deliberately centralizes governance and reason text in the Runtime | Recompute eligibility from status/checks/HEAD in React | Duplicate policy can drift or race with the release request |
+| Keep REST authoritative and SSE advisory | Events signal invalidation but do not carry complete review state | Mutate local Proposal state from event payloads | Missed/reordered events could create false governance displays |
+| Store criteria per Proposal and the actor globally | Criteria belongs to a hash review; actor represents the last operator identity | Hardcode both values | It prevents meaningful checks and silently attributes approvals to the wrong actor |
+| Render HTTP 503 as durable recovery guidance | A responding Runtime may have persisted a recovery-required Intent | Treat 503 as offline or a transient toast | It misdiagnoses reachability and hides required operator work |
+| Use native `details`/`summary` sections | Native semantics provide pointer plus Enter/Space expansion | Custom disclosure key handlers | They duplicate browser behavior and increase accessibility risk |
+
+**Deviations from the ticket**
+
+The current mockup-led orange primary token replaces the ticket's older jade wording. Disabled action text is not hardcoded to the ticket examples: the exact GRF-211 server reason is shown, preserving one policy authority. The browser does not compare base Release IDs itself; a moved-HEAD condition is represented by `releaseAction` and any racing `409` remains visible. Interaction automation remains scoped primarily to GRF-230/232; production helpers and rendered states are covered by the dependency-free Vitest harness and the complete path was exercised in the integrated browser.
+
+**Traps for future work**
+
+- Node can expose a partial `localStorage` object; guard `getItem` and `setItem` method availability in dependency-free SSR tests.
+- Qdrant logical unit IDs must match point IDs. A deliberately mismatched unit produced a persisted recovery-required Intent and verified the 503 recovery banner; a numeric unit matching the desired point completed successfully.
+- A successful Release is synchronous: the Runtime verifies the target and atomically records the Release, advances HEAD, marks Changes/Proposal RELEASED, and finalizes the Intent before returning 201.
+- The dev image currently installs `air@latest`; Air v1.67.4 requires Go 1.26 while the image is Go 1.24. Production Compose remains valid and was used for live verification.
+
+**Tests added**
+
+- Route parsing for `#proposals/{id}` and fallback behavior.
+- Review queue loading/empty/error/stale/populated rendering and arrow navigation.
+- Defensive evidence parsing, progress states, order movement, exact server-gate projection, stale evidence, and stale approval.
+- Ordered creation, server error display, confirmation requirement, HTTP-503 recovery banner, and transport-error distinction.
+- API approval payload regression for the user-selected actor.
+
+**Docs updated**
+
+- `docs/ai/design-system.md` §5.3 — implemented structure and server-authored gate behavior.
+- `docs/ai/product.md` §§6–7 — complete review workspace and removal of the hardcoded-criteria gap.
+- `docs/ai/repo-structure.md` — split Proposal feature layout.
+- `docs/ai/tech-spec.md` §§11–12 — detail hash route, evaluation/actor contracts, gate projection, and tests.
+- `docs/ai/tickets/GRF-207-proposals-workspace.md` and `docs/ai/tickets/INDEX.md` — acceptance and status complete.
+
+**Verification**
+
+```text
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine             (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference          (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http    (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger              (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository          (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant      (cached)
+ok      github.com/gyrifi/gyrif-context-ledger/runtime/tests                        (cached)
+
+$ cd studio && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files  17 passed (17)
+Tests       64 passed (64)
+✓ 1865 modules transformed.
+dist/index.html                   0.45 kB │ gzip:  0.29 kB
+dist/assets/index-DD8_frDg.css   42.99 kB │ gzip:  8.69 kB
+dist/assets/index-B510EoVd.js   295.97 kB │ gzip: 89.68 kB
+✓ built in 1.00s
+
+$ docker build -t gyrifi:local .
+[+] Building 2.7s (31/31) FINISHED
+=> [runtime-build 8/8] RUN CGO_ENABLED=0 go test ./... && CGO_ENABLED=0 go build -o /out/gyrifi ./cmd/gyrifi
+=> naming to docker.io/library/gyrifi:local
+
+$ cd docs/ai/tickets && diff <ticket files> <INDEX status rows>
+tickets consistent
+```
+
+Manual browser verification against the production image and live Qdrant confirmed ledger selection, ordered Proposal creation, linkable detail reload, criteria/actor persistence, deterministic FAST evidence, exact server gate reasons, approval metadata, confirmation focus and consequences, a genuine HTTP-503 recovery-required banner, and a second complete Change → Proposal → Evaluation → Approval → verified Release path whose final state was `RELEASED` with HEAD advanced.
+
+**Follow-ups discovered**
+
+- GRF-213 must make the recovery banner's Releases destination actionable by listing and resolving persisted Intents.
+- GRF-230 should automate the loading skeleton, local-storage persistence, native disclosures, and confirmation focus lifecycle; GRF-232 should retain the live happy path plus recoverable 503 path.
+- Pin the dev-only Air version or upgrade its Go builder in GRF-227 maintenance; `air@latest` no longer builds on Go 1.24.

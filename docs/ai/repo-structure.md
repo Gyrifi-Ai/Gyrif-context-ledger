@@ -171,7 +171,8 @@ studio/
     │   ├── shell/              # Ledger switcher, HEAD chip, navigation, and shared connection status
     │   ├── ledgers/ledgers-page.tsx
     │   ├── changes/            # inbox page, pure submission/filter/order helpers, selection action bar, tests
-    │   ├── proposals/proposals-page.tsx
+    │   ├── proposals/         # review queue/detail, progress, evidence, approval, release, ordered creation,
+    │   │                      # server-gate projections, presets, and focused tests
     │   └── releases/releases-page.tsx
     └── test/                   # currently empty — GRF-230
 ```

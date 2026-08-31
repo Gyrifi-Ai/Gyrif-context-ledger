@@ -8,7 +8,7 @@ export type Column<T> = {
   width?: string;
   align?: "start" | "end";
   mono?: boolean;
-  render: (row: T) => ReactNode;
+  render: (row: T, index: number) => ReactNode;
 };
 
 export type DataTableProps<T> = {
@@ -103,7 +103,7 @@ export function DataTable<T>({
                     />
                   </td>
                 )}
-                {columns.map((column) => <td key={column.key} className={cn("px-3 py-2", column.align === "end" && "text-right", column.mono && "font-mono text-xs")}>{column.render(row)}</td>)}
+                {columns.map((column) => <td key={column.key} className={cn("px-3 py-2", column.align === "end" && "text-right", column.mono && "font-mono text-xs")}>{column.render(row, index)}</td>)}
               </tr>
             );
           })}

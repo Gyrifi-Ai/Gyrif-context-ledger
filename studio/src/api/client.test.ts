@@ -26,6 +26,13 @@ describe("API client", () => {
     ]);
   });
 
+  it("sends the user-selected approving actor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.approve("ldg_one", "pr_one", "reviewer@example.com");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/ledgers/ldg_one/proposals/pr_one/approvals", expect.objectContaining({ method: "POST", body: JSON.stringify({ actor: "reviewer@example.com" }) }));
+  });
+
   it("maps structured API errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "CONFLICT", message: "blocked" } }), { status: 409, headers: { "X-Request-ID": "req-123" } })));
     const error = await api.createLedger({ name: "duplicate" }).catch((value: unknown) => value);

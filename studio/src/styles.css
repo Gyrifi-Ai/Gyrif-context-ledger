@@ -105,6 +105,7 @@
   --shell-sidebar: 248px;
   --shell-max: 1440px;
   --shell-gutter: var(--space-6);
+  --proposal-list-width: 23.75rem;
   --dur-instant: 80ms;
   --dur-fast: 140ms;
   --dur-normal: 220ms;
@@ -201,6 +202,18 @@
 
 .gy-is-refetching {
   opacity: 0.6;
+}
+
+.gy-proposal-workspace {
+  display: grid;
+  gap: var(--space-5);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 73.75rem) {
+  .gy-proposal-workspace {
+    grid-template-columns: var(--proposal-list-width) minmax(0, 1fr);
+  }
 }
 
 .gy-ledger-grid {
