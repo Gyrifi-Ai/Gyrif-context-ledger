@@ -1,6 +1,6 @@
 # Studio design system
 
-Status: **target specification — mockup-led redesign in progress (GRF-240).** The four approved Studio mockups are the visual reference for hierarchy, density, geometry, and interaction patterns. They are CRM references only: Gyrifi retains its own workflows and must not present fabricated CRM, collaboration, or analytics data.
+Status: **implemented and browser-qualified (GRF-240).** The four approved Studio mockups remain the visual reference for hierarchy, density, geometry, and interaction patterns. They are CRM references only: Gyrifi retains its own workflows and does not present fabricated CRM, collaboration, or analytics data.
 
 Read this before writing any Studio markup or CSS.
 
@@ -18,6 +18,8 @@ The final Studio is a bright, dense SaaS workspace: an off-white canvas, cool-gr
 | Avatar stack and sharing action | Not rendered until authentication and collaboration are product capabilities. |
 
 The reference viewport is 1440 × 1024 px. Preserve its dense desktop hierarchy; adapt at 1180 px, 900 px, and 480 px without hiding a governance action or its reason.
+
+GRF-232 qualifies populated Changes and Proposal states plus server-disabled approval/release reasons at all four canonical widths. It also rejects document-level horizontal overflow at each width before continuing the real release/rollback journey.
 
 ---
 

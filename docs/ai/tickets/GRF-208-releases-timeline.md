@@ -12,7 +12,7 @@
 
 ## Summary
 
-Rebuild `studio/src/features/releases/releases-page.tsx` to the timeline design in [design-system.md §5.4](../design-system.md), including a recovery banner and a rollback flow that explains what rollback actually does.
+Rebuild `studio/src/features/releases/releases-page.tsx` to the timeline design in [design-system.md §5.4](../design-system.md), including a recovery banner and a rollback flow that explains what rollback actually does. This immutable-history surface completes the page translation coordinated by [GRF-240](GRF-240-mockup-led-studio-product-system.md).
 
 ## Context
 

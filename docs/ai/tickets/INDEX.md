@@ -127,7 +127,7 @@ Update this table when a ticket is completed, and write the corresponding entry 
 
 | ID | Status | Completed | Phase log entry |
 |---|---|---|---|
-| GRF-240 | In progress | — | — |
+| GRF-240 | Done | 2026-08-31 | phase-1.md |
 | GRF-201 | Done | 2026-08-17 | phase-1.md |
 | GRF-202 | Done | 2026-08-17 | phase-1.md |
 | GRF-203 | Done | 2026-08-17 | phase-1.md |

@@ -2,13 +2,13 @@
 
 **Goal:** turn the functional-but-unfinished Studio into a mockup-led, light SaaS interface that makes the governance model obvious. The runtime already enforces the rules; Phase 1 makes them visible, explicable, and hard to get wrong.
 
-**Status:** In progress
+**Status:** Complete
 
 ## Tickets
 
 | ID | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| [GRF-240](../tickets/GRF-240-mockup-led-studio-product-system.md) | Mockup-led Studio product system | XL | — | In progress |
+| [GRF-240](../tickets/GRF-240-mockup-led-studio-product-system.md) | Mockup-led Studio product system | XL | — | Done |
 | [GRF-201](../tickets/GRF-201-design-tokens.md) | Mockup-led design token foundation | M | — | Done |
 | [GRF-202](../tickets/GRF-202-ui-library.md) | UI primitive and pattern library | L | GRF-201 | Done |
 | [GRF-203](../tickets/GRF-203-application-shell.md) | Application shell, navigation, real runtime status | M | GRF-202 | Done |
@@ -16,7 +16,7 @@
 | [GRF-205](../tickets/GRF-205-ledgers-page.md) | Ledgers page redesign | M | GRF-203, GRF-204 | Done |
 | [GRF-206](../tickets/GRF-206-changes-page.md) | Changes inbox redesign | L | GRF-203, GRF-204 | Done |
 | [GRF-207](../tickets/GRF-207-proposals-workspace.md) | Proposals review workspace | XL | GRF-203, GRF-204, GRF-211 | Done |
-| [GRF-208](../tickets/GRF-208-releases-timeline.md) | Releases timeline and rollback flow | L | GRF-203, GRF-204, GRF-213 | Not started |
+| [GRF-208](../tickets/GRF-208-releases-timeline.md) | Releases timeline and rollback flow | L | GRF-203, GRF-204, GRF-213 | Done |
 | [GRF-209](../tickets/GRF-209-studio-resilience.md) | Studio resilience: error boundary, offline state, stream reconnection | M | GRF-202, GRF-204 | Done |
 
 ## Phase-level notes
@@ -24,17 +24,17 @@
 - **Two tickets reach into Phase 2.** GRF-207 needs GRF-211 (proposal detail and evidence reads) and GRF-208 needs GRF-213 (release intent inspection). Do not fake that data client-side to unblock the UI — a governance surface that displays locally-remembered state is worse than one that displays nothing.
 - **Do GRF-209 early**, right after the component library. Every screen built before it inherits a shell that fails with a white page, and retrofitting error boundaries is harder than building on top of them.
 - The full [design-system.md](../design-system.md) is normative for this phase. Deviations from it are deviations from the ticket and must be logged.
-- No new frontend dependencies are permitted in this phase. React and react-dom remain the only runtime dependencies.
+- No frontend dependencies beyond the shadcn/Tailwind set authorised on 2026-08-17 are permitted in this phase; see design-system §8.
 
 ## Exit criteria
 
-- [ ] All nine tickets complete.
-- [ ] Every page implements all five interaction states from design-system §6.
-- [ ] The full workflow — create ledger, review changes, propose, evaluate, approve, release, roll back — is completable in the browser without reading API documentation.
-- [ ] Every disabled action states its reason on screen.
-- [ ] Keyboard-only operation of the entire workflow is possible.
-- [ ] No failure is silent: a render error, an unreachable runtime, and a dropped event stream each produce a visible, recoverable state.
-- [ ] `pnpm typecheck && pnpm test && pnpm build` green.
+- [x] All nine tickets complete.
+- [x] Every page implements all five interaction states from design-system §6.
+- [x] The full workflow — create ledger, review changes, propose, evaluate, approve, release, roll back — is completable in the browser without reading API documentation.
+- [x] Every disabled action states its reason on screen.
+- [x] Keyboard-only operation of the entire workflow is possible.
+- [x] No failure is silent: a render error, an unreachable runtime, and a dropped event stream each produce a visible, recoverable state.
+- [x] `pnpm typecheck && pnpm test && pnpm build` green.
 
 ## Completed entries
 
@@ -1183,3 +1183,139 @@ Manual browser inspection confirmed one feature-owned PageHeader, the Ledger-sel
 
 - GRF-230 should add interaction-level native-dialog focus, mutation-success, and recovery-action tests in a browser-like environment.
 - GRF-232 should exercise a live failed Release through retry/mismatch and abandonment, plus rollback Proposal review handoff.
+
+### GRF-240 — Mockup-led Studio product system
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | No |
+
+**What was built**
+
+The umbrella product system is now closed over the completed GRF-201…209 implementation rather than remaining an aspirational mockup contract. The design-system status, child work orders, and Phase 1 bookkeeping now describe the shipped light/orange, Tailwind-based Studio consistently. Shipped-image qualification exercises populated Changes and server-disabled Proposal gates at 1440, 1180, 900, and 480 px, preserving exact Runtime reasons and rejecting horizontal document overflow before the journey evaluates, approves, releases, rolls back, restarts, and deep-links.
+
+Before this closure, the approved visual system was implemented but still documented as in progress, two historical work orders prescribed jade/BEM details, GRF-208 was stale in the phase table, and responsive evidence covered journeys without systematically traversing every canonical width. After it, each child links to this umbrella, no child prescribes the retired implementation, and one real-image test locks the representative populated and exceptional states at all four widths.
+
+**Files added**
+
+None.
+
+**Files changed**
+
+- `e2e/tests/governance.spec.ts` — added canonical-width qualification to the complete shipped-image governance journey.
+- `docs/ai/design-system.md` — made the implemented visual contract current and recorded responsive browser evidence.
+- `docs/ai/tech-spec.md` — documented the canonical viewport coverage in the E2E contract.
+- `docs/ai/tickets/GRF-202-ui-library.md` … `GRF-209-studio-resilience.md` — linked every child to the umbrella and replaced remaining retired jade/BEM prescriptions.
+- `docs/ai/tickets/GRF-232-e2e-suite.md` — recorded the additional responsive qualification owned by this umbrella.
+- `docs/ai/tickets/GRF-240-mockup-led-studio-product-system.md` — marked every acceptance criterion complete.
+- `docs/ai/tickets/INDEX.md` — marked GRF-240 done.
+- `docs/ai/phases/phase-1.md` — closed the phase table/exit criteria and added this completion record.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+No product API, exported Studio type, database, or configuration contract changed. The browser suite gained this internal qualification contract:
+
+```ts
+async function qualifyCanonicalViewports(
+	page: Page,
+	proposal: Proposal,
+	visibleUnit: string,
+): Promise<void>;
+```
+
+For each width in `[1440, 1180, 900, 480]`, it requires one populated Change, the disabled `Approve` and `Release to Qdrant` controls, the exact Runtime-authored reasons, and `document.documentElement.scrollWidth <= width`.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Qualify widths inside the real governance journey | The assertions see real REST state, server gates, shipped assets, and container geometry | Add jsdom-only responsive tests | jsdom does not lay out the document or qualify the production image |
+| Check a populated data surface and a disabled exceptional surface at every width | These are the densest information and governance states required by the ticket | Check only page headings or empty states | Presence alone would miss hidden reasons, clipped data, and overflow |
+| Assert overflow numerically rather than accept screenshots as the gate | The invariant is deterministic and repeatable across all runs | Rely on manual screenshot review | Pixel review is subjective and does not block regressions automatically |
+| Re-baseline child work orders narrowly | Historical acceptance intent remains useful while GRF-240 must be the current visual authority | Rewrite every child ticket from scratch | Broad historical edits would obscure what each ticket originally delivered |
+
+**Deviations from the ticket**
+
+None. Every acceptance criterion was met without a new dependency or a client-side governance decision.
+
+**Traps for future work**
+
+- Responsive qualification must occur before the first Proposal is evaluated; that state exposes both approval and release gates with distinct exact Runtime reasons.
+- Keep viewport height fixed while varying width so failures isolate horizontal adaptation rather than vertical content availability.
+- A document-width assertion complements visibility checks: individual controls can remain visible while another surface silently creates page-level horizontal overflow.
+- On this macOS host, one coverage run reported all 144 tests and the complete threshold report, then hit a transient `kill EPERM` while Vitest terminated a worker. An immediate unchanged rerun exited cleanly; do not weaken coverage or assertions in response to that host-level teardown error.
+
+**Tests added**
+
+- `e2e/tests/governance.spec.ts` — the complete governance test now protects populated Changes, disabled Proposal actions, verbatim gate reasons, and no document overflow at 1440/1180/900/480 px. `test:repeat` runs this path three consecutive times.
+
+**Docs updated**
+
+- `docs/ai/design-system.md` §0 — promoted the mockup-led contract from in-progress target to browser-qualified implementation.
+- `docs/ai/tech-spec.md` §13 — expanded the shipped-image suite contract with canonical viewport states.
+- `docs/ai/tickets/GRF-202-ui-library.md` … `GRF-209-studio-resilience.md` — established GRF-240 as the visual authority and retired stale implementation wording.
+- `docs/ai/tickets/GRF-232-e2e-suite.md` — documented responsive coverage layered onto its journey.
+- `docs/ai/tickets/GRF-240-mockup-led-studio-product-system.md`, `docs/ai/tickets/INDEX.md`, and `docs/ai/phases/phase-1.md` — completed ticket and phase bookkeeping.
+
+**Verification**
+
+```text
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+?  github.com/gyrifi/gyrif-context-ledger/runtime/cmd/gyrifi [no test files]
+?  github.com/gyrifi/gyrif-context-ledger/runtime/internal/bootstrap [no test files]
+?  github.com/gyrifi/gyrif-context-ledger/runtime/internal/config [no test files]
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests (cached)
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test
+Scope: all 2 workspace projects
+Already up to date
+Test Files  47 passed (47)
+Tests       144 passed (144)
+Duration    5.29s
+
+$ pnpm coverage
+Test Files  47 passed (47)
+Tests       144 passed (144)
+All files   86.2% statements | 85.83% branches | 71.14% functions | 86.2% lines
+
+$ pnpm build
+✓ 1867 modules transformed.
+dist/index.html                   0.45 kB │ gzip:  0.29 kB
+dist/assets/index-CXd8xUMU.css   42.89 kB │ gzip:  8.70 kB
+dist/assets/index-hiFzMPQp.js   306.22 kB │ gzip: 91.94 kB
+✓ built in 839ms
+
+$ cd ../e2e && pnpm install --ignore-workspace --frozen-lockfile && pnpm --ignore-workspace test:repeat
+Already up to date
+Running 6 tests using 1 worker
+✓ fresh shipped image shows the empty first-run path × 3
+✓ shipped image governs, rolls back, restarts, and deep-links × 3
+6 passed (46.9s)
+
+$ cd .. && docker build -t gyrifi:local .
+[+] Building 2.0s (31/31) FINISHED
+=> [runtime-build 8/8] RUN CGO_ENABLED=0 go test ./... && CGO_ENABLED=0 go build -o /out/gyrifi ./cmd/gyrifi
+=> naming to docker.io/library/gyrifi:local
+
+$ cd docs/ai/tickets && diff <ticket files> <INDEX status rows>
+tickets consistent
+
+$ git diff --check
+(no output)
+```
+
+**Follow-ups discovered**
+
+None. CI enforcement remains GRF-233 and was not duplicated here.

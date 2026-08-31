@@ -12,7 +12,7 @@
 
 ## Summary
 
-Replace the Proposals list-with-three-buttons with the two-pane review workspace in [design-system.md §5.3](../design-system.md). This is the screen where the product's value is either obvious or invisible.
+Replace the Proposals list-with-three-buttons with the two-pane review workspace in [design-system.md §5.3](../design-system.md). This is the governance-detail translation coordinated by [GRF-240](GRF-240-mockup-led-studio-product-system.md), and the screen where the product's value is either obvious or invisible.
 
 ## Context
 

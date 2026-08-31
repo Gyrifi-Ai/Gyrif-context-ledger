@@ -12,7 +12,7 @@
 
 ## Summary
 
-Rebuild the application shell to the layout in [design-system.md §3](../design-system.md): sidebar + sticky topbar + page header, with a ledger switcher, a HEAD chip, and a **real** runtime status indicator.
+Rebuild the application shell to the layout in [design-system.md §3](../design-system.md): sidebar + sticky topbar + page header, with a ledger switcher, a HEAD chip, and a **real** runtime status indicator. This shell is coordinated by [GRF-240](GRF-240-mockup-led-studio-product-system.md) and follows its light/orange responsive contract.
 
 ## Context
 
@@ -46,12 +46,12 @@ Problems: no way to switch ledgers except navigating to the Ledgers page; no vis
 
 - [ ] Shell layout matches design-system §3.1: `--shell-sidebar` sidebar, 56 px sticky topbar with `backdrop-filter`, content region capped at `--shell-max` with `--shell-gutter`.
 - [ ] `ApplicationShell` is domain-free — it accepts `ReactNode` slots and imports nothing from `features/` or `api/`.
-- [ ] Sidebar nav items render an icon, a label, and an optional count pill, with a 2 px jade left rail on the active item.
+- [ ] Sidebar nav items render an icon, a label, and an optional count pill, with a 2 px primary-orange left rail on the active item.
 - [ ] Nav items other than Ledgers are `aria-disabled`, non-navigable, and show the title "Select a ledger first" when `ledgerId` is empty.
 - [ ] Topbar ledger switcher shows the current ledger name, opens a keyboard-navigable popover listing all ledgers with a text filter, and updates `AppState` on selection. Shows `Select ledger` when none is chosen.
 - [ ] Topbar HEAD chip renders `HEAD · {releaseId}` via `HashChip`, or `No releases yet`.
 - [ ] Runtime status is driven by a real poll of `/api/v1/system/status` every 30 s with these states:
-  - 2xx within 2 s ⇒ `Connected` (jade),
+  - 2xx within 2 s ⇒ `Connected` (semantic success),
   - 2xx slower than 2 s, or non-2xx ⇒ `Degraded` (amber),
   - network failure ⇒ `Offline` (rose).
 - [ ] Runtime status tooltip/title shows `version` and `inference` from the response.

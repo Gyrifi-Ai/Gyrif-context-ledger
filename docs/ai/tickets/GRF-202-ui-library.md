@@ -12,7 +12,7 @@
 
 ## Summary
 
-Build the reusable, domain-free component library specified in [design-system.md §4](../design-system.md). Today `studio/src/ui/` contains four trivial components with no variants, no states, and no accessibility handling.
+Build the reusable, domain-free component library specified in [design-system.md §4](../design-system.md). This is the component-system child of [GRF-240](GRF-240-mockup-led-studio-product-system.md); the current Tailwind v4 light/orange contract supersedes the interim stylesheet sketches below.
 
 ## Context
 
@@ -97,7 +97,7 @@ Also add `studio/src/features/shared/status.ts` holding the **domain→tone** ma
     throw new Error(`Unhandled value: ${String(value)}`);
   }
   ```
-- Styles go in `styles/components.css` as `.gy-*` classes. Components receive no inline styles.
+- Compose styles from Tailwind utilities backed by the semantic tokens in `styles.css`; do not introduce raw palette values or a parallel component stylesheet hierarchy.
 
 ## Test plan
 

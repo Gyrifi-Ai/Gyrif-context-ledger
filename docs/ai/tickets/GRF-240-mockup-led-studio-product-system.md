@@ -62,13 +62,13 @@ The reference desktop viewport is 1440 × 1024 px.
 
 ## Acceptance criteria
 
-- [ ] [design-system.md](../design-system.md) reflects the mockup-led light/orange system and preserves accessibility, async-state, and governance constraints.
-- [ ] GRF-201 … GRF-209 reference this ticket and no longer prescribe the superseded dark/jade/BEM implementation.
-- [ ] Every visible number, status, action, activity item, and gate is backed by API state or is explicitly a local preference.
-- [ ] All workflow pages are implemented with loading, empty, error, stale, populated, disabled, keyboard, and responsive states.
-- [ ] No API dependency is simulated client-side; GRF-207 waits for GRF-211 and GRF-208 waits for GRF-213.
-- [ ] Browser qualification compares populated and exceptional states at 1440, 1180, 900, and 480 px.
-- [ ] All linked tickets are complete, reference docs current, phase logs contain actual quality-gate output, and the complete repository gate is green.
+- [x] [design-system.md](../design-system.md) reflects the mockup-led light/orange system and preserves accessibility, async-state, and governance constraints.
+- [x] GRF-201 … GRF-209 reference this ticket and no longer prescribe the superseded dark/jade/BEM implementation.
+- [x] Every visible number, status, action, activity item, and gate is backed by API state or is explicitly a local preference.
+- [x] All workflow pages are implemented with loading, empty, error, stale, populated, disabled, keyboard, and responsive states.
+- [x] No API dependency is simulated client-side; GRF-207 waits for GRF-211 and GRF-208 waits for GRF-213.
+- [x] Browser qualification compares populated and exceptional states at 1440, 1180, 900, and 480 px.
+- [x] All linked tickets are complete, reference docs current, phase logs contain actual quality-gate output, and the complete repository gate is green.
 
 ## Out of scope
 

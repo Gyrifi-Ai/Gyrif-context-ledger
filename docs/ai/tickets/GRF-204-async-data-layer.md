@@ -12,7 +12,7 @@
 
 ## Summary
 
-Introduce a tiny, dependency-free async primitive so every screen implements the five mandatory interaction states from [design-system.md §6](../design-system.md). Today every page hand-rolls `useState` + `useEffect` with swallowed errors and no loading indication.
+Introduce a tiny, dependency-free async primitive so every screen implements the mandatory interaction states from [design-system.md §6](../design-system.md). This is the state-foundation child of [GRF-240](GRF-240-mockup-led-studio-product-system.md); Runtime data remains authoritative throughout the mockup-led redesign.
 
 ## Context
 

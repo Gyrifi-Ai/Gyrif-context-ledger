@@ -12,7 +12,7 @@
 
 ## Summary
 
-Rebuild `studio/src/features/ledgers/ledgers-page.tsx` to the card-grid design in [design-system.md §5.1](../design-system.md).
+Rebuild `studio/src/features/ledgers/ledgers-page.tsx` to the card-grid design in [design-system.md §5.1](../design-system.md), translating the dashboard reference defined by [GRF-240](GRF-240-mockup-led-studio-product-system.md) without inventing analytics.
 
 ## Context
 
@@ -57,7 +57,7 @@ Problems:
 - [ ] Empty state: title "No ledgers yet", description explaining that a ledger is a governed namespace, and a primary `Create your first ledger` action.
 - [ ] Error state renders `ErrorState` with a working `Retry`.
 - [ ] Full keyboard path: tab to a card, `Enter` selects; tab to `+ New ledger`, `Enter` opens the drawer, `Escape` closes it and restores focus.
-- [ ] No raw hex, px, or ms literals in the component. All styling via `gy-*` classes and tokens.
+- [ ] No raw palette values in the component. Styling uses Tailwind utilities backed by the semantic tokens in `styles.css`; timing constants remain named behavior rather than visual colour data.
 - [ ] `pnpm typecheck && pnpm test && pnpm build` pass.
 
 ## Implementation notes

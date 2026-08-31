@@ -65,6 +65,8 @@ Unit and integration tests cover the parts. This covers the product.
 - [x] The suite completes in a bounded time and is stable across three consecutive runs.
 - [ ] CI (GRF-233) runs the suite; failures block the pipeline. The suite and stable command are ready; workflow enforcement remains deferred because GRF-233 has not landed.
 
+GRF-240 qualification additionally exercises populated Changes and server-disabled Proposal gates at 1440, 1180, 900, and 480 px, asserting that all required controls/reasons remain visible and the document does not overflow horizontally.
+
 ## Implementation notes
 
 - **Gemma:** inference is optional and the model file is large. Run the suite with `GYRIFI_INFERENCE_ENABLED=false` by default and assert that the evidence panel correctly reports deterministic-only evaluation. Add a separate, non-required job that enables inference with an externally provisioned model path if one is available. Do not download a model in the default CI path.

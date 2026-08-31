@@ -12,7 +12,7 @@
 
 ## Summary
 
-Make Studio fail visibly and recoverably. Today an uncaught render error produces a blank white page, and a dropped event stream is silently ignored forever.
+Make Studio fail visibly and recoverably. This is the exceptional-state child of [GRF-240](GRF-240-mockup-led-studio-product-system.md): the product system must remain truthful when rendering fails, Runtime is unreachable, or the event stream closes.
 
 ## Context
 

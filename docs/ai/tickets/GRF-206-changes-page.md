@@ -12,7 +12,7 @@
 
 ## Summary
 
-Rebuild `studio/src/features/changes/changes-page.tsx` into the inbox workspace described in [design-system.md §5.2](../design-system.md): stats strip, filterable data table, multi-select with a sticky action bar, a detail drawer, and a proper submit drawer with JSON validation.
+Rebuild `studio/src/features/changes/changes-page.tsx` into the inbox workspace described in [design-system.md §5.2](../design-system.md): stats strip, filterable data table, multi-select with a sticky action bar, a detail drawer, and a proper submit drawer with JSON validation. It is the data-surface translation coordinated by [GRF-240](GRF-240-mockup-led-studio-product-system.md).
 
 ## Context
 

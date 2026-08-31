@@ -96,6 +96,23 @@ function releaseChip(page: Page, releaseID: string) {
   return page.getByRole("button", { name: `Release · ${releaseID.slice(0, 10)}…` });
 }
 
+async function qualifyCanonicalViewports(page: Page, proposal: Proposal, visibleUnit: string): Promise<void> {
+  for (const width of [1440, 1180, 900, 480]) {
+    await page.setViewportSize({ width, height: 1024 });
+    await page.goto("/#changes");
+    await expect(page.getByRole("heading", { name: "Changes" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: visibleUnit, exact: true })).toBeVisible();
+    await page.goto(`/#proposals/${proposal.id}`);
+    await expect(page.getByRole("heading", { name: proposal.title })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Approve" })).toBeDisabled();
+    await expect(page.getByText("A current passing evaluation is required before approval.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Release to Qdrant" })).toBeDisabled();
+    await expect(page.getByText("A current passing evaluation is required.", { exact: true })).toBeVisible();
+    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(documentWidth).toBeLessThanOrEqual(width);
+  }
+}
+
 test("a fresh shipped image shows the empty first-run path", async ({ page, stack }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Ledgers" })).toBeVisible();
@@ -121,6 +138,7 @@ test("the shipped image governs, rolls back, restarts, and deep-links", async ({
 
   const firstTitle = "Initial context release";
   const firstProposal = await createProposal(page, firstChanges.map((change) => change.id), firstTitle);
+  await qualifyCanonicalViewports(page, firstProposal, String(firstDesired[0].id));
   const firstRelease = await completeProposal(page, firstTitle, true);
 
   await page.goto("/#releases");

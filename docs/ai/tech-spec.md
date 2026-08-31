@@ -798,7 +798,7 @@ The Releases page loads Releases, Proposals, and Release Intents as one workspac
 | `studio/src/test/setup.ts` | jest-dom registration, deterministic browser API shims, per-test API reset, cleanup, and unexpected `console.error` failure |
 | `studio/src/test/render.tsx` | `renderWithProviders` plus a configured `userEvent` instance |
 | `studio/src/test/api-mock.ts` | fetch-level router backed by a compile-time-complete `MockApi` derived from `Api` |
-| `e2e/tests/governance.spec.ts` | first-run empty state plus the complete built-image Ledger → Change ingestion → Proposal → deterministic evaluation → approval → Release path; rendered gates, real Qdrant values, a second Release, forward rollback, three-Release HEAD, persistence, SIGTERM/WAL behavior, and SPA fallback deep links |
+| `e2e/tests/governance.spec.ts` | first-run empty state plus the complete built-image Ledger → Change ingestion → Proposal → deterministic evaluation → approval → Release path; populated/disabled states and no document overflow at 1440/1180/900/480 px; rendered gates, real Qdrant values, a second Release, forward rollback, three-Release HEAD, persistence, SIGTERM/WAL behavior, and SPA fallback deep links |
 | `e2e/tests/harness.ts` | per-test unique Qdrant collection and fresh named volumes, Compose lifecycle, healthy-status wait, typed ingestion, direct Qdrant reads, graceful termination, and WAL inspection |
 
 Large model downloads are never part of tests.
