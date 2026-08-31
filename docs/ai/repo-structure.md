@@ -176,7 +176,7 @@ studio/
     │   ├── changes/            # inbox page, pure submission/filter/order helpers, selection action bar, tests
     │   ├── proposals/         # review queue/detail, progress, evidence, approval, release, ordered creation,
     │   │                      # server-gate projections, presets, and focused tests
-    │   └── releases/releases-page.tsx
+    │   └── releases/          # timeline page, plan drawer, recovery banner/actions, rollback dialog, focused tests
     └── test/                   # currently empty — GRF-230
 ```
 

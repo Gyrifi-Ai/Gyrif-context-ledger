@@ -1032,5 +1032,154 @@ Manual browser verification against the production image and live Qdrant confirm
 **Follow-ups discovered**
 
 - GRF-213 must make the recovery banner's Releases destination actionable by listing and resolving persisted Intents.
+- GRF-213 landed and GRF-208 now provides that operator surface inside Releases.
 - GRF-230 should automate the loading skeleton, local-storage persistence, native disclosures, and confirmation focus lifecycle; GRF-232 should retain the live happy path plus recoverable 503 path.
 - Pin the dev-only Air version or upgrade its Go builder in GRF-227 maintenance; `air@latest` no longer builds on Go 1.24.
+
+### GRF-208 — Releases timeline and rollback flow
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | Yes — current orange primary replaces stale jade HEAD wording; absent pre-state is distinguished from missing rollback material |
+
+**What was built**
+
+Releases is now an immutable-history workspace rather than a raw list. The shared Timeline marks HEAD, joins source Proposal titles and finalized Intent plans, exposes plan inspection, and places non-HEAD rollback behind explicit forward-history confirmation. Recovery-required Intents produce an amber operator surface with verification-only retry, structured mismatch display, and note-required abandonment. Loading, empty, error, stale, populated, mutation-error, and mutation-success states remain inline and REST-authoritative.
+
+**Files added**
+
+- `studio/src/features/releases/release-timeline.tsx` — Timeline projection, Release-to-Intent join, and exact rollback unit-count derivation.
+- `studio/src/features/releases/plan-drawer.tsx` — operation fingerprints, target metrics, and before-image availability.
+- `studio/src/features/releases/rollback-dialog.tsx` — confirmed forward-history mutation and verbatim in-dialog errors.
+- `studio/src/features/releases/recovery-banner.tsx` — recovery count, Intent inspection, retry/mismatch, and explicit abandonment flows.
+- `studio/src/features/releases/releases-page.test.tsx`, `plan-drawer.test.tsx`, `rollback-dialog.test.tsx`, `recovery-banner.test.tsx` — focused rendering and calculation coverage.
+
+**Files changed**
+
+- `studio/src/features/releases/releases-page.tsx` — full workspace query, all five states, timeline orchestration, success handoff, and event invalidation.
+- `studio/src/ui/patterns/confirm-dialog.tsx` — optional pending, disabled, and reason props for an in-place mutation.
+- `studio/src/app/shell.tsx` — removed the transitional shell-owned Releases heading so the feature owns one PageHeader like the other pages.
+- `docs/ai/design-system.md`, `docs/ai/product.md`, `docs/ai/repo-structure.md`, `docs/ai/tech-spec.md`, `docs/ai/tickets/GRF-208-releases-timeline.md`, `docs/ai/tickets/INDEX.md` — current behavior, contracts, acceptance, tree, and status.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```ts
+function intentForRelease(release: Release, intents: ReleaseIntent[]): ReleaseIntent | undefined;
+function rollbackAffectedUnitCount(releases: Release[], targetReleaseId: string, intents: ReleaseIntent[]): number | undefined;
+
+function ReleaseTimeline(props: {
+	releases: Release[];
+	proposals: Proposal[];
+	intents: ReleaseIntent[];
+	onViewPlan: (release: Release, intent: ReleaseIntent) => void;
+	onRollback: (release: Release, affectedUnitCount: number) => void;
+}): ReactNode;
+
+function PlanDrawer(props: {
+	open: boolean;
+	onClose: () => void;
+	release?: Release;
+	operations?: ReleaseIntentOperation[];
+}): ReactNode;
+
+function RollbackDialog(props: {
+	open: boolean;
+	onClose: () => void;
+	ledgerId: string;
+	release?: Release;
+	affectedUnitCount: number;
+	onCreated: (proposal: Proposal) => void;
+}): ReactNode;
+
+function RecoveryBanner(props: {
+	ledgerId: string;
+	intents: ReleaseIntent[];
+	onUpdated: () => void;
+	onResolved?: (message: string) => void;
+}): ReactNode;
+```
+
+`ConfirmDialog` gained optional `confirmLoading`, `confirmDisabled`, and `confirmTitle` props. Existing Release confirmation callers remain source-compatible.
+
+**Final rollback dialog copy**
+
+1. “This creates a **new proposal**; it does not rewind history.”
+2. “**{n} units** will be restored to their state at this release.”
+3. “The proposal must be evaluated, approved, and released like any other.”
+4. “**HEAD will move forward** to a new release after verification.”
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Load Releases, Proposals, and all Intents as one query | Timeline titles, plan counts, rollback impact, and recovery must represent one refetched snapshot | Independent page queries | Partial resolution would show contradictory history and recovery data |
+| Count unique units across every Release newer than the target | This matches the Runtime's newest-to-oldest reduction by unit | Sum operation counts | Repeatedly touched units would be over-counted |
+| Disable rollback when any newer Release plan is unavailable | The UI must never guess a destructive action's impact | Display zero or a partial count | Either value would misrepresent the operation |
+| Warn only when `beforeExists && !hasBeforeImage` | A unit absent before release needs no object; rollback correctly restores absence with DELETE | Treat every `hasBeforeImage: false` as data loss | It would falsely flag complete rollback plans for newly created units |
+| Keep rollback API errors inside the open dialog | Operators retain context and server-authored remediation text | Close and toast | It hides whether any Proposal was created and loses the selected target |
+| Treat SSE as a refetch hint | REST remains authoritative for mutable recovery state | Patch Intents from events | Events are lossy and do not carry Plans or mismatch data |
+
+**Deviations from the ticket**
+
+- The ticket says the HEAD node is jade, but the current design system normatively defines the primary node as orange. The implementation follows the current token contract and pairs it with a success-tone HEAD badge.
+- `hasBeforeImage: false` is not automatically an amber failure. When `beforeExists` is false, no object is required and rollback restores absence with DELETE; only a missing required before-image displays “No rollback material for this unit.”
+- No acceptance behavior was omitted.
+
+**Traps for future work**
+
+- Match a Release to its finalized Intent by Proposal ID. Abandoned attempts for the same Proposal must never supply the displayed Release plan.
+- Keep Releases newest-first. `rollbackAffectedUnitCount` relies on every entry before the selected target being newer.
+- Recovery mutations use one hook per operation type; retain the active Intent ID so an error or mismatch is rendered only on the row that initiated it.
+- Native `<dialog>` owns the focus trap. Do not add destructive autofocus; keep errors in the dialog and close only after a returned Proposal.
+- A false `hasBeforeImage` can mean either missing material or a correctly absent pre-state. Always inspect `beforeExists`.
+
+**Tests added**
+
+- Page tests cover required heading/copy, newest-first rendering, HEAD, source title, View/Rollback actions, loading, empty, HTTP error, stale data, and direct Proposal review handoff.
+- Plan drawer tests cover operation identity/actions, both fingerprints, target metric, missing required before-image warning, and absent-pre-state explanation.
+- Rollback dialog tests lock all four forward-history statements, verbatim 409/500 messages, destructive non-autofocus, unique-unit reduction, and missing-plan refusal.
+- Recovery banner tests cover absence, plural count, Intent identity/status/plan projection, and both operator actions.
+
+**Verification**
+
+```text
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race -count=1 && go build ./...
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine 1.578s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference 2.018s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http 2.571s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger 3.947s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository 3.210s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant 3.521s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests 5.120s
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files 21 passed (21)
+Tests 74 passed (74)
+✓ 1867 modules transformed.
+✓ built in 799ms
+
+$ docker build -t gyrifi:local .
+[+] Building 32.9s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+
+$ diff <ticket files> <INDEX status rows>
+tickets consistent
+
+$ git diff --check
+(no output)
+```
+
+Manual browser inspection confirmed one feature-owned PageHeader, the Ledger-selection empty state, responsive shell placement, and no duplicate Releases heading. Populated behavior was additionally verified by focused component rendering; live recovery automation remains in GRF-232.
+
+**Follow-ups discovered**
+
+- GRF-230 should add interaction-level native-dialog focus, mutation-success, and recovery-action tests in a browser-like environment.
+- GRF-232 should exercise a live failed Release through retry/mismatch and abandonment, plus rollback Proposal review handoff.

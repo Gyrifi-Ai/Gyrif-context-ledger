@@ -45,39 +45,39 @@ Problems:
 
 **Timeline**
 
-- [ ] `PageHeader` with eyebrow `IMMUTABLE HISTORY`, title `Releases`, and the design-system §5.4 description.
-- [ ] Releases render newest-first in the `Timeline` pattern. The first entry is marked `HEAD` with a filled jade node and a `HEAD` badge; the rest are hollow nodes.
-- [ ] Each entry shows: `HashChip` for the release id, the source proposal title, `{n} units`, `HashChip` for the release hash, and relative age with an absolute `title`.
-- [ ] Each entry has `View plan`, and non-HEAD entries additionally have `Roll back to here` (`danger` variant).
+- [x] `PageHeader` with eyebrow `IMMUTABLE HISTORY`, title `Releases`, and the design-system §5.4 description.
+- [x] Releases render newest-first in the `Timeline` pattern. The first entry is marked `HEAD` with the design-system's current orange filled node and a `HEAD` badge; the rest are hollow nodes.
+- [x] Each entry shows: `HashChip` for the release id, the source proposal title, `{n} units`, `HashChip` for the release hash, and relative age with an absolute `title`.
+- [x] Each entry has `View plan`, and non-HEAD entries additionally have `Roll back to here` (`danger` variant).
 
 **Plan drawer**
 
-- [ ] `View plan` opens a `Drawer` listing the operations from the release's intent: unit, action, expected fingerprint, desired fingerprint, and a "before-image retained" indicator.
-- [ ] When a before-image is missing for an operation, that row is flagged amber with the text "No rollback material for this unit."
-- [ ] The drawer states the target metric when present (e.g. `Cosine`).
+- [x] `View plan` opens a `Drawer` listing the operations from the release's intent: unit, action, expected fingerprint, desired fingerprint, and a "before-image retained" indicator.
+- [x] When a required before-image is missing for an operation, that row is flagged amber with the text "No rollback material for this unit." An absent pre-state is correctly described as a rollback delete instead.
+- [x] The drawer states the target metric when present (e.g. `Cosine`).
 
 **Rollback**
 
-- [ ] `Roll back to here` opens a `ConfirmDialog` whose body states, explicitly:
+- [x] `Roll back to here` opens a `ConfirmDialog` whose body states, explicitly:
   1. this creates a **new proposal**, it does not rewind history;
   2. `{n}` units will be restored to their state at this release;
   3. the proposal must be evaluated, approved, and released like any other;
   4. `HEAD` will move **forward** to a new release.
-- [ ] The dialog shows the unit count computed from the plans of all releases newer than the target.
-- [ ] Confirming calls `api.rollback`, and on success shows a success panel with the new proposal's title and a `Review proposal` button that navigates to `#proposals/{id}`.
-- [ ] A `409` ("The selected Release is already HEAD.") or `500` ("Rollback material is unavailable." / "Retained rollback value is unavailable.") renders the server message verbatim in an `ErrorState` inside the dialog, and the dialog stays open.
+- [x] The dialog shows the unique unit count computed from the plans of all releases newer than the target.
+- [x] Confirming calls `api.rollback`, and on success shows a success panel with the new proposal's title and a `Review proposal` button that navigates to `#proposals/{id}`.
+- [x] A `409` ("The selected Release is already HEAD.") or `500` ("Rollback material is unavailable." / "Retained rollback value is unavailable.") renders the server message verbatim in an `ErrorState` inside the dialog, and the dialog stays open.
 
 **Recovery**
 
-- [ ] When the intents endpoint reports ≥1 `RECOVERY_REQUIRED` intent for the ledger, an amber banner renders above the timeline: "{n} release intent(s) require recovery." with an `Inspect` action.
-- [ ] `Inspect` opens a drawer listing each affected intent: id, proposal, status, created time, and the plan, plus the `Retry verification` / `Mark resolved` actions exposed by GRF-213.
-- [ ] The banner is absent when there are none. It must not poll aggressively — once per page load plus on refetch.
+- [x] When the intents endpoint reports ≥1 `RECOVERY_REQUIRED` intent for the ledger, an amber banner renders above the timeline: "{n} release intent(s) require recovery." with an `Inspect` action.
+- [x] `Inspect` opens a drawer listing each affected intent: id, proposal, status, created time, and the plan, plus the `Retry verification` / `Mark resolved` actions exposed by GRF-213.
+- [x] The banner is absent when there are none. It loads once with the workspace and refetches on advisory domain events rather than polling.
 
 **General**
 
-- [ ] All five interaction states. Empty state explains that releases appear here after a proposal is approved and released, with a link to `#proposals`.
-- [ ] Full keyboard path including the dialog focus trap.
-- [ ] `pnpm typecheck && pnpm test && pnpm build` pass.
+- [x] All five interaction states. Empty state explains that releases appear here after a proposal is approved and released, with a link to `#proposals`.
+- [x] Full keyboard path including the native dialog focus trap, Escape close, and no destructive autofocus.
+- [x] `pnpm typecheck && pnpm test && pnpm build` pass.
 
 ## Implementation notes
 

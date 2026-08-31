@@ -763,6 +763,8 @@ Named SSE frames are parsed against the exact event-kind union; malformed or unk
 
 State composition: `Providers` nests reachability around the AppState context `{ ledgerId, ledger, ledgers, setLedgerId, refreshLedgers, openLedgerSwitcher, ledgerSwitcherRequest }`; `openLedgerSwitcher()` increments the request token so ledger-scoped empty states can focus and open the shared topbar switcher. Its ledger list read uses `useQuery`, and only `ledgerId` is persisted to `localStorage["gyrifi.ledger"]`. The four feature pages use `useQuery`, `AsyncBoundary`, `useMutation`, and reconnect invalidation; mutation errors are rendered through `ErrorState`, and every mutation control consumes `blocked` and `disabledReason`. Routing is hash-based (`#ledgers`, `#changes`, `#proposals`, `#proposals/{proposalId}`, `#releases`), defaulting to `ledgers`. The structured route parser returns `{ area, id? }`, preserving Proposal detail selection across reloads.
 
+The Releases page loads Releases, Proposals, and Release Intents as one workspace. It joins finalized Intents to Releases by Proposal ID to display plans and source titles, computes rollback impact as the unique units touched by all newer Release plans, and disables rollback rather than guessing when a plan is unavailable. Recovery actions call the GRF-213 endpoints, render semantic mismatches or server errors inline, and refetch REST state after success; SSE remains an invalidation hint only.
+
 ---
 
 ## 12. Test surface
@@ -784,6 +786,7 @@ State composition: `Providers` nests reachability around the AppState context `{
 | `studio/src/app/reachability.test.ts` | exact bounded reachability backoff schedule |
 | `studio/src/features/changes/*.test.ts(x)` | Changes inbox states, eligibility, selection-bar contract, filtering, JSON validation, DELETE omission, ordering, and conflict placement |
 | `studio/src/features/proposals/*.test.ts(x)` | Proposal route/list states, server-gate projection, progress and stale evidence/approval, ordered creation, confirmation, and HTTP-503 recovery guidance |
+| `studio/src/features/releases/*.test.tsx` | timeline order and HEAD marking, five page states, plan/before-image rendering, unique rollback unit counts and forward-history copy, verbatim rollback errors, recovery presence and actions |
 | `studio/src/features/shared/time.test.ts` | relative minute/hour/day age formatting and malformed/future timestamps |
 | `studio/src/test/` | **empty** (GRF-230) |
 | `e2e/` | **empty** (GRF-232) |

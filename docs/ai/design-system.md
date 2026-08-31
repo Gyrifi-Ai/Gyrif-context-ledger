@@ -432,9 +432,9 @@ Vertical rail with nodes. Props: `items` with `{ id, node, title, meta, body, to
 
 Label + value + optional delta/tone. Value `--text-2xl --weight-semibold --tracking-tight`, label `--text-2xs` uppercase `--text-muted`. Used in the overview strips.
 
-### 4.12 `ConfirmDialog` (`ui/patterns/confirm-dialog.tsx`) — new
+### 4.12 `ConfirmDialog` (`ui/patterns/confirm-dialog.tsx`)
 
-Native `<dialog>` with backdrop `rgb(6 8 12 / 0.72)`. Required for **Release** and **Rollback** only. Must state the concrete consequence, list the affected unit count, and require the primary button to be pressed deliberately (no `autofocus` on the destructive button).
+Native `<dialog>` with backdrop `rgb(6 8 12 / 0.72)`. Required for **Release** and **Rollback** only. Must state the concrete consequence, list the affected unit count, and require the primary button to be pressed deliberately (no `autofocus` on the destructive button). `confirmLoading`, `confirmDisabled`, and `confirmTitle` project mutation state without closing the dialog on an error.
 
 ---
 
@@ -527,7 +527,7 @@ Required behaviours:
 - **Stale evidence is loud.** If the displayed evidence hash ≠ the proposal hash, show an amber banner: "Evidence was recorded for a different proposal hash and no longer applies."
 - Proposal creation is a drawer that reuses the same selectable `DataTable` of `READY` Changes, with explicit ordering controls (the hash is order-sensitive — the UI must show and let the user set the order).
 
-### 5.4 Releases
+### 5.4 Releases — implemented by GRF-208
 
 ```
 IMMUTABLE HISTORY
@@ -551,7 +551,8 @@ Every release was applied to the target and verified before it was recorded.
 - `HEAD` node is orange and filled; all others are hollow.
 - `Roll back to here` is `danger` and opens a `ConfirmDialog` that explains: this creates a **new proposal**, does not rewind, and must itself be evaluated, approved, and released. It lists the number of units that would be restored.
 - `View plan` opens a drawer showing the operations with unit, action, expected fingerprint, and whether a before-image was retained.
-- Recovery banner links to the intent detail (GRF-213).
+- Recovery banner opens the Intent inspection drawer. Verification-only retry and explicit `ABANDONED` resolution use the GRF-213 API; mismatch and server errors remain inline.
+- The implemented page derives rollback unit count from the unique units in all newer Release plans. If any required plan is unavailable, rollback remains disabled rather than displaying a guessed count.
 
 ---
 

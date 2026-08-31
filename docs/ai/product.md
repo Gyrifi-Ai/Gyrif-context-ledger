@@ -207,6 +207,8 @@ Rollback never rewinds `HEAD`. To restore the state represented by an older Rele
 
 The result goes through normal evaluation, approval, and release. History becomes `R1 → R2 → R3 → R4`, where `R4` restores what `R1` represented.
 
+Studio explains this forward-history model before calling rollback. It computes the affected unit count from the Plans of every Release newer than the selected target, creates the rollback Proposal only after deliberate confirmation, and links directly to that Proposal for evaluation and approval. Release-plan drawers expose expected/desired fingerprints and whether required before-images are still retained.
+
 If a required before-image object is missing or corrupt, rollback fails with `INTERNAL` rather than fabricating state.
 
 ---
@@ -249,7 +251,7 @@ Four top-level areas, nothing else:
 | **Ledgers** | Create and select the active Ledger. Selection persists in `localStorage` under `gyrifi.ledger`. |
 | **Changes** | Durable inbox, PUT/DELETE submission, Change inspection, and the ordered selection flow that starts Proposal creation from `READY` Changes. |
 | **Proposals** | Linkable two-pane review workspace for ordered Changes, user-authored evaluation evidence, hash-bound approval, confirmed release, and recovery guidance. |
-| **Releases** | Immutable history. Trigger rollback from any non-HEAD Release. |
+| **Releases** | Immutable timeline and plans. Inspect/retry/abandon recovery Intents, or create a confirmed forward-history rollback Proposal from any non-HEAD Release. |
 
 There are deliberately **no** top-level pages for SQLite, object storage, target operations, inference processes, or Release Intents. Those are implementation concerns, not product concerns. Release Intent *recovery* is the one exception and belongs **inside** Releases (GRF-213).
 
@@ -262,7 +264,6 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 | Gap | Ticket |
 |---|---|
 | Proposals cannot be cancelled; claimed Changes are stuck forever | GRF-212 |
-| Release Intent recovery has an API but no operator UI inside Releases | GRF-208 |
 | List endpoints are unbounded and unfiltered | GRF-214 |
 | No authentication; anyone can approve and release | GRF-220 |
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
