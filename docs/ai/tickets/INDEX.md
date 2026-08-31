@@ -139,19 +139,19 @@ Update this table when a ticket is completed, and write the corresponding entry 
 | GRF-209 | Done | 2026-08-31 | phase-1.md |
 | GRF-210 | Done | 2026-08-31 | phase-2.md |
 | GRF-211 | Done | 2026-08-31 | phase-2.md |
-| GRF-212 | Not started | — | — |
+| GRF-212 | Done | 2026-08-31 | phase-2.md |
 | GRF-213 | Done | 2026-08-31 | phase-2.md |
-| GRF-214 | Not started | — | — |
+| GRF-214 | Done | 2026-09-01 | phase-2.md |
 | GRF-215 | Not started | — | — |
 | GRF-220 | Not started | — | — |
 | GRF-221 | Not started | — | — |
 | GRF-222 | Not started | — | — |
-| GRF-223 | Not started | — | — |
-| GRF-224 | Not started | — | — |
+| GRF-223 | Done | 2026-08-31 | b09a8d0 |
+| GRF-224 | Done | 2026-08-31 | Health/readiness, async dependency status, and loopback Prometheus metrics |
 | GRF-225 | Not started | — | — |
 | GRF-226 | Not started | — | — |
 | GRF-227 | Done | 2026-08-17 | phase-3.md |
 | GRF-230 | Done | 2026-08-31 | phase-4.md |
 | GRF-231 | Not started | — | — |
 | GRF-232 | Done | 2026-08-31 | phase-4.md |
-| GRF-233 | Not started | — | — |
+| GRF-233 | Done | 2026-08-31 | b01c3cc |

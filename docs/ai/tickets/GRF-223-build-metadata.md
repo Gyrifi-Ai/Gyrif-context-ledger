@@ -38,7 +38,7 @@ This is small, mechanical, and worth doing before anything else in Phase 3 — e
 
 ## Acceptance criteria
 
-- [ ] A new package `runtime/internal/buildinfo` exposes:
+- [x] A new package `runtime/internal/buildinfo` exposes:
   ```go
   var (
       Version = "dev"
@@ -47,11 +47,11 @@ This is small, mechanical, and worth doing before anything else in Phase 3 — e
   )
   func String() string  // e.g. "gyrifi 0.2.0 (a1b2c3d, 2026-08-12T10:00:00Z)"
   ```
-- [ ] `bootstrap.Version` is **removed**, not aliased. A grep for it returns nothing.
-- [ ] The CLI `version` command prints `buildinfo.String()` and nothing else.
-- [ ] `GET /api/v1/system/status` returns `{ "version", "commit", "buildDate" }` sourced from `buildinfo`.
-- [ ] One startup log line reports `buildinfo.String()`.
-- [ ] The Dockerfile builds with:
+- [x] `bootstrap.Version` is **removed**, not aliased. A source-code grep for it returns nothing.
+- [x] The CLI `version` command prints `buildinfo.String()` and nothing else.
+- [x] `GET /api/v1/system/status` returns `{ "version", "commit", "buildDate" }` sourced from `buildinfo`.
+- [x] One startup log line reports `buildinfo.String()`.
+- [x] The Dockerfile builds with:
   ```
   -ldflags "-s -w \
     -X github.com/gyrifi/gyrif-context-ledger/runtime/internal/buildinfo.Version=${VERSION} \
@@ -59,12 +59,12 @@ This is small, mechanical, and worth doing before anything else in Phase 3 — e
     -X .../buildinfo.Date=${BUILD_DATE}"
   ```
   with `ARG VERSION=dev`, `ARG COMMIT=unknown`, `ARG BUILD_DATE=unknown` so a plain `docker build` still works.
-- [ ] The image sets OCI labels: `org.opencontainers.image.version`, `.revision`, `.created`, `.source`, `.licenses`.
-- [ ] Existing `-s -w` stripping and `CGO_ENABLED=0` are preserved. Adding `-X` must not accidentally drop them.
-- [ ] A local `go build ./...` with no flags still produces a working binary reporting `dev`.
-- [ ] Studio shows the version in the shell footer, sourced from `useSystemStatus`, not hardcoded.
-- [ ] `docs/ai/tech-spec.md` §2 and §3 are updated in the same change.
-- [ ] `go build ./... && go test ./... && docker build .` succeed.
+- [x] The image sets OCI labels: `org.opencontainers.image.version`, `.revision`, `.created`, `.source`, `.licenses`.
+- [x] Existing `-s -w` stripping and `CGO_ENABLED=0` are preserved. Adding `-X` did not drop them.
+- [x] A local `go build ./...` with no flags produces a working binary reporting the development defaults.
+- [x] Studio shows the version in the shell footer from the system-status response, not a hardcoded value.
+- [x] `docs/ai/tech-spec.md` §2 and §3 are updated in the same change.
+- [x] `go build ./... && go test ./... && docker build .` succeed.
 
 ## Implementation notes
 

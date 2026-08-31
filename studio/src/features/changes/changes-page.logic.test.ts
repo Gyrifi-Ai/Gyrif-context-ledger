@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Change } from "../../api/types";
-import { buildChangeSubmission, countChangeStatuses, filterChanges, moveOrdered, newIdempotencyKey, prepareChangeSubmission, validateDesiredJson } from "./changes-page.logic";
+import { buildChangeSubmission, countChangeStatuses, filterChangesByUnit, moveOrdered, newIdempotencyKey, prepareChangeSubmission, validateDesiredJson } from "./changes-page.logic";
 
 const changes = [
   { id: "one", unit: "point/Alpha", action: "PUT", status: "READY" },
@@ -9,9 +9,9 @@ const changes = [
 ] as Change[];
 
 describe("Changes page logic", () => {
-  it("filters by status, action, and case-insensitive unit text", () => {
-    expect(filterChanges(changes, { status: "ALL", action: "DELETE", unit: "ALPHA" }).map((change) => change.id)).toEqual(["three"]);
-    expect(filterChanges(changes, { status: "READY", action: "ALL", unit: "point" }).map((change) => change.id)).toEqual(["one"]);
+  it("filters loaded rows by case-insensitive unit text", () => {
+    expect(filterChangesByUnit(changes, "ALPHA").map((change) => change.id)).toEqual(["one", "three"]);
+    expect(filterChangesByUnit(changes, "point").map((change) => change.id)).toEqual(["one", "two"]);
   });
 
   it("counts the three inbox status metrics", () => {

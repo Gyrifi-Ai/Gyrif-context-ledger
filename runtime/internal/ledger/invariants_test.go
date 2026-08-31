@@ -1,6 +1,9 @@
 package ledger
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestProposalHashIsDeterministicAndOrderSensitive(t *testing.T) {
 	first := Proposal{LedgerID: "ledger", BaseReleaseID: "release", ChangeIDs: []string{"a", "b"}}
@@ -32,5 +35,21 @@ func TestApprovalIsBoundToProposalHash(t *testing.T) {
 	}
 	if !ApprovalIsCurrent(Approval{ProposalID: "pr", ProposalHash: "new"}, proposal) {
 		t.Fatal("current approval was rejected")
+	}
+}
+
+func TestCanCancelProposal(t *testing.T) {
+	for _, status := range []ProposalStatus{ProposalDraft, ProposalCancelled} {
+		if err := CanCancelProposal(Proposal{Status: status}); err != nil {
+			t.Fatalf("CanCancelProposal(%s) = %v", status, err)
+		}
+	}
+	if err := CanCancelProposal(Proposal{Status: ProposalReleased}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("released error = %v", err)
+	}
+	for _, status := range []ProposalStatus{ProposalReviewed, ProposalApproved, ProposalBlocked, "UNKNOWN"} {
+		if err := CanCancelProposal(Proposal{Status: status}); !errors.Is(err, ErrConflict) {
+			t.Fatalf("CanCancelProposal(%s) error = %v", status, err)
+		}
 	}
 }

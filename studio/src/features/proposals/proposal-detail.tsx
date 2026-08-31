@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Approval, Change, CheckResult, ProposalDetail as ProposalDetailData } from "../../api/types";
 import { api } from "../../api/client";
 import { useLedgerEvents } from "../../app/use-ledger-events";
-import { useQuery } from "../../app/use-async";
+import { useMutation, useQuery } from "../../app/use-async";
 import { ChangeDetailDrawer } from "../changes/change-detail-drawer";
 import { changeTone, proposalTone } from "../shared/status";
 import { ErrorState } from "../../ui/feedback/error-state";
@@ -10,6 +10,7 @@ import { Skeleton } from "../../ui/feedback/skeleton";
 import { Button } from "../../ui/primitives/button";
 import { Panel } from "../../ui/layout/panel";
 import { DataTable, type Column } from "../../ui/patterns/data-table";
+import { ConfirmDialog } from "../../ui/patterns/confirm-dialog";
 import { HashChip } from "../../ui/patterns/hash-chip";
 import { StatusBadge } from "../../ui/patterns/status-badge";
 import { ApprovalPanel } from "./approval-panel";
@@ -17,7 +18,7 @@ import { EvidencePanel } from "./evidence-panel";
 import { ProgressRail } from "./progress-rail";
 import { progressSteps } from "./proposal-view";
 import { ReleasePanel } from "./release-panel";
-import { approvalGate } from "./gates";
+import { approvalGate, cancelGate } from "./gates";
 
 const changeColumns: Column<Change>[] = [
   { key: "ordinal", header: "#", align: "end", render: (_change, index) => index + 1 },
@@ -44,6 +45,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export function ProposalDetail({ ledgerId, proposalId, onUpdated }: { ledgerId: string; proposalId: string; onUpdated: () => void }) {
   const [selectedChange, setSelectedChange] = useState<Change | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const query = useQuery("proposal-detail", async (signal) => {
     const [detail, checks, approvals] = await Promise.all([
       api.proposal(ledgerId, proposalId, { signal }),
@@ -58,6 +60,15 @@ export function ProposalDetail({ ledgerId, proposalId, onUpdated }: { ledgerId: 
     query.refetch();
     onUpdated();
   };
+  const cancelMutation = useMutation(async (_: undefined) => {
+    await api.cancelProposal(ledgerId, proposalId);
+    setConfirmCancel(false);
+    refresh();
+  });
+  useEffect(() => {
+    setConfirmCancel(false);
+    cancelMutation.reset();
+  }, [proposalId]);
 
   if (query.loading && query.data === undefined) return <DetailSkeleton />;
   if (query.error) return <ErrorState title="Unable to load Proposal detail" message={query.error.message} onRetry={query.refetch} />;
@@ -67,6 +78,7 @@ export function ProposalDetail({ ledgerId, proposalId, onUpdated }: { ledgerId: 
   const { detail, checks, approvals } = workspace;
   const displayedCheck = checks[0];
   const currentApproval = approvals.find((approval) => approval.current);
+  const cancellation = cancelGate(detail.gates);
 
   return (
     <div className={query.refetching || query.unavailable ? "gy-is-refetching" : undefined}>
@@ -88,11 +100,13 @@ export function ProposalDetail({ ledgerId, proposalId, onUpdated }: { ledgerId: 
         <Section title="Approval"><ApprovalPanel ledgerId={ledgerId} proposal={detail.proposal} approval={currentApproval} gate={approvalGate(detail.gates)} onRefresh={refresh} /></Section>
         <Section title="Release"><ReleasePanel ledgerId={ledgerId} detail={detail} onRefresh={refresh} /></Section>
         <div className="flex flex-wrap items-center gap-3 p-4">
-          <Button variant="secondary" disabled title="Available in GRF-212">Cancel Proposal</Button>
-          <span className="text-xs text-muted-foreground">Cancellation is available in GRF-212.</span>
+          <Button variant="secondary" loading={cancelMutation.pending} disabled={!cancellation.enabled || cancelMutation.blocked} title={!cancellation.enabled ? cancellation.reason : cancelMutation.disabledReason} onClick={() => setConfirmCancel(true)}>Cancel Proposal</Button>
+          {!cancellation.enabled && cancellation.reason && <span className="text-xs text-muted-foreground">{cancellation.reason}</span>}
         </div>
       </Panel>
       <ChangeDetailDrawer change={selectedChange} onClose={() => setSelectedChange(null)} />
+      <ConfirmDialog open={confirmCancel} onClose={() => setConfirmCancel(false)} title="Cancel Proposal?" consequence={<p>The Changes will return to the inbox and can be selected into a new Proposal. Existing evidence and approvals remain in the audit trail.</p>} affectedCount={detail.changes.length} confirmLabel="Cancel Proposal" confirmLoading={cancelMutation.pending} confirmDisabled={!cancellation.enabled || cancelMutation.blocked} confirmTitle={!cancellation.enabled ? cancellation.reason : cancelMutation.disabledReason} onConfirm={() => void cancelMutation.run(undefined)} />
+      {cancelMutation.error && <ErrorState title="Unable to cancel Proposal" message={cancelMutation.error.message} onRetry={() => setConfirmCancel(true)} retryDisabled={cancelMutation.blocked || !cancellation.enabled} retryTitle={!cancellation.enabled ? cancellation.reason : cancelMutation.disabledReason} />}
     </div>
   );
 }

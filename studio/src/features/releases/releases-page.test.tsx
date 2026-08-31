@@ -7,6 +7,7 @@ import { ReleasesPage, RollbackSuccess } from "./releases-page";
 
 const mocks = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
+  releasesQuery: {} as Record<string, unknown>,
   appState: { ledgerId: "ldg_one", openLedgerSwitcher: vi.fn() },
   mutation: { run: vi.fn(), pending: false, blocked: false, disabledReason: undefined, error: undefined, result: undefined, reset: vi.fn() },
 }));
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../app/providers", () => ({ useAppState: () => mocks.appState }));
 vi.mock("../../app/use-ledger-events", () => ({ useLedgerEvents: vi.fn() }));
 vi.mock("../../app/use-async", () => ({ useQuery: () => mocks.query, useMutation: () => mocks.mutation }));
+vi.mock("../../app/use-paginated-query", () => ({ usePaginatedQuery: () => mocks.releasesQuery }));
 
 const proposal: Proposal = { id: "pr_refund", ledgerId: "ldg_one", title: "August refund policy refresh", hash: "sha256:proposal", status: "RELEASED", changeIds: ["chg_one"], createdAt: "2026-08-31T00:00:00Z" };
 const releases: Release[] = [
@@ -28,7 +30,8 @@ function query(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mocks.appState.ledgerId = "ldg_one";
-  mocks.query = query({ data: { releases, proposals: [proposal], intents } });
+  mocks.query = query({ data: { proposals: [proposal], intents } });
+  mocks.releasesQuery = query({ data: releases, nextCursor: undefined, loadingMore: false, loadMoreError: undefined, loadMore: vi.fn() });
 });
 
 describe("ReleasesPage", () => {
@@ -45,14 +48,17 @@ describe("ReleasesPage", () => {
 
   it("renders loading, empty, error, and stale states", () => {
     mocks.query = query({ loading: true });
+    mocks.releasesQuery = query({ loading: true });
     expect(renderToStaticMarkup(<ReleasesPage />)).toContain("Loading Releases");
-    mocks.query = query({ data: { releases: [], proposals: [], intents: [] } });
+    mocks.query = query({ data: { proposals: [], intents: [] } });
+    mocks.releasesQuery = query({ data: [] });
     const empty = renderToStaticMarkup(<ReleasesPage />);
     expect(empty).toContain("No Releases yet");
     expect(empty).toContain('href="#proposals"');
     mocks.query = query({ error: new Error("Release history failed") });
     expect(renderToStaticMarkup(<ReleasesPage />)).toContain("Release history failed");
-    mocks.query = query({ data: { releases, proposals: [proposal], intents }, refetching: true });
+    mocks.query = query({ data: { proposals: [proposal], intents }, refetching: true });
+    mocks.releasesQuery = query({ data: releases, refetching: true });
     expect(renderToStaticMarkup(<ReleasesPage />)).toContain("rel_newest");
   });
 
@@ -78,18 +84,18 @@ describe("ReleasesPage", () => {
   it("shows recovery only for recovery-required intents and opens inspection", async () => {
     const user = userEvent.setup();
     const recovery = { ...intents[0], id: "intent_recovery", status: "RECOVERY_REQUIRED" as const };
-    mocks.query = query({ data: { releases, proposals: [proposal], intents: [...intents, recovery] } });
+    mocks.query = query({ data: { proposals: [proposal], intents: [...intents, recovery] } });
     const { rerender } = render(<ReleasesPage />);
     expect(screen.getByRole("alert")).toHaveTextContent("1 release intent requires recovery.");
     await user.click(screen.getByRole("button", { name: "Inspect" }));
     expect(screen.getByRole("dialog", { name: "Release recovery" })).toHaveTextContent("Retry verification");
-    mocks.query = query({ data: { releases, proposals: [proposal], intents } });
+    mocks.query = query({ data: { proposals: [proposal], intents } });
     rerender(<ReleasesPage />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("disables rollback when a newer Release plan is unavailable", () => {
-    mocks.query = query({ data: { releases, proposals: [proposal], intents: intents.slice(1) } });
+    mocks.query = query({ data: { proposals: [proposal], intents: intents.slice(1) } });
     render(<ReleasesPage />);
     const rollback = screen.getByRole("button", { name: "Roll back to here" });
     expect(rollback).toBeDisabled();

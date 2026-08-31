@@ -5,6 +5,18 @@ export type Ledger = {
   createdAt: string;
 };
 
+export type ListOptions = {
+  limit?: number;
+  cursor?: string;
+  status?: string;
+  action?: string;
+};
+
+export type ListPage<T> = {
+  items: T[];
+  nextCursor?: string;
+};
+
 export type Change = {
   id: string;
   ledgerId: string;
@@ -24,7 +36,7 @@ export type Proposal = {
   title: string;
   baseReleaseId?: string;
   hash: string;
-  status: "DRAFT" | "REVIEWED" | "APPROVED" | "RELEASED" | "BLOCKED";
+  status: "DRAFT" | "REVIEWED" | "APPROVED" | "RELEASED" | "BLOCKED" | "CANCELLED";
   changeIds: string[];
   createdAt: string;
 };
@@ -42,6 +54,7 @@ export type ProposalGates = {
   reason: string;
   approvalAction: ActionGate;
   releaseAction: ActionGate;
+  cancelAction: ActionGate;
 };
 
 export type ProposalDetail = {
@@ -96,7 +109,15 @@ export type Release = {
 export type SystemStatus = {
   status: string;
   version: string;
+  commit: string;
+  buildDate: string;
   inference: string;
+  health: {
+    database: "ok" | "unreachable";
+    target: "ok" | "unreachable" | "unknown";
+    inference: "ok" | "disabled" | "unhealthy";
+    unresolvedIntents: number;
+  };
 };
 
 export type EventKind =
@@ -104,6 +125,7 @@ export type EventKind =
   | "proposal.created"
   | "proposal.evaluated"
   | "proposal.approved"
+  | "proposal.cancelled"
   | "release.started"
   | "release.completed"
   | "release.failed"

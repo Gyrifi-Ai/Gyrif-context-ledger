@@ -28,20 +28,21 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 
 `cmd/gyrifi/main.go` builds a signal-cancelled context and calls `bootstrap.Run(ctx, os.Args[1:])`.
 
-`bootstrap.Run` order (`internal/bootstrap/bootstrap.go`, `const Version = "0.1.0"`):
+`bootstrap.Run` order (`internal/bootstrap/bootstrap.go`):
 
-1. `config.Load()` — fail fast on invalid env.
-2. `os.MkdirAll(DataDirectory, 0o750)` and `os.MkdirAll(dir(SQLitePath), 0o750)`.
-3. Build `slog` JSON logger to stdout at `info` or `debug`.
-4. `repository.OpenSQLite(ctx, SQLitePath, ObjectsPath)` — opens the DB, applies pragmas, runs migrations, creates the object store.
-5. `qdrant.New(QdrantURL, QdrantCollection, QdrantAPIKey)`.
-6. If `EvaluationProvider == "llamacpp"`: `os.Stat(ModelPath)`, then `inference.StartLlamaServer(...)`; `defer llama.Stop()`.
-7. `engine.New(repo, target, provider)` — `provider` is a nil interface when inference is disabled.
-8. `cli.Run(ctx, args, application, os.Stdout)` — **if it handled the args, return here; the HTTP server never starts.**
-9. `application.RecoverReleases(ctx)` — logs and continues on error.
-10. Construct `httpinterface.New(application, logger, Version)`.
-11. `http.Server{BaseContext: signal context, ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and `ListenAndServe`. Cancelling the process context cancels long-lived SSE request contexts before graceful shutdown waits for active connections.
-12. On `ctx.Done()`: `server.Shutdown` with a 10s timeout; deferred closes stop llama-server and the repository.
+1. `cli.RunVersion(args, os.Stdout)` — dispatch version flags before config or storage initialisation.
+2. `config.Load()` — fail fast on invalid env.
+3. `os.MkdirAll(DataDirectory, 0o750)` and `os.MkdirAll(dir(SQLitePath), 0o750)`.
+4. Build `slog` JSON logger to stdout at `info` or `debug`.
+5. `repository.OpenSQLite(ctx, SQLitePath, ObjectsPath)` — opens the DB, applies pragmas, runs migrations, creates the object store.
+6. `qdrant.New(QdrantURL, QdrantCollection, QdrantAPIKey)`.
+7. If `EvaluationProvider == "llamacpp"`: `os.Stat(ModelPath)`, then `inference.StartLlamaServer(...)`; `defer llama.Stop()`.
+8. `engine.New(repo, target, provider)` — `provider` is a nil interface when inference is disabled.
+9. `cli.Run(ctx, args, application, os.Stdout)` — **if it handled application-backed or invalid args, return here; the HTTP server never starts.**
+10. `application.RecoverReleases(ctx)` — logs and continues on error.
+11. Construct one lock-cheap metrics collector, pass it to `engine.New` as the domain sink, then construct `httpinterface.New(application, logger, metrics)`. HTTP reads the process-wide linker-injected `buildinfo` values directly.
+12. Start the application `http.Server{BaseContext: signal context, ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and a second metrics-only server on `GYRIFI_METRICS_ADDRESS`. Cancelling the process context cancels long-lived SSE request contexts before graceful shutdown waits for active connections.
+13. On `ctx.Done()`: atomically mark readiness as `shutting_down`, wait `GYRIFI_DRAIN_DELAY`, then shut down both listeners with a shared 10s timeout. Deferred closes cancel in-flight background health probes, stop llama-server, and close the repository.
 
 ### Local Docker Compose contract
 
@@ -54,6 +55,8 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 | Env var | Default | Validation |
 |---|---|---|
 | `GYRIFI_HTTP_ADDRESS` | `:8080` | — |
+| `GYRIFI_METRICS_ADDRESS` | `127.0.0.1:9090` | must be a loopback host and valid port |
+| `GYRIFI_DRAIN_DELAY` | `0s` | non-negative Go duration |
 | `GYRIFI_DATA_DIR` | `/data` | — |
 | `GYRIFI_SQLITE_PATH` | `{DATA_DIR}/state.db` | — |
 | `GYRIFI_OBJECTS_PATH` | `{DATA_DIR}/objects` | — |
@@ -70,13 +73,13 @@ Empty-or-whitespace values fall back to the default (helper `environment(name, f
 
 ### CLI (`internal/interfaces/cli/cli.go`)
 
-Signature: `Run(ctx, args []string, *engine.Engine, io.Writer) (handled bool, err error)`.
+Signatures: `RunVersion(args []string, io.Writer) (handled bool, err error)` for metadata-only early dispatch, then `Run(ctx, args []string, *engine.Engine, io.Writer) (handled bool, err error)` for application-backed dispatch.
 
 | Args | Behaviour |
 |---|---|
 | *(none)* | `handled = false` → HTTP server starts |
 | `doctor` | prints `{"status":"ok","ledgers":N,"inference":"…"}` |
-| `version` / `--version` / `-version` | prints `gyrifi dev` — **inconsistent with `bootstrap.Version`, see GRF-223** |
+| `version` / `--version` / `-version` | prints `buildinfo.String()`: `gyrifi {version} ({commit}, {buildDate})` |
 | anything else | error `unknown command "…"` |
 
 ---
@@ -113,29 +116,54 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 
 | Method | Path | Success | Request body | Response body |
 |---|---|---|---|---|
-| GET | `/api/v1/system/status` | 200 | — | `{ "status":"ok", "version":"0.1.0", "inference":"disabled"\|"llamacpp" }` |
+| GET | `/healthz` | 200 | — | `ok` (`text/plain`; no locks or dependency reads) |
+| GET | `/readyz` | 200 / 503 | — | `{ "ready":true }` or `{ "ready":false, "reasons":[…] }` |
+| GET | `/api/v1/system/status` | 200 | — | `{ "status":"ok", "version":"dev", "commit":"unknown", "buildDate":"unknown", "inference":"disabled"\|"llamacpp", "health": SystemHealth }` |
 | GET | `/api/v1/adapters` | 200 | — | `{ "items":[{ "id":"qdrant", "name":"Qdrant", "capabilities": Capabilities }] }` |
-| GET | `/api/v1/ledgers` | 200 | — | `{ "items": Ledger[] }` |
+| GET | `/api/v1/ledgers` | 200 | — | `{ "items": Ledger[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers` | 201 | `{ "name", "description" }` | `Ledger` |
-| GET | `/api/v1/ledgers/{ledgerID}/changes` | 200 | — | `{ "items": Change[] }` |
+| GET | `/api/v1/ledgers/{ledgerID}/changes` | 200 | — | `{ "items": Change[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/changes` | **202** | `{ "unit", "action", "desired", "idempotencyKey" }` | `Change` |
-| GET | `/api/v1/ledgers/{ledgerID}/proposals` | 200 | — | `{ "items": Proposal[] }` |
+| GET | `/api/v1/ledgers/{ledgerID}/proposals` | 200 | — | `{ "items": Proposal[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals` | 201 | `{ "title", "changeIds":[…] }` | `Proposal` |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}` | 200 | — | `ProposalDetail` |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/checks` | 200 | — | `{ "items": CheckResult[] }` (newest first) |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | 200 | — | `{ "items": Approval[] }` (newest first) |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation` | 200 | `{ "criteria" }` | `{ "passed", "summary", "previewFidelity", "findings"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | **204** | `{ "actor" }` | — |
+| POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/cancel` | **204** | — | — |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/release` | 201 | — | `Release` |
 | GET | `/api/v1/ledgers/{ledgerID}/release-intents` | 200 | — | `{ "items": ReleaseIntent[] }` (newest first; optional `?status=`) |
 | GET | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}` | 200 | — | `ReleaseIntent` with expanded Plan and per-operation `hasBeforeImage` |
 | POST | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}/retry` | 200 | — | `{ "resolved": bool, "mismatches": VerificationMismatch[] }` |
 | POST | `/api/v1/ledgers/{ledgerID}/release-intents/{intentID}/resolve` | **204** | `{ "resolution":"ABANDONED", "note":string }` | — |
-| GET | `/api/v1/ledgers/{ledgerID}/releases` | 200 | — | `{ "items": Release[] }` (newest first) |
+| GET | `/api/v1/ledgers/{ledgerID}/releases` | 200 | — | `{ "items": Release[], "nextCursor"? }` (newest first) |
 | POST | `/api/v1/ledgers/{ledgerID}/releases/{releaseID}/rollback` | 201 | — | `Proposal` |
 | GET | `/events/v1` | 200 | — | `text/event-stream` |
 
 Unknown paths under `/api/` or `/events/` return `404 NOT_FOUND`. Everything else falls through to the embedded Studio file server, which serves `index.html` for unmatched paths (SPA fallback).
+
+`/healthz`, `/readyz`, and `/metrics` are excluded from SPA fallback. `/metrics` is deliberately not registered on the application listener: it is the sole route on the separate loopback-only `GYRIFI_METRICS_ADDRESS` listener, where it returns Prometheus text format 0.0.4. This avoids exposing operational data through the application/auth surface and remains valid after GRF-220.
+
+| Readiness reason | Condition |
+|---|---|
+| `database_unreachable` | The bounded one-second schema query failed or timed out |
+| `migrations_incomplete` | At least one migration embedded in this binary is absent from `schema_migrations` |
+| `shutting_down` | Graceful shutdown began; this is set before the configurable drain delay |
+
+Readiness never probes Qdrant, inference, the object store, or Release Intents. In particular, `RECOVERY_REQUIRED` remains ready so operators can inspect and resolve it through the API.
+
+`SystemHealth` is `{ "database":"ok|unreachable", "target":"ok|unreachable|unknown", "inference":"ok|disabled|unhealthy", "unresolvedIntents": number }`. Status reads return immediately from an atomic cache and trigger at most one asynchronous refresh after 15 seconds. The refresh has a five-second context and includes database operational counts, object bytes, Qdrant collection health, and configured inference health. `unresolvedIntents` counts only `RECOVERY_REQUIRED` rows.
+
+The metrics listener emits:
+
+- counters: `gyrifi_http_requests_total{method,path_template,status}`, `gyrifi_changes_accepted_total`, `gyrifi_proposals_created_total`, `gyrifi_evaluations_total{passed}`, `gyrifi_releases_total{outcome}`, `gyrifi_rollbacks_total`, `gyrifi_target_requests_total{operation,outcome}`;
+- gauges: `gyrifi_unresolved_intents`, `gyrifi_object_store_bytes`, `gyrifi_pending_changes`, `gyrifi_build_info{version,commit}`;
+- histogram: `gyrifi_http_request_duration_seconds{path_template}` with 5 ms through 10 s buckets.
+
+`path_template` comes from Go's matched `Request.Pattern` with the method removed; unmatched requests use the literal `unmatched`. Resource IDs and raw paths never become labels. `gyrifi_changes_accepted_total` intentionally has no Ledger label because Ledger cardinality is unbounded. HTTP and domain counters use atomics; `sync.Map` is used only to allocate bounded label tuples.
+
+The Ledger, Change, Proposal, and Release list endpoints use opaque newest-first keyset pagination. `limit` defaults to 50 and must be from 1 through 200; `cursor` is an opaque value returned as `nextCursor`, and malformed values return `INVALID_ARGUMENT` with `The cursor is not valid.` `nextCursor` is omitted at exhaustion. Change lists accept `status` and `action=PUT|DELETE`; Proposal lists accept `status`. Filters combine in SQL with bound parameters. Existing callers without query parameters now receive the first 50 rows rather than the full history.
 
 ### `/events/v1`
 
@@ -159,6 +187,7 @@ data: {"kind":"proposal.created","ledgerId":"ldg_…","subjectId":"pr_…","at":
 | `proposal.created` | a Proposal and its ordered claims are inserted | Proposal ID |
 | `proposal.evaluated` | evaluation evidence is saved | Proposal ID |
 | `proposal.approved` | approval bound to the current hash is saved | Proposal ID |
+| `proposal.cancelled` | a Draft Proposal becomes `CANCELLED` and releases its Change claims | Proposal ID |
 | `release.started` | a Release Intent is saved | Intent ID |
 | `release.completed` | finalization advances HEAD, including successful startup or operator recovery | Release ID |
 | `release.failed` | apply or verification fails and requires recovery | Intent ID |
@@ -274,6 +303,7 @@ type ProposalGates struct {
     Reason                 string     `json:"reason"`
     ApprovalAction         ActionGate `json:"approvalAction"`
     ReleaseAction          ActionGate `json:"releaseAction"`
+    CancelAction           ActionGate `json:"cancelAction"`
 }
 
 type ProposalDetail struct {
@@ -292,10 +322,10 @@ The read-API `CheckResult` exposes `id`, `proposalHash`, `kind`, `passed`, `summ
 |---|---|
 | `ChangeAction` | `PUT`, `DELETE` |
 | `ChangeStatus` | `ACCEPTED`, `READY`, `INVALID`, `RELEASED` |
-| `ProposalStatus` | `DRAFT`, `REVIEWED`, `APPROVED`, `RELEASED`, `BLOCKED` |
+| `ProposalStatus` | `DRAFT`, `REVIEWED`, `APPROVED`, `RELEASED`, `BLOCKED`, `CANCELLED` |
 | `ReleaseIntentStatus` | `READY`, `APPLYING`, `VERIFYING`, `FINALIZED`, `RECOVERY_REQUIRED`, `ABANDONED` |
 
-`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, and `RELEASED` after finalization. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, and HEAD predicates. `Change.status` is only ever written as `READY` or `RELEASED`.
+`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, `RELEASED` after finalization, and `CANCELLED` by Draft cancellation. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, HEAD, and terminal-state predicates. `Change.status` is only ever written as `READY` or `RELEASED`.
 
 ---
 
@@ -326,21 +356,22 @@ Object store hashes are **different**: `sha256(kind || 0x00 || value)`, prefixed
 
 ### Sentinel errors
 
-`ErrInvalid`, `ErrConflict`, `ErrStaleEvidence`, `ErrReleaseNotReady` in `ledger`; `ErrNotFound`, `ErrIdempotencyConflict`, `ErrChangeClaimed` in `repository`.
+`ErrInvalid`, `ErrConflict`, `ErrStaleEvidence`, `ErrReleaseNotReady` in `ledger`; `ErrNotFound`, `ErrIdempotencyConflict`, `ErrChangeClaimed`, and Proposal cancellation sentinels in `repository`.
 
 ---
 
 ## 6. Engine API
 
 ```go
-func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider) *Engine
+func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider, sinks ...MetricSink) *Engine
 
 func (e *Engine) CreateLedger(ctx, name, description string) (ledger.Ledger, error)
-func (e *Engine) ListLedgers(ctx) ([]ledger.Ledger, error)
+func (e *Engine) ListLedgers(ctx context.Context, request ListRequest) (ListPage[ledger.Ledger], error)
 func (e *Engine) CreateChange(ctx, ledgerID string, r CreateChangeRequest) (ledger.Change, error)
-func (e *Engine) ListChanges(ctx, ledgerID string) ([]ledger.Change, error)
+func (e *Engine) ListChanges(ctx context.Context, ledgerID string, request ListRequest) (ListPage[ledger.Change], error)
 func (e *Engine) CreateProposal(ctx, ledgerID string, r CreateProposalRequest) (ledger.Proposal, error)
-func (e *Engine) ListProposals(ctx, ledgerID string) ([]ledger.Proposal, error)
+func (e *Engine) ListProposals(ctx context.Context, ledgerID string, request ListRequest) (ListPage[ledger.Proposal], error)
+func (e *Engine) CancelProposal(ctx, ledgerID, proposalID string) error
 func (e *Engine) LoadProposalDetail(ctx, ledgerID, proposalID string) (ProposalDetail, error)
 func (e *Engine) ListCheckResults(ctx, ledgerID, proposalID string) ([]CheckResult, error)
 func (e *Engine) ListApprovals(ctx, ledgerID, proposalID string) ([]Approval, error)
@@ -351,13 +382,15 @@ func (e *Engine) ListReleaseIntents(ctx, ledgerID string, status *ledger.Release
 func (e *Engine) LoadReleaseIntent(ctx, ledgerID, intentID string) (ReleaseIntent, error)
 func (e *Engine) RetryReleaseIntent(ctx, ledgerID, intentID string) (RetryReleaseIntentResult, error)
 func (e *Engine) ResolveReleaseIntent(ctx, ledgerID, intentID, resolution, note string) error
-func (e *Engine) ListReleases(ctx, ledgerID string) ([]ledger.Release, error)
+func (e *Engine) ListReleases(ctx context.Context, ledgerID string, request ListRequest) (ListPage[ledger.Release], error)
 func (e *Engine) CreateRollbackProposal(ctx, ledgerID, targetReleaseID string) (ledger.Proposal, error)
 func (e *Engine) RecoverReleases(ctx) error
 func (e *Engine) Events() *Broker
 func (e *Engine) TargetCapabilities() targets.Capabilities
 func (e *Engine) InferenceName() string   // "disabled" when provider is nil
 func (e *Engine) Close() error
+func (e *Engine) Readiness(ctx context.Context) (bool, error)
+func (e *Engine) ProbeHealth(ctx context.Context) SystemHealth
 ```
 
 `Engine` holds a `releaseMu sync.Mutex`. `ReleaseProposal` and `RecoverReleases` both take it — release work is serialised process-wide.
@@ -372,12 +405,22 @@ func (e *Engine) Close() error
 - Status is set to `READY` at insert.
 - Desired bytes are written to the CAS as `VALUE` before the row insert.
 
+**List methods**
+- `ListRequest{Limit, Cursor, Status, Action}` is the transport-independent public request; Engine applies the default/maximum and validates resource enums before mapping to repository options.
+- `ListPage[T]{Items, NextCursor}` keeps the existing `items` envelope and omits the opaque cursor at exhaustion.
+- `CreateRollbackProposal` traverses bounded Release repository pages internally; rollback correctness is not limited to the first API page.
+
 **`CreateProposal`**
 - `title` and at least one `changeId` required.
 - Every loaded Change must be `READY`; duplicates rejected.
 - `baseReleaseId = CurrentHead(ledgerID).ReleaseID`.
 - Hash computed **after** `ChangeIDs` is copied; order is preserved from the request.
 - `InsertProposal` failure is reported as `CONFLICT` ("already in another active Proposal") because the unique claim is the expected failure mode.
+
+**`CancelProposal`**
+- Takes the same process-wide mutex as release work, then delegates the status, Intent, claim deletion, and terminal status write to one repository transaction.
+- Only `DRAFT` may transition. `CANCELLED` is an idempotent success; `RELEASED` and any existing Release Intent return their specific conflict messages.
+- Publishes `proposal.cancelled` only after the first successful commit. Evaluation and approval persistence reject `CANCELLED`, so concurrent work cannot revive it.
 
 **`EvaluateProposal`**
 - Calls `target.Preview` only — never `Apply`.
@@ -391,7 +434,7 @@ func (e *Engine) Close() error
 
 **`LoadProposalDetail`**
 - Loads the Proposal through `(ledgerID, proposalID)`, so a cross-Ledger ID is `NOT_FOUND`.
-- Returns ordered Changes, current HEAD, and server-authoritative approval/release action gates.
+- Returns ordered Changes, current HEAD, and server-authoritative approval/release/cancel action gates.
 - The release gate and `ReleaseProposal` share `evaluateGates`; missing passing evidence, missing approval, and moved HEAD therefore return identical reason strings.
 - Gate booleans read current hash-bound evidence and approval rows; Proposal status is not a gate predicate.
 
@@ -407,15 +450,20 @@ Before gate evaluation, `ReleaseProposal` rejects a Ledger with any `RECOVERY_RE
 
 ```go
 type Repository interface {
+    Readiness(context.Context) (bool, error)
+    DatabaseStats(context.Context) (OperationalStats, error)
+    ObjectStoreBytes(context.Context) (int64, error)
     CreateLedger(context.Context, ledger.Ledger) error
-    ListLedgers(context.Context) ([]ledger.Ledger, error)
+    ListLedgers(context.Context, ListOptions) (Page[ledger.Ledger], error)
     FindChangeByIdempotencyKey(ctx, ledgerID, key string) (ledger.Change, error)
     InsertChange(context.Context, *ledger.Change) error
-    ListChanges(ctx, ledgerID string) ([]ledger.Change, error)
+    ListChanges(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Change], error)
     LoadChanges(ctx, ledgerID string, ids []string) ([]ledger.Change, error)
     InsertProposal(context.Context, ledger.Proposal) error
     LoadProposal(ctx, ledgerID, proposalID string) (ledger.Proposal, error)
-    ListProposals(ctx, ledgerID string) ([]ledger.Proposal, error)
+    ListProposals(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Proposal], error)
+    CancelProposal(ctx, ledgerID, proposalID string) error
+    HasReleaseIntent(ctx, proposalID string) (bool, error)
     SaveCheckResult(context.Context, ledger.CheckResult) error
     ListCheckResults(ctx, proposalID string) ([]ledger.CheckResult, error)
     HasPassingCheck(ctx, proposalID, proposalHash string) (bool, error)
@@ -431,7 +479,7 @@ type Repository interface {
     ListUnfinishedReleaseIntents(context.Context) ([]ledger.ReleaseIntent, error)
     LoadReleaseIntentForProposal(ctx, proposalID string) (ledger.ReleaseIntent, error)
     FinalizeRelease(context.Context, ledger.ReleaseIntent, ledger.Release) error
-    ListReleases(ctx, ledgerID string) ([]ledger.Release, error)
+    ListReleases(ctx context.Context, ledgerID string, options ListOptions) (Page[ledger.Release], error)
     WriteObject(ctx, kind string, value []byte) (hash string, err error)
     ReadObject(ctx, hash string) ([]byte, error)
     Close() error
@@ -439,6 +487,30 @@ type Repository interface {
 ```
 
 Methods describe **Gyrifi operations**, not generic CRUD. Do not add a `Query(sql string)` style escape hatch.
+
+```go
+type Cursor struct {
+    CreatedAt time.Time
+    ID        string
+}
+
+type ListOptions struct {
+    Limit  int
+    Cursor *Cursor
+    Status *string
+    Action *string
+}
+
+type Page[T any] struct {
+    Items   []T
+    HasMore bool
+}
+
+func EncodeCursor(createdAt time.Time, id string) string
+func DecodeCursor(value string) (Cursor, error)
+```
+
+All four list queries order by `(created_at DESC, id DESC)`, apply cursor comparison as `(created_at, id) < (?, ?)`, and request `limit+1` rows. The extra row is removed and represented by `HasMore`. Query fragments are fixed strings; every cursor and filter value is bound.
 
 ### SQLite
 
@@ -512,6 +584,7 @@ CREATE TABLE proposals (
     base_release_id TEXT NOT NULL DEFAULT '',
     proposal_hash TEXT NOT NULL,
     status TEXT NOT NULL,
+    change_ids TEXT NOT NULL DEFAULT '[]', -- added by migration 003; ordered JSON snapshot
     created_at TEXT NOT NULL
 );
 CREATE INDEX proposals_by_ledger ON proposals(ledger_id, created_at DESC);
@@ -574,6 +647,14 @@ All timestamps are TEXT in UTC (`time.Now().UTC()`).
 
 `002_release_intent_resolution.sql` adds nullable `resolution`, `resolution_note`, and `resolved_at` TEXT columns to `release_intents`. `ABANDONED` rows store `resolution = "ABANDONED"`, the trimmed operator note, and an RFC 3339 timestamp. `ListUnfinishedReleaseIntents` treats both `FINALIZED` and `ABANDONED` as terminal. The migration uses `002` rather than the ticket's planned `003` because GRF-213 landed before GRF-212; migration numbers follow actual apply order.
 
+### Migration 003 — Proposal cancellation
+
+`003_proposal_cancellation.sql` adds `proposals.change_ids TEXT NOT NULL DEFAULT '[]'` and backfills every existing Proposal from `proposal_changes`, ordered by `ordinal`. New Proposal inserts write this JSON snapshot in the same transaction as the unique claim rows. Proposal reads use the snapshot; cancellation can therefore delete the active claims without deleting historical membership. The ticket's planned filename was `002_proposal_cancellation.sql`, but immutable migration 002 had already landed for GRF-213, so actual apply order requires 003.
+
+### Migration 004 — List indexes
+
+`004_list_indexes.sql` adds `(created_at DESC, id DESC)` keyset indexes for Ledgers and Ledger-scoped Changes, Proposals, and Releases, plus status-leading indexes for Change and Proposal filters. The pinned SQLite planner uses those indexes for cursor predicates and avoids temporary sorting. The existing Change status/action filter remains a bound SQL predicate; the status-leading index narrows the candidate range before SQLite evaluates action.
+
 **Migration rules:** never edit an applied migration. Add `00N_description.sql`. SQLite cannot drop or alter most constraints — prefer additive columns with defaults, or a create-copy-rename table rebuild inside one transaction.
 
 ---
@@ -632,6 +713,8 @@ type TargetAdapter interface {
     Restore(context.Context, Plan) error
     Capabilities() Capabilities
 }
+
+type HealthChecker interface { Health(context.Context) error }
 ```
 
 ### Qdrant adapter (`internal/targets/qdrant/qdrant.go`)
@@ -679,6 +762,8 @@ type Provider interface {
     Evaluate(context.Context, EvaluationRequest) (EvaluationResult, error)
     Name() string
 }
+
+type HealthChecker interface { Health(context.Context) error }
 ```
 
 `inference.StartLlamaServer(ctx, executable, modelPath, port)`:
@@ -807,6 +892,12 @@ Large model downloads are never part of tests.
 
 ## 13. Quality gate
 
+`.github/workflows/ci.yml` enforces the Runtime, Studio, coverage, and shipping-image portions on pushes and pull requests. It grants only `contents: read`, cancels superseded runs for the same ref, and pins every external action to an immutable commit SHA. Runtime and Studio run in parallel; the image job depends on both and exports its smoke-tested `gyrifi:ci` image as a one-day artifact.
+
+The Runtime job reads Go 1.24 from `runtime/go.mod`, fails on unformatted files or a dirty `go mod tidy`, then runs `go vet ./...`, `go test ./... -race`, and `go build ./...`. The Studio job pins Node 24 and pnpm 11.15.1, performs a frozen root-workspace install, and calls the direct-entry package scripts for typechecking, tests, coverage, and build. The image job passes `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, uses Buildx GHA caching, polls the embedded Runtime rather than sleeping for a fixed startup interval, and requires the reported version to equal the injected value.
+
+Integration and e2e job definitions remain commented extension points. GRF-231 owns enabling pinned-Qdrant integration as a required check. Browser CI enablement remains disabled under GRF-233's extension-point contract; the local e2e command below remains part of the complete developer gate.
+
 Every change must pass:
 
 ```sh
@@ -829,7 +920,7 @@ pnpm --ignore-workspace test
 
 Studio tests run in jsdom through Vitest with globals disabled, jest-dom matchers, CSS processing, Testing Library, and `userEvent`. `pnpm coverage` invokes the direct Vitest entry point with `--coverage`; V8 enforces global minimums of **80% statements** and **75% branches** across `src/`. GRF-233 must invoke this existing command in CI rather than duplicating its thresholds in workflow YAML.
 
-The e2e package is intentionally outside the root pnpm workspace and owns its lockfile. Its direct-entry Playwright command builds `gyrifi:e2e` from the repository Dockerfile, starts pinned Qdrant plus the built image on loopback, waits for `/api/v1/system/status`, and runs Chromium with one worker. Every test recreates named volumes, chooses a unique collection, and creates its own Ledger. Failure traces and screenshots are retained under `e2e/test-results/`; `pnpm --ignore-workspace test:repeat` executes every journey three times for stability qualification. Inference is disabled and the suite asserts deterministic-only evidence; no model is downloaded.
+The e2e package is intentionally outside the root pnpm workspace and owns its lockfile. Its direct-entry Playwright command builds `gyrifi:e2e` from the repository Dockerfile, starts pinned Qdrant plus the built image on loopback, waits for `/readyz`, and runs Chromium with one worker. Every test recreates named volumes, chooses a unique collection, and creates its own Ledger. Failure traces and screenshots are retained under `e2e/test-results/`; `pnpm --ignore-workspace test:repeat` executes every journey three times for stability qualification. Inference is disabled and the suite asserts deterministic-only evidence; no model is downloaded.
 
 ---
 
@@ -842,10 +933,7 @@ The e2e package is intentionally outside the root pnpm workspace and owns its lo
 | No authentication or authorisation anywhere | GRF-220 |
 | `Change.baseFingerprint` is always `""`; no async preparation phase | GRF-221 |
 | No retention budget, quota, or backup command | GRF-222 |
-| `cli version` prints `gyrifi dev` while the API reports `0.1.0` | GRF-223 |
-| No CI pipeline | GRF-233 |
 | Qdrant adapter is only tested against a fake, never a live instance | GRF-231 |
 | No `DELETE`/withdraw/archive route for any entity; `routes()` registers none | GRF-215 |
-| No `/healthz` or `/readyz`; no metrics of any kind | GRF-224 |
 | `llama-server` is never `Wait()`ed on and its `Stdout`/`Stderr` are `nil` | GRF-225 |
 | No rate limiting; `SetMaxOpenConns(1)` makes write floods starve reads | GRF-226 |

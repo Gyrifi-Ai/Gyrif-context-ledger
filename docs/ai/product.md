@@ -63,7 +63,7 @@ An explicit, **ordered** selection of `READY` Changes. Creation:
 - computes the deterministic hash,
 - inserts the Proposal and a unique claim row per Change in one transaction.
 
-The unique constraint on `proposal_changes.change_id` guarantees a Change belongs to **at most one** Proposal, ever. Claims are never released today — cancelling a Proposal is **not implemented** (GRF-212).
+The unique constraint on `proposal_changes.change_id` guarantees a Change is claimed by **at most one active** Proposal. Cancelling a Draft Proposal deletes only those claim rows, while the ordered `proposals.change_ids` snapshot keeps its historical membership readable and lets the Changes be selected into a replacement Proposal.
 
 | Status | Meaning |
 |---|---|
@@ -72,8 +72,11 @@ The unique constraint on `proposal_changes.change_id` guarantees a Change belong
 | `APPROVED` | An approval was saved for the current Proposal hash |
 | `RELEASED` | Set by `FinalizeRelease` |
 | `BLOCKED` | The latest saved evaluation failed |
+| `CANCELLED` | Intentionally ended before release; membership, evidence, and approvals remain readable, but claims are released |
 
 Proposal status is a display summary, not release authority. Release gates query current hash-bound passing evidence and approvals directly, plus the current Ledger HEAD; a status value alone never authorises a release.
+
+Cancellation is Draft-only and terminal. It is idempotent, cannot proceed after any Release Intent exists, and never deletes the Proposal, its immutable membership snapshot, checks, or approvals. The affected Changes remain `READY`.
 
 ### Evaluation and evidence
 
@@ -222,8 +225,8 @@ These are enforced by code and tests. **Do not weaken any of them.**
 | 1 | An acknowledged Change is durably in SQLite before the response | `CreateChange` commits before returning |
 | 2 | One `(ledger, idempotencyKey)` maps to one logical request forever | `UNIQUE (ledger_id, idempotency_key)` + `requestFingerprint` comparison |
 | 3 | A Change belongs to one Ledger and one logical unit | schema FK + `ValidateChange` |
-| 4 | A Change is claimed by at most one Proposal | `UNIQUE (change_id)` on `proposal_changes` |
-| 5 | Proposal membership is explicit and ordered | `proposal_changes.ordinal` |
+| 4 | A Change is claimed by at most one active Proposal | `UNIQUE (change_id)` on `proposal_changes`; transactional claim deletion on cancellation |
+| 5 | Proposal membership is explicit, ordered, and remains readable after claim release | `proposal_changes.ordinal` while active + immutable `proposals.change_ids` snapshot |
 | 6 | Proposal identity = ledger + base HEAD + ordered Change IDs | `ledger.ProposalHash` |
 | 7 | Checks and approvals match the current Proposal hash or are stale | `proposal_hash` column on both tables |
 | 8 | Evaluation never mutates the target, never authorises release | `EvaluateProposal` only calls `Preview` |
@@ -250,7 +253,7 @@ Four top-level areas, nothing else:
 |---|---|
 | **Ledgers** | Create and select the active Ledger. Selection persists in `localStorage` under `gyrifi.ledger`. |
 | **Changes** | Durable inbox, PUT/DELETE submission, Change inspection, and the ordered selection flow that starts Proposal creation from `READY` Changes. |
-| **Proposals** | Linkable two-pane review workspace for ordered Changes, user-authored evaluation evidence, hash-bound approval, confirmed release, and recovery guidance. |
+| **Proposals** | Linkable two-pane review workspace for ordered Changes, user-authored evaluation evidence, hash-bound approval, confirmed release, Draft cancellation, and recovery guidance. |
 | **Releases** | Immutable timeline and plans. Inspect/retry/abandon recovery Intents, or create a confirmed forward-history rollback Proposal from any non-HEAD Release. |
 
 There are deliberately **no** top-level pages for SQLite, object storage, target operations, inference processes, or Release Intents. Those are implementation concerns, not product concerns. Release Intent *recovery* is the one exception and belongs **inside** Releases (GRF-213).
@@ -263,12 +266,9 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 
 | Gap | Ticket |
 |---|---|
-| Proposals cannot be cancelled; claimed Changes are stuck forever | GRF-212 |
-| List endpoints are unbounded and unfiltered | GRF-214 |
 | No authentication; anyone can approve and release | GRF-220 |
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
 | No retention limits, quotas, or backup command | GRF-222 |
 | Ledgers and Changes are create-only — a mistaken ingestion is permanent | GRF-215 |
-| No liveness or readiness signal an orchestrator can use | GRF-224 |
 | The inference child process is unsupervised and its output is discarded | GRF-225 |
 | No rate limiting — one client can starve every other | GRF-226 |

@@ -65,22 +65,22 @@ The `+1` row determines whether `nextCursor` is emitted; it is not returned to t
 
 ## Acceptance criteria
 
-- [ ] `limit` defaults to `50`, minimum `1`, maximum `200`. A value outside the range ⇒ `400 INVALID_ARGUMENT` — do **not** silently clamp, because silent clamping makes client paging logic wrong in ways that are hard to notice.
-- [ ] A malformed or undecodable `cursor` ⇒ `400 INVALID_ARGUMENT` "The cursor is not valid."
-- [ ] A cursor is opaque to clients; its internal shape is not documented in the public API surface and may change.
-- [ ] Results are strictly newest-first and stable: paging through a list while new rows are inserted never returns a duplicate or skips a pre-existing row.
-- [ ] `status` accepts a valid enum value for the resource; anything else ⇒ `400 INVALID_ARGUMENT` naming the allowed values.
-- [ ] `action` accepts `PUT` or `DELETE` on the Changes endpoint only.
-- [ ] Filters combine with `AND`.
-- [ ] Filters are applied in SQL, never after the fetch.
-- [ ] Supporting indexes exist or are added in migration `004_list_indexes.sql`: `(ledger_id, created_at DESC, id DESC)` on `changes`, `proposals`, `releases`, and a partial or composite index covering `(ledger_id, status, created_at DESC, id DESC)` on `changes`.
-- [ ] `Repository` list methods take a `ListOptions{ Limit int; Cursor *Cursor; Status *string; Action *string }` value rather than growing positional parameters.
-- [ ] All SQL uses bound parameters. Filter values are never interpolated into the statement string.
-- [ ] Studio `api.changes(...)` etc. accept options and return `{ items, nextCursor }`; the types in `studio/src/api/types.ts` are updated.
-- [ ] Studio Changes inbox filters go to the server; the client-side `filter(...)` over the full array is removed.
-- [ ] Studio lists render a `Load more` button when `nextCursor` is present and disable it while loading.
-- [ ] Existing callers that omit `limit` and `cursor` keep working and receive the first 50 items — document this as a behaviour change in the phase log.
-- [ ] `go test ./...`, `pnpm typecheck`, `pnpm test` pass.
+- [x] `limit` defaults to `50`, minimum `1`, maximum `200`. A value outside the range ⇒ `400 INVALID_ARGUMENT` — do **not** silently clamp, because silent clamping makes client paging logic wrong in ways that are hard to notice.
+- [x] A malformed or undecodable `cursor` ⇒ `400 INVALID_ARGUMENT` "The cursor is not valid."
+- [x] A cursor is opaque to clients; its internal shape is not documented in the public API surface and may change.
+- [x] Results are strictly newest-first and stable: paging through a list while new rows are inserted never returns a duplicate or skips a pre-existing row.
+- [x] `status` accepts a valid enum value for the resource; anything else ⇒ `400 INVALID_ARGUMENT` naming the allowed values.
+- [x] `action` accepts `PUT` or `DELETE` on the Changes endpoint only.
+- [x] Filters combine with `AND`.
+- [x] Filters are applied in SQL, never after the fetch.
+- [x] Supporting indexes exist or are added in migration `004_list_indexes.sql`: `(ledger_id, created_at DESC, id DESC)` on `changes`, `proposals`, `releases`, and a partial or composite index covering `(ledger_id, status, created_at DESC, id DESC)` on `changes`.
+- [x] `Repository` list methods take a `ListOptions{ Limit int; Cursor *Cursor; Status *string; Action *string }` value rather than growing positional parameters.
+- [x] All SQL uses bound parameters. Filter values are never interpolated into the statement string.
+- [x] Studio `api.changes(...)` etc. accept options and return `{ items, nextCursor }`; the types in `studio/src/api/types.ts` are updated.
+- [x] Studio Changes inbox filters go to the server; the client-side `filter(...)` over the full array is removed.
+- [x] Studio lists render a `Load more` button when `nextCursor` is present and disable it while loading.
+- [x] Existing callers that omit `limit` and `cursor` keep working and receive the first 50 items — document this as a behaviour change in the phase log.
+- [x] `go test ./...`, `pnpm typecheck`, `pnpm test` pass.
 
 ## Implementation notes
 

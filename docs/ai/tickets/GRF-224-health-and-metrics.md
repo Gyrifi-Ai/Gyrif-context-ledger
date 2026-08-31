@@ -60,41 +60,41 @@ This distinction is the single most important thing in this ticket. Get it wrong
 
 **Liveness**
 
-- [ ] `GET /healthz` returns `200` with body `ok` as soon as the HTTP server is listening.
-- [ ] It performs **no** database query and takes no locks. A slow or locked database must not make the process look dead and get it killed.
-- [ ] It is unauthenticated even after GRF-220, and is exempt from rate limiting (GRF-226).
+- [x] `GET /healthz` returns `200` with body `ok` as soon as the HTTP server is listening.
+- [x] It performs **no** database query and takes no locks. A slow or locked database must not make the process look dead and get it killed.
+- [x] It is unauthenticated even after GRF-220, and is exempt from rate limiting (GRF-226).
 
 **Readiness**
 
-- [ ] `GET /readyz` returns `200` with `{"ready":true}` when the runtime can serve, and `503` with `{"ready":false,"reasons":["..."]}` when it cannot.
-- [ ] It verifies database reachability with a bounded, trivial query (e.g. `SELECT 1`) with a short timeout, and reports `database_unreachable` on failure.
-- [ ] It reports `migrations_incomplete` if schema migration has not finished.
-- [ ] It returns `503` with `shutting_down` from the moment graceful shutdown begins, so a load balancer drains before connections are closed.
-- [ ] It **does not** consider release intents, target reachability, or inference state. Those are dependencies of specific operations, not of the process's ability to serve.
-- [ ] Result is not cached beyond 1 second.
+- [x] `GET /readyz` returns `200` with `{"ready":true}` when the runtime can serve, and `503` with `{"ready":false,"reasons":["..."]}` when it cannot.
+- [x] It verifies database reachability with a bounded, trivial query (e.g. `SELECT 1`) with a short timeout, and reports `database_unreachable` on failure.
+- [x] It reports `migrations_incomplete` if schema migration has not finished.
+- [x] It returns `503` with `shutting_down` from the moment graceful shutdown begins, so a load balancer drains before connections are closed.
+- [x] It **does not** consider release intents, target reachability, or inference state. Those are dependencies of specific operations, not of the process's ability to serve.
+- [x] Result is not cached beyond 1 second.
 
 **Status endpoint enrichment**
 
-- [ ] `GET /api/v1/system/status` gains `"health": { "database": "ok", "target": "ok|unreachable|unknown", "inference": "ok|disabled|unhealthy", "unresolvedIntents": <int> }`.
-- [ ] Target and inference checks are **cached** (default 15s) and never block the request. A slow Qdrant must not make the status endpoint slow.
-- [ ] `unresolvedIntents` counts `RECOVERY_REQUIRED` intents across all ledgers and is the signal Studio's recovery banner (GRF-208) and any external alerting should use.
+- [x] `GET /api/v1/system/status` gains `"health": { "database": "ok", "target": "ok|unreachable|unknown", "inference": "ok|disabled|unhealthy", "unresolvedIntents": <int> }`.
+- [x] Target and inference checks are **cached** (default 15s) and never block the request. A slow Qdrant must not make the status endpoint slow.
+- [x] `unresolvedIntents` counts `RECOVERY_REQUIRED` intents across all ledgers and is the signal Studio's recovery banner (GRF-208) and any external alerting should use.
 
 **Metrics**
 
-- [ ] `GET /metrics` emits Prometheus text format v0.0.4 with correct `# HELP` and `# TYPE` lines.
-- [ ] Implemented in `runtime/internal/interfaces/http/metrics.go` using only the standard library. No new dependency.
-- [ ] Counters: `gyrifi_http_requests_total{method,path_template,status}`, `gyrifi_changes_accepted_total{ledger}`, `gyrifi_proposals_created_total`, `gyrifi_evaluations_total{passed}`, `gyrifi_releases_total{outcome}`, `gyrifi_rollbacks_total`, `gyrifi_target_requests_total{operation,outcome}`.
-- [ ] Gauges: `gyrifi_unresolved_intents`, `gyrifi_object_store_bytes`, `gyrifi_pending_changes`, `gyrifi_build_info{version,commit}` (value 1).
-- [ ] Histogram: `gyrifi_http_request_duration_seconds{path_template}` with sane buckets.
-- [ ] **`path_template` is the route pattern, never the raw path.** Emitting `/api/v1/ledgers/ldg_abc123/changes` as a label produces unbounded cardinality and will take down a Prometheus server. A test asserts that ids never appear in label values.
-- [ ] No label carries a ledger name, unit id, hash, actor, token, or any other unbounded or sensitive value. Ledger **ids** on the changes counter are acceptable only if bounded; if a deployment can have many ledgers, drop the label — decide and document.
-- [ ] Metric collection is lock-cheap: `sync/atomic` counters, not a mutex per request.
-- [ ] `/metrics` requires authentication once GRF-220 lands, or is bindable to a separate loopback-only address via `GYRIFI_METRICS_ADDRESS`. Decide, and document the reasoning.
+- [x] `GET /metrics` emits Prometheus text format v0.0.4 with correct `# HELP` and `# TYPE` lines.
+- [x] Implemented in `runtime/internal/interfaces/http/metrics.go` using only the standard library. No new dependency.
+- [x] Counters: `gyrifi_http_requests_total{method,path_template,status}`, `gyrifi_changes_accepted_total{ledger}`, `gyrifi_proposals_created_total`, `gyrifi_evaluations_total{passed}`, `gyrifi_releases_total{outcome}`, `gyrifi_rollbacks_total`, `gyrifi_target_requests_total{operation,outcome}`.
+- [x] Gauges: `gyrifi_unresolved_intents`, `gyrifi_object_store_bytes`, `gyrifi_pending_changes`, `gyrifi_build_info{version,commit}` (value 1).
+- [x] Histogram: `gyrifi_http_request_duration_seconds{path_template}` with sane buckets.
+- [x] **`path_template` is the route pattern, never the raw path.** Emitting `/api/v1/ledgers/ldg_abc123/changes` as a label produces unbounded cardinality and will take down a Prometheus server. A test asserts that ids never appear in label values.
+- [x] No label carries a ledger name, unit id, hash, actor, token, or any other unbounded or sensitive value. Ledger **ids** on the changes counter are acceptable only if bounded; if a deployment can have many ledgers, drop the label — decide and document.
+- [x] Metric collection is lock-cheap: `sync/atomic` counters, not a mutex per request.
+- [x] `/metrics` requires authentication once GRF-220 lands, or is bindable to a separate loopback-only address via `GYRIFI_METRICS_ADDRESS`. Decide, and document the reasoning.
 
 **General**
 
-- [ ] `/healthz`, `/readyz`, and `/metrics` are registered outside `/api/v1` and are excluded from the SPA fallback in `studioHandler` — which currently only excludes `/api/` and `/events/` prefixes. Verify a request to `/healthz` is not served `index.html`.
-- [ ] `go test ./...` passes; `-race` clean.
+- [x] `/healthz`, `/readyz`, and `/metrics` are registered outside `/api/v1` and are excluded from the SPA fallback in `studioHandler` — which currently only excludes `/api/` and `/events/` prefixes. Verify a request to `/healthz` is not served `index.html`.
+- [x] `go test ./...` passes; `-race` clean.
 
 ## Implementation notes
 

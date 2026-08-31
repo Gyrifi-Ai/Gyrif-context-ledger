@@ -14,7 +14,7 @@ const detail: ProposalDetail = {
     { id: "chg_two", ledgerId: "ldg_one", sequence: 2, unit: "point/two", action: "DELETE", desired: null, baseFingerprint: "", desiredFingerprint: "sha256:two", status: "READY", createdAt: "2026-08-31T00:00:00Z" },
   ],
   currentHeadReleaseId: "",
-  gates: { hasCurrentPassingCheck: true, hasCurrentApproval: true, baseMatchesHead: true, releasable: true, reason: "", approvalAction: { enabled: true, reason: "" }, releaseAction: { enabled: true, reason: "" } },
+  gates: { hasCurrentPassingCheck: true, hasCurrentApproval: true, baseMatchesHead: true, releasable: true, reason: "", approvalAction: { enabled: true, reason: "" }, releaseAction: { enabled: true, reason: "" }, cancelAction: { enabled: true, reason: "" } },
 };
 
 beforeEach(() => { mocks.error = undefined; });

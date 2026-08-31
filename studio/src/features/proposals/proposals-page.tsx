@@ -4,7 +4,7 @@ import { api } from "../../api/client";
 import type { Change, Proposal } from "../../api/types";
 import { useAppState } from "../../app/providers";
 import { useLedgerEvents } from "../../app/use-ledger-events";
-import { useQuery, type QueryResult } from "../../app/use-async";
+import { usePaginatedQuery, type PaginatedQueryResult } from "../../app/use-paginated-query";
 import { EmptyState } from "../../ui/feedback/empty-state";
 import { ErrorState } from "../../ui/feedback/error-state";
 import { Skeleton } from "../../ui/feedback/skeleton";
@@ -17,19 +17,20 @@ import { proposalTone } from "../shared/status";
 import { CreateProposalDrawer } from "./create-proposal-drawer";
 import { ProposalDetail } from "./proposal-detail";
 
-type ProposalWorkspace = { proposals: Proposal[]; readyChanges: Change[] };
+type ProposalStatusFilter = Proposal["status"] | "ALL";
+const proposalStatuses: ProposalStatusFilter[] = ["ALL", "DRAFT", "REVIEWED", "APPROVED", "RELEASED", "BLOCKED", "CANCELLED"];
 
-function ProposalList({ query, selectedId, onSelect, onCreate }: { query: QueryResult<ProposalWorkspace>; selectedId?: string; onSelect: (proposal: Proposal) => void; onCreate: () => void }) {
+function ProposalList({ query, selectedId, onSelect, onCreate }: { query: PaginatedQueryResult<Proposal>; selectedId?: string; onSelect: (proposal: Proposal) => void; onCreate: () => void }) {
   if (query.loading && query.data === undefined) return <Panel padding="none"><div className="grid gap-3 p-4" aria-label="Loading Proposals">{Array.from({ length: 5 }, (_, index) => <Skeleton key={index} height="4rem" />)}</div></Panel>;
   if (query.error) return <ErrorState title="Unable to load Proposals" message={query.error.message} onRetry={query.refetch} />;
   if (query.data === undefined) return <div className={query.unavailable ? "gy-is-refetching" : undefined}><Panel><Skeleton height="18rem" /></Panel></div>;
-  if (query.data.proposals.length === 0) return <Panel><EmptyState title="No Proposals" description="Select READY Changes from the inbox or start a new ordered Proposal here." action={<Button onClick={onCreate}>New proposal</Button>} /></Panel>;
+  if (query.data.length === 0) return <Panel><EmptyState title="No Proposals" description="Select READY Changes from the inbox or start a new ordered Proposal here." action={<Button onClick={onCreate}>New proposal</Button>} /></Panel>;
 
   const keyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
-    const nextIndex = Math.max(0, Math.min(query.data!.proposals.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
-    onSelect(query.data!.proposals[nextIndex]);
+    const nextIndex = Math.max(0, Math.min(query.data!.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+    onSelect(query.data![nextIndex]);
     event.currentTarget.parentElement?.parentElement?.querySelectorAll<HTMLButtonElement>("button[data-proposal]")[nextIndex]?.focus();
   };
 
@@ -37,7 +38,7 @@ function ProposalList({ query, selectedId, onSelect, onCreate }: { query: QueryR
     <div className={query.refetching || query.unavailable ? "gy-is-refetching" : undefined}>
       <Panel padding="none" title="Review queue" description="Select a Context PR to inspect its evidence and gates.">
         <ul className="divide-y divide-border">
-          {query.data.proposals.map((proposal, index) => (
+          {query.data.map((proposal, index) => (
             <li key={proposal.id}>
               <button
                 type="button"
@@ -53,6 +54,8 @@ function ProposalList({ query, selectedId, onSelect, onCreate }: { query: QueryR
             </li>
           ))}
         </ul>
+        {query.nextCursor && <div className="border-t border-border p-3 text-center"><Button variant="secondary" size="sm" loading={query.loadingMore} disabled={query.loadingMore || query.refetching} onClick={query.loadMore}>Load more</Button></div>}
+        {query.loadMoreError && <div className="border-t border-border p-3"><ErrorState title="Unable to load more Proposals" message={query.loadMoreError.message} onRetry={query.loadMore} retryDisabled={query.loadingMore} /></div>}
       </Panel>
     </div>
   );
@@ -61,21 +64,20 @@ function ProposalList({ query, selectedId, onSelect, onCreate }: { query: QueryR
 export function ProposalsPage({ proposalId }: { proposalId?: string }) {
   const { ledgerId, openLedgerSwitcher } = useAppState();
   const [createOpen, setCreateOpen] = useState(false);
-  const workspaceQuery = useQuery("proposals", async (signal) => {
-    if (!ledgerId) return { proposals: [], readyChanges: [] };
-    const [proposals, changes] = await Promise.all([api.proposals(ledgerId, { signal }), api.changes(ledgerId, { signal })]);
-    return { proposals: proposals.items ?? [], readyChanges: (changes.items ?? []).filter((change) => change.status === "READY") };
-  }, [ledgerId]);
-  useLedgerEvents(ledgerId, workspaceQuery.refetch);
+  const [status, setStatus] = useState<ProposalStatusFilter>("ALL");
+  const proposalsQuery = usePaginatedQuery("proposals", (cursor, signal) => ledgerId ? api.proposals(ledgerId, { cursor, status: status === "ALL" ? undefined : status }, { signal }) : Promise.resolve({ items: [] }), [ledgerId, status]);
+  const readyChangesQuery = usePaginatedQuery("proposal-ready-changes", (cursor, signal) => ledgerId ? api.changes(ledgerId, { cursor, status: "READY" }, { signal }) : Promise.resolve({ items: [] }), [ledgerId]);
+  useLedgerEvents(ledgerId, () => { proposalsQuery.refetch(); readyChangesQuery.refetch(); });
 
   useEffect(() => {
-    if (!proposalId && workspaceQuery.data?.proposals[0]) window.location.hash = `proposals/${workspaceQuery.data.proposals[0].id}`;
-  }, [proposalId, workspaceQuery.data]);
+    if (!proposalId && proposalsQuery.data?.[0]) window.location.hash = `proposals/${proposalsQuery.data[0].id}`;
+  }, [proposalId, proposalsQuery.data]);
 
   const select = (proposal: Proposal) => { window.location.hash = `proposals/${proposal.id}`; };
   const created = (proposal: Proposal) => {
     setCreateOpen(false);
-    workspaceQuery.refetch();
+    proposalsQuery.refetch();
+    readyChangesQuery.refetch();
     select(proposal);
   };
 
@@ -84,11 +86,12 @@ export function ProposalsPage({ proposalId }: { proposalId?: string }) {
   return (
     <>
       <PageHeader eyebrow="CONTEXT PRs" title="Proposals" description="Review batched changes, attach evidence, approve, and release." actions={<Button size="sm" iconLeft={<Plus className="size-4" aria-hidden="true" />} onClick={() => setCreateOpen(true)}>New proposal</Button>} />
+      <div className="mb-4 flex justify-end"><label className="grid gap-1 text-xs font-medium text-muted-foreground">Status<select aria-label="Filter Proposals by status" value={status} onChange={(event) => setStatus(event.target.value as ProposalStatusFilter)} className="h-9 rounded-sm border border-input bg-muted px-3 text-sm text-foreground">{proposalStatuses.map((value) => <option key={value} value={value}>{value === "ALL" ? "All statuses" : value}</option>)}</select></label></div>
       <div className="gy-proposal-workspace">
-        <ProposalList query={workspaceQuery} selectedId={proposalId} onSelect={select} onCreate={() => setCreateOpen(true)} />
-        {proposalId ? <ProposalDetail ledgerId={ledgerId} proposalId={proposalId} onUpdated={workspaceQuery.refetch} /> : <Panel><EmptyState title="Select a Proposal" description="Choose a Context PR from the review queue to inspect its evidence, approval, and release gates." /></Panel>}
+        <ProposalList query={proposalsQuery} selectedId={proposalId} onSelect={select} onCreate={() => setCreateOpen(true)} />
+        {proposalId ? <ProposalDetail ledgerId={ledgerId} proposalId={proposalId} onUpdated={() => { proposalsQuery.refetch(); readyChangesQuery.refetch(); }} /> : <Panel><EmptyState title="Select a Proposal" description="Choose a Context PR from the review queue to inspect its evidence, approval, and release gates." /></Panel>}
       </div>
-      <CreateProposalDrawer open={createOpen} ledgerId={ledgerId} changes={workspaceQuery.data?.readyChanges ?? []} onClose={() => setCreateOpen(false)} onCreated={created} onConflict={workspaceQuery.refetch} />
+      <CreateProposalDrawer open={createOpen} ledgerId={ledgerId} changes={readyChangesQuery.data ?? []} hasMoreChanges={Boolean(readyChangesQuery.nextCursor)} loadingMoreChanges={readyChangesQuery.loadingMore} onLoadMoreChanges={readyChangesQuery.loadMore} onClose={() => setCreateOpen(false)} onCreated={created} onConflict={readyChangesQuery.refetch} />
     </>
   );
 }

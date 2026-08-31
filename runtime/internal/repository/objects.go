@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,4 +74,31 @@ func (store *ObjectStore) Read(ctx context.Context, hash string) ([]byte, error)
 		return nil, fmt.Errorf("read object: %w", err)
 	}
 	return value, nil
+}
+
+func (store *ObjectStore) Size(ctx context.Context) (int64, error) {
+	var total int64
+	err := filepath.WalkDir(store.root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".gyrifi-object-") {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("measure object store: %w", err)
+	}
+	return total, nil
 }

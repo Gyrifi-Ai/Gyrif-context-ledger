@@ -12,6 +12,12 @@ const (
 	approvalPassingCheckRequired = "A current passing evaluation is required before approval."
 	approvalRequired             = "A current approval is required."
 	headMoved                    = "Ledger HEAD moved after this Proposal was created."
+	cancelledApproval            = "A cancelled Proposal cannot be approved."
+	cancelledRelease             = "A cancelled Proposal cannot be released."
+	alreadyReleased              = "This Proposal has already been released."
+	alreadyCancelled             = "This Proposal is already cancelled."
+	onlyDraftCancellation        = "Only a Draft Proposal can be cancelled."
+	releaseAlreadyStarted        = "Release has already started for this Proposal."
 )
 
 type ActionGate struct {
@@ -27,6 +33,7 @@ type ProposalGates struct {
 	Reason                 string     `json:"reason"`
 	ApprovalAction         ActionGate `json:"approvalAction"`
 	ReleaseAction          ActionGate `json:"releaseAction"`
+	CancelAction           ActionGate `json:"cancelAction"`
 }
 
 type ProposalDetail struct {
@@ -57,6 +64,12 @@ type Approval struct {
 }
 
 func (engine *Engine) evaluateApprovalGate(ctx context.Context, proposal ledger.Proposal) (ActionGate, error) {
+	if proposal.Status == ledger.ProposalCancelled {
+		return ActionGate{Reason: cancelledApproval}, nil
+	}
+	if proposal.Status == ledger.ProposalReleased {
+		return ActionGate{Reason: alreadyReleased}, nil
+	}
 	passing, err := engine.repository.HasPassingCheck(ctx, proposal.ID, proposal.Hash)
 	if err != nil {
 		return ActionGate{}, err
@@ -87,8 +100,28 @@ func (engine *Engine) evaluateGates(ctx context.Context, proposal ledger.Proposa
 		BaseMatchesHead:        head.ReleaseID == proposal.BaseReleaseID,
 		ApprovalAction:         approvalAction,
 	}
-	gates.Releasable = gates.HasCurrentPassingCheck && gates.HasCurrentApproval && gates.BaseMatchesHead
+	hasReleaseIntent, err := engine.repository.HasReleaseIntent(ctx, proposal.ID)
+	if err != nil {
+		return ProposalGates{}, "", wrap(CodeInternal, "Could not inspect Proposal release state.", err)
+	}
 	switch {
+	case proposal.Status == ledger.ProposalReleased:
+		gates.CancelAction.Reason = "A released Proposal cannot be cancelled."
+	case proposal.Status == ledger.ProposalCancelled:
+		gates.CancelAction.Reason = alreadyCancelled
+	case hasReleaseIntent:
+		gates.CancelAction.Reason = releaseAlreadyStarted
+	case proposal.Status != ledger.ProposalDraft:
+		gates.CancelAction.Reason = onlyDraftCancellation
+	default:
+		gates.CancelAction.Enabled = true
+	}
+	gates.Releasable = gates.HasCurrentPassingCheck && gates.HasCurrentApproval && gates.BaseMatchesHead && proposal.Status != ledger.ProposalCancelled && proposal.Status != ledger.ProposalReleased
+	switch {
+	case proposal.Status == ledger.ProposalCancelled:
+		gates.Reason = cancelledRelease
+	case proposal.Status == ledger.ProposalReleased:
+		gates.Reason = alreadyReleased
 	case !gates.HasCurrentPassingCheck:
 		gates.Reason = passingCheckRequired
 	case !gates.HasCurrentApproval:

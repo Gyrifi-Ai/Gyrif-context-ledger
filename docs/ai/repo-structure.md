@@ -17,6 +17,8 @@ gyrif-context-ledger/
 ├── pnpm-workspace.yaml        # packages: [studio]
 ├── pnpm-lock.yaml
 ├── .dockerignore / .gitignore
+├── .github/
+│   └── workflows/ci.yml       # push/PR Runtime, Studio, coverage, and image quality gate
 ├── .vscode/
 │   └── launch.json            # Run and Debug entry point for the local Compose stack
 ├── docs/
@@ -44,8 +46,11 @@ runtime/
 │   └── gyrifi/
 │       └── main.go                  # signal context, calls bootstrap.Run(ctx, os.Args[1:])
 ├── internal/
-│   ├── bootstrap/bootstrap.go       # composition root + lifecycle; const Version
-│   ├── config/config.go             # env → Config, loaded exactly once
+│   ├── buildinfo/                   # linker-injected Version, Commit, Date + stable String
+│   ├── bootstrap/bootstrap.go       # composition root + lifecycle
+│   ├── config/
+│   │   ├── config.go                # env → Config, loaded exactly once
+│   │   └── config_test.go           # operational listener/drain validation
 │   ├── ledger/                      # PURE domain. no I/O, ever.
 │   │   ├── ledger.go                #   Ledger, Head
 │   │   ├── change.go                #   Change, ChangeAction, ChangeStatus
@@ -56,6 +61,8 @@ runtime/
 │   │   └── invariants_test.go
 │   ├── engine/                      # application facade. one Engine, shared by HTTP and CLI.
 │   │   ├── engine.go                #   Engine struct, ErrorCode, Error, wrap, PublicError, list methods
+│   │   ├── health.go                #   readiness and dependency/operational health snapshot
+│   │   ├── metrics.go               #   domain metric sink and metered target adapter
 │   │   ├── events.go                #   typed advisory events + non-blocking in-process Broker
 │   │   ├── events_test.go           #   delivery, slow-subscriber, unsubscribe concurrency
 │   │   ├── changes.go               #   CreateChange + idempotency
@@ -83,16 +90,23 @@ runtime/
 │       ├── cli/cli.go               #   doctor, version
 │       └── http/
 │           ├── server.go            #   routes, middleware, encoding, SSE, SPA fallback
+│           ├── health.go             #   lock-free liveness, bounded readiness, async health cache
+│           ├── health_test.go        #   failure reasons, shutdown, recovery and cache semantics
+│           ├── metrics.go            #   atomic Prometheus collector + metrics-only handler
+│           ├── metrics_test.go       #   format, bounded labels, domain outcomes, races
 │           ├── events_test.go       #   SSE forwarding, Ledger filtering, cancellation
 │           └── static/              #   embedded Studio assets (index.html fallback in git)
 ├── migrations/
 │   ├── 001_initial.sql              # full schema
 │   ├── 002_release_intent_resolution.sql # additive operator-resolution fields
+│   ├── 003_proposal_cancellation.sql # immutable ordered membership snapshots for claim release
+│   ├── 004_list_indexes.sql       # keyset pagination and filter indexes
 │   └── migrations.go                # //go:embed + ordered application
 └── tests/
     ├── change_flow_test.go          # end-to-end governance flow against fakes
     ├── proposal_detail_test.go      # detail gates, evidence, scoping, and HTTP contracts
-    └── release_recovery_test.go     # Intent reads, retry/resolve, release guard, before-images
+    ├── release_recovery_test.go     # Intent reads, retry/resolve, release guard, before-images
+    └── pagination_test.go           # keyset traversal, concurrent inserts, filters, validation
 ```
 
 ### Layering rules — hard
@@ -213,6 +227,14 @@ Test files are co-located as `*.test.ts` or `*.test.tsx`; only shared test infra
 
 ## 4. Build and packaging
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on pushes and pull requests with workflow-level `contents: read` permission and ref-scoped cancellation. Runtime and Studio execute independently; the image job starts only after both pass. Every external action is pinned to a full commit SHA.
+
+The Runtime job uses Go 1.24 from `runtime/go.mod` and enforces gofmt without rewriting files, a clean `go mod tidy`, `go vet`, race-enabled tests, and `go build`. The Studio job pins Node 24 and pnpm 11.15.1, installs the root workspace with `--frozen-lockfile`, and invokes the direct-entry `typecheck`, `test`, `coverage`, and `build` scripts. The image job uses Buildx cache, accepts `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, smoke-tests the loaded image through the system status endpoint, and uploads a one-day Docker image artifact.
+
+Qdrant integration and browser e2e jobs are retained as disabled extension points. Their owning qualification work must enable them and make them required checks; ordinary CI does not silently run or waive either surface.
+
 ### Browser qualification package
 
 ```text
@@ -238,6 +260,8 @@ Run installs inside this package with `pnpm --ignore-workspace`; this prevents p
 | `llama-runtime` | `ghcr.io/ggml-org/llama.cpp:server` | source of `llama-server` and its native libs |
 | `runtime-build` | `golang:1.24-bookworm` | copies `studio/dist` into `internal/interfaces/http/static/`, runs `go test ./...`, builds `CGO_ENABLED=0` binary with `-trimpath -ldflags="-s -w"` |
 | `runtime` | `ubuntu:24.04` | minimal libs, non-root user `gyrifi` (uid/gid 10001), `VOLUME /data`, `EXPOSE 8080`, entrypoint `/usr/local/bin/gyrifi` |
+
+Image builds accept `VERSION`, `COMMIT`, and `BUILD_DATE`, each with development-safe defaults. The Runtime build preserves `CGO_ENABLED=0`, `-trimpath`, and `-s -w` while injecting those values into `internal/buildinfo`. The final image repeats them as OCI version, revision, and creation labels alongside the source URL and `AGPL-3.0-only` license.
 
 Node and Go are **build-stage only**. The final image contains one Go binary plus llama-server artifacts.
 

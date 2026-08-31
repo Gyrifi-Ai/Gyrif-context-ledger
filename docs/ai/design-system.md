@@ -152,6 +152,7 @@ Components use **only** these.
 | `DRAFT` | neutral |
 | `REVIEWED` | review |
 | `APPROVED` | success |
+| `CANCELLED` | neutral |
 | Intent `READY`, `APPLYING`, `VERIFYING` | warning |
 | Intent `FINALIZED` | success |
 | Intent `RECOVERY_REQUIRED` | danger |
@@ -308,7 +309,7 @@ Nav is **disabled except Ledgers** when no ledger is selected, with a tooltip "S
 |---|---|
 | Left | Ledger switcher — a button showing the ledger name plus `⌄`, opening a popover list with search. Shows "Select ledger" when empty. |
 | Centre-left | HEAD chip: `HEAD · rel_1a2b…` in mono, click-to-copy. `No releases yet` when HEAD is empty. |
-| Right | Runtime status dot + label, driven by a real `GET /api/v1/system/status` poll every 30 s. Three states: `Connected` (green), `Degraded` (amber, request slow or non-200), `Offline` (rose, request failed). Tooltip shows version and inference mode. |
+| Right | Runtime status dot + label, driven by a real `GET /api/v1/system/status` poll every 30 s. Three states: `Connected` (green), `Degraded` (amber, request slow or non-200), `Offline` (rose, request failed). A successful response renders its version beside the state; the tooltip shows version, commit, build date, and inference mode. |
 
 The current hardcoded "Runtime connected" text MUST be removed.
 
@@ -467,7 +468,7 @@ A ledger is a governed namespace with its own inbox, proposals, and release hist
 
 ### 5.2 Changes — implemented by GRF-206
 
-The implemented inbox owns its `PageHeader`, derives its READY/RELEASED/INVALID strip from the fetched list, and filters that list by status, action, and unit. READY rows alone are selectable; selection opens an ordered Proposal drawer through the sticky action bar. Row detail and PUT/DELETE submission use right-hand drawers, with blur/submit JSON validation, visible idempotency keys, exact server errors, stale-data retention, and a three-second accepted-Change confirmation.
+The implemented inbox owns its `PageHeader`, derives its READY/RELEASED/INVALID strip from the loaded rows, and sends status/action filters to the Runtime. Unit search intentionally matches only loaded rows and says so. READY rows alone are selectable; selection opens an ordered Proposal drawer through the sticky action bar. Row detail and PUT/DELETE submission use right-hand drawers, with blur/submit JSON validation, visible idempotency keys, exact server errors, stale-data retention, and a three-second accepted-Change confirmation.
 
 ```
 DURABLE INBOX
@@ -487,6 +488,7 @@ Desired-state mutations waiting to be proposed. Nothing here has touched the tar
 - Row click opens a side drawer with the full desired JSON in a `CodeBlock`, both fingerprints, the idempotency key, and timestamps.
 - `Submit change` opens a right-hand drawer: `unit`, `action` segmented control, JSON editor with live validation and a `Format` button, and an auto-generated but editable idempotency key.
 - JSON validation errors appear inline under the editor, not as a generic red line at the bottom of the form.
+- Every Ledger, Change, Proposal, and Release list shows `Load more` only when the Runtime supplies `nextCursor`. The control disables while loading or refetching, appends unique rows without replacing existing content, and presents page failures beside the retained list.
 
 The sketch's standalone `Build proposal →` header action is intentionally omitted: Proposal creation requires one or more selected READY rows and therefore starts from the selection bar. The detail drawer cannot show the idempotency key because the current `Change` response does not expose it; the submitted desired value, fingerprints, identity, sequence, action, status, and timestamp are shown.
 
@@ -494,7 +496,7 @@ The sketch's standalone `Build proposal →` header action is intentionally omit
 
 This is the most important screen in the product and needs a **two-pane review workspace**, not a list of cards with three buttons.
 
-**Implemented (GRF-207).** The route is linkable as `#proposals/{proposalId}`. The 380 px review queue and detail pane expose identity, the four-step progress rail, ordered Changes with the shared Change drawer, Evidence, Approval, and confirmed Release sections. Creation uses a right-hand ordered READY-Change drawer. Each pane retains stale data during refetch and renders loading, empty, error, stale, and populated states.
+**Implemented (GRF-207, paginated by GRF-214).** The route is linkable as `#proposals/{proposalId}`. The 380 px review queue and detail pane expose identity, the four-step progress rail, ordered Changes with the shared Change drawer, Evidence, Approval, and confirmed Release sections. The queue sends its status filter to the Runtime. Creation uses a right-hand ordered READY-Change drawer whose server-filtered rows can be loaded incrementally. Each pane retains stale data during refetch and renders loading, empty, error, stale, and populated states.
 
 ```
 CONTEXT PRs
@@ -523,7 +525,8 @@ Review batched changes, attach evidence, approve, and release.
 Required behaviours:
 
 - **A four-step progress rail** across the top of the detail pane: Changes → Evidence → Approval → Release. Completed steps are orange, the current step is outlined, later steps are muted. This is the single clearest expression of the governance model.
-- **Gate reasons are explicit and server-authored.** Disabled `Approve` and `Release` controls render `ProposalDetail.gates.approvalAction` and `.releaseAction` verbatim. The Studio never duplicates the Runtime's evidence, approval, or HEAD predicates.
+- **Gate reasons are explicit and server-authored.** Disabled `Approve`, `Release`, and `Cancel Proposal` controls render `ProposalDetail.gates.approvalAction`, `.releaseAction`, and `.cancelAction` verbatim. The Studio never duplicates the Runtime's evidence, approval, HEAD, status, or Release Intent predicates.
+- **Draft cancellation is deliberate.** `Cancel Proposal` opens a destructive confirmation stating that the affected Changes return to the inbox and that existing evidence and approvals remain in the audit trail. Success refreshes the detail/list and the `proposal.cancelled` event invalidates Ledger-scoped REST surfaces.
 - **Criteria is user input**, persisted per proposal in `localStorage`, with 3–4 starter presets. The current hardcoded criteria string must go.
 - **Evidence renders findings** as a list of `{severity, unit, message}` rows with severity tones, plus the model identity and the bound proposal hash.
 - **Stale evidence is loud.** If the displayed evidence hash ≠ the proposal hash, show an amber banner: "Evidence was recorded for a different proposal hash and no longer applies."

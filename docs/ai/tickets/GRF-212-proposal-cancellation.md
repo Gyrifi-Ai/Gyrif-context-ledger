@@ -71,22 +71,22 @@ Backfill it from `proposal_changes` in the same migration for existing rows.
 
 ## Acceptance criteria
 
-- [ ] New migration `runtime/migrations/002_proposal_cancellation.sql`. `001_initial.sql` is **not** modified.
-- [ ] The migration backfills `proposals.change_ids` from `proposal_changes` ordered by `ordinal` for every existing proposal.
-- [ ] `InsertProposal` writes the `change_ids` JSON snapshot alongside the claim rows, in the same transaction.
-- [ ] `LoadProposal` and `ListProposals` read `changeIds` from the snapshot column, so cancelled proposals still report their membership.
-- [ ] `ledger.ProposalCancelled` added; `ledger.CanCancelProposal(p ledger.Proposal) error` added to `invariants.go` as the pure rule.
-- [ ] `Repository.CancelProposal(ctx, ledgerID, proposalID string) error` performs, in one transaction: verify status is `DRAFT`, verify no `release_intents` row exists for the proposal, delete the `proposal_changes` rows, set the proposal status to `CANCELLED`.
-- [ ] `Engine.CancelProposal(ctx, ledgerID, proposalID string) error` wraps it with `CodeNotFound` / `CodeConflict`.
-- [ ] Cancelling a `RELEASED` proposal ⇒ `409 CONFLICT` "A released Proposal cannot be cancelled."
-- [ ] Cancelling a proposal with any existing `release_intents` row ⇒ `409 CONFLICT` "Release has already started for this Proposal."
-- [ ] Cancelling an already-`CANCELLED` proposal is idempotent and returns `204`.
-- [ ] After cancellation the affected Changes have status `READY` and can be selected into a new Proposal.
-- [ ] `POST .../cancel` returns `204 No Content`.
-- [ ] Checks and approvals for the cancelled proposal are **retained** (audit), and are never considered current for any other proposal because they carry the old hash.
-- [ ] `features/shared/status.ts` maps `CANCELLED` to the `neutral` tone; the exhaustive switch still compiles.
-- [ ] Studio: the `Cancel` action in the proposal detail is enabled, behind a `ConfirmDialog` explaining that the Changes return to the inbox.
-- [ ] `go test ./...`, `pnpm typecheck`, `pnpm test` pass.
+- [x] New migration `runtime/migrations/003_proposal_cancellation.sql`. `001_initial.sql` is **not** modified. (Renumbered because immutable migration 002 had already landed for GRF-213.)
+- [x] The migration backfills `proposals.change_ids` from `proposal_changes` ordered by `ordinal` for every existing proposal.
+- [x] `InsertProposal` writes the `change_ids` JSON snapshot alongside the claim rows, in the same transaction.
+- [x] `LoadProposal` and `ListProposals` read `changeIds` from the snapshot column, so cancelled proposals still report their membership.
+- [x] `ledger.ProposalCancelled` added; `ledger.CanCancelProposal(p ledger.Proposal) error` added to `invariants.go` as the pure rule.
+- [x] `Repository.CancelProposal(ctx, ledgerID, proposalID string) error` performs, in one transaction: verify status is `DRAFT`, verify no `release_intents` row exists for the proposal, delete the `proposal_changes` rows, set the proposal status to `CANCELLED`.
+- [x] `Engine.CancelProposal(ctx, ledgerID, proposalID string) error` wraps it with `CodeNotFound` / `CodeConflict`.
+- [x] Cancelling a `RELEASED` proposal ⇒ `409 CONFLICT` "A released Proposal cannot be cancelled."
+- [x] Cancelling a proposal with any existing `release_intents` row ⇒ `409 CONFLICT` "Release has already started for this Proposal."
+- [x] Cancelling an already-`CANCELLED` proposal is idempotent and returns `204`.
+- [x] After cancellation the affected Changes have status `READY` and can be selected into a new Proposal.
+- [x] `POST .../cancel` returns `204 No Content`.
+- [x] Checks and approvals for the cancelled proposal are **retained** (audit), and are never considered current for any other proposal because they carry the old hash.
+- [x] `features/shared/status.ts` maps `CANCELLED` to the `neutral` tone; the exhaustive switch still compiles.
+- [x] Studio: the `Cancel` action in the proposal detail is enabled, behind a `ConfirmDialog` explaining that the Changes return to the inbox.
+- [x] `go test ./...`, `pnpm typecheck`, `pnpm test` pass.
 
 ## Implementation notes
 

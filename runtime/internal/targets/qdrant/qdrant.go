@@ -38,6 +38,10 @@ func New(rawURL, collection, apiKey string) (*Adapter, error) {
 func (adapter *Adapter) endpoint(path string) string {
 	return adapter.baseURL.String() + "/collections/" + url.PathEscape(adapter.collection) + path
 }
+func (adapter *Adapter) Health(ctx context.Context) error {
+	_, err := adapter.request(ctx, http.MethodGet, "", nil)
+	return err
+}
 func (adapter *Adapter) request(ctx context.Context, method, path string, body any) ([]byte, error) {
 	var reader io.Reader
 	if body != nil {

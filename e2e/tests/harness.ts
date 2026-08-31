@@ -53,11 +53,11 @@ export async function waitForHealth(timeoutMs = 45_000): Promise<void> {
   let lastError = "no response";
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${runtimeURL}/api/v1/system/status`);
+      const response = await fetch(`${runtimeURL}/readyz`);
       if (response.ok) {
-        const status = await response.json() as { status?: string };
-        if (status.status === "ok") return;
-        lastError = `status=${String(status.status)}`;
+        const status = await response.json() as { ready?: boolean };
+        if (status.ready === true) return;
+        lastError = `ready=${String(status.ready)}`;
       } else {
         lastError = `HTTP ${response.status}`;
       }

@@ -85,9 +85,9 @@ func TestRetryReleaseIntentFinalizesWithoutReapplying(t *testing.T) {
 	if event := nextEvent(t, events); event.Kind != engine.EventIntentResolved || event.SubjectID != intent.ID {
 		t.Fatalf("intent resolution event = %#v", event)
 	}
-	releases, err := application.ListReleases(ctx, ledgerID)
-	if err != nil || len(releases) != 1 {
-		t.Fatalf("releases = %#v, %v", releases, err)
+	releases, err := application.ListReleases(ctx, ledgerID, engine.ListRequest{})
+	if err != nil || len(releases.Items) != 1 {
+		t.Fatalf("releases = %#v, %v", releases.Items, err)
 	}
 	loaded, err := application.LoadReleaseIntent(ctx, ledgerID, intent.ID)
 	if err != nil || loaded.Status != ledger.IntentFinalized {
@@ -189,7 +189,7 @@ func TestReleaseIntentReadAPIAndBeforeImagePresence(t *testing.T) {
 		t.Fatalf("cross-ledger load error = %v", err)
 	}
 
-	server := httpinterface.New(application, slog.New(slog.NewTextHandler(io.Discard, nil)), "test")
+	server := httpinterface.New(application, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/ledgers/"+ledgerValue.ID+"/release-intents?status=RECOVERY_REQUIRED", nil)
 	server.Handler().ServeHTTP(response, request)

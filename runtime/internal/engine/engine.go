@@ -44,15 +44,25 @@ func PublicError(err error) (ErrorCode, string) {
 }
 
 type Engine struct {
-	repository repository.Repository
-	target     targets.TargetAdapter
-	inference  inference.Provider
-	releaseMu  sync.Mutex
-	events     *Broker
+	repository   repository.Repository
+	target       targets.TargetAdapter
+	targetHealth any
+	inference    inference.Provider
+	metrics      MetricSink
+	releaseMu    sync.Mutex
+	events       *Broker
 }
 
-func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider) *Engine {
-	return &Engine{repository: repo, target: target, inference: provider, events: &Broker{}}
+func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider, sinks ...MetricSink) *Engine {
+	var metrics MetricSink = discardMetrics{}
+	if len(sinks) > 0 && sinks[0] != nil {
+		metrics = sinks[0]
+	}
+	metered := target
+	if target != nil {
+		metered = &meteredTarget{target: target, metrics: metrics}
+	}
+	return &Engine{repository: repo, target: metered, targetHealth: target, inference: provider, metrics: metrics, events: &Broker{}}
 }
 func (engine *Engine) InferenceName() string {
 	if engine.inference == nil {
@@ -76,34 +86,6 @@ func (engine *Engine) CreateLedger(ctx context.Context, name, description string
 		return ledger.Ledger{}, wrap(CodeConflict, "A ledger with that name already exists.", err)
 	}
 	return value, nil
-}
-func (engine *Engine) ListLedgers(ctx context.Context) ([]ledger.Ledger, error) {
-	items, err := engine.repository.ListLedgers(ctx)
-	if err != nil {
-		return nil, wrap(CodeInternal, "Could not load ledgers.", err)
-	}
-	return items, nil
-}
-func (engine *Engine) ListChanges(ctx context.Context, ledgerID string) ([]ledger.Change, error) {
-	items, err := engine.repository.ListChanges(ctx, ledgerID)
-	if err != nil {
-		return nil, wrap(CodeInternal, "Could not load Changes.", err)
-	}
-	return items, nil
-}
-func (engine *Engine) ListProposals(ctx context.Context, ledgerID string) ([]ledger.Proposal, error) {
-	items, err := engine.repository.ListProposals(ctx, ledgerID)
-	if err != nil {
-		return nil, wrap(CodeInternal, "Could not load Proposals.", err)
-	}
-	return items, nil
-}
-func (engine *Engine) ListReleases(ctx context.Context, ledgerID string) ([]ledger.Release, error) {
-	items, err := engine.repository.ListReleases(ctx, ledgerID)
-	if err != nil {
-		return nil, wrap(CodeInternal, "Could not load Releases.", err)
-	}
-	return items, nil
 }
 func (engine *Engine) TargetCapabilities() targets.Capabilities { return engine.target.Capabilities() }
 func ensureLedgerID(value string) error {

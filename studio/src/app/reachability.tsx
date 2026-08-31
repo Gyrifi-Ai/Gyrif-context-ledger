@@ -8,7 +8,10 @@ export const runtimeUnavailableMessage = "Cannot reach the Gyrifi runtime. Displ
 export type RuntimeHealth = {
   state: "checking" | "connected" | "degraded" | "offline";
   version?: string;
+  commit?: string;
+  buildDate?: string;
   inference?: string;
+  dependencies?: SystemStatus["health"];
 };
 
 type Reachability = {
@@ -64,7 +67,10 @@ export function ReachabilityProvider({ children }: { children: ReactNode }) {
       setHealth({
         state: performance.now() - started > 2_000 ? "degraded" : "connected",
         version: status.version,
+        commit: status.commit,
+        buildDate: status.buildDate,
         inference: status.inference,
+        dependencies: status.health,
       });
       schedule(connectedPollDelay);
     } catch (error) {

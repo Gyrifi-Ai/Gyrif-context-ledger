@@ -1,5 +1,7 @@
 # Gyrifi Context Ledger
 
+[![CI](https://github.com/Gyrifi-Ai/Gyrif-context-ledger/actions/workflows/ci.yml/badge.svg)](https://github.com/Gyrifi-Ai/Gyrif-context-ledger/actions/workflows/ci.yml)
+
 **Version control for the context your AI systems depend on.**
 
 Gyrifi is a local-first governance layer for mutable AI context. Applications submit desired-state **Changes**. A person groups them into a reviewable **Proposal**. Evaluation evidence and approvals bind to the exact Proposal hash. Only then does Gyrifi apply the batch to the target vector store, verify it, and record an immutable **Release**.
@@ -56,6 +58,29 @@ Gyrifi and Qdrant data persist in named Docker volumes. Stop the stack with `doc
 The Compose port is bound to `127.0.0.1` only. Until GRF-220 adds authentication, this local Compose configuration is not a production deployment mechanism.
 
 The application image runs as a non-root user, exposes only `8080`, runs SQLite migrations at startup, and persists Gyrifi state under `/data`.
+
+Build a traceable image by supplying its version, commit, and UTC build timestamp:
+
+```sh
+docker build \
+  --build-arg VERSION=0.2.0 \
+  --build-arg COMMIT="$(git rev-parse HEAD)" \
+  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t gyrifi:0.2.0 .
+```
+
+The same values appear in `gyrifi version`, the startup log, `/api/v1/system/status`, the Studio Runtime footer, and the image's OCI labels. Builds without arguments report `dev (unknown, unknown)`.
+
+Operational probes are available on the application listener:
+
+```sh
+curl --fail http://127.0.0.1:8080/healthz
+curl --fail http://127.0.0.1:8080/readyz
+```
+
+`/healthz` is process liveness and never touches SQLite. `/readyz` checks SQLite and the applied migration set, and returns 503 while shutting down. A Release Intent requiring recovery remains ready by design so its recovery API stays reachable.
+
+Prometheus metrics are served separately on loopback `127.0.0.1:9090/metrics`; the address cannot be configured to a non-loopback bind. For the local Compose container, inspect it inside the container with `docker compose exec gyrifi curl --fail http://127.0.0.1:9090/metrics`. The application port intentionally returns 404 for `/metrics`.
 
 ---
 
@@ -137,6 +162,8 @@ Configuration is loaded once at startup and injected. No config file, no service
 | Variable | Default | Purpose |
 |---|---|---|
 | `GYRIFI_HTTP_ADDRESS` | `:8080` | Studio/API listen address |
+| `GYRIFI_METRICS_ADDRESS` | `127.0.0.1:9090` | Metrics-only listener; loopback binds only |
+| `GYRIFI_DRAIN_DELAY` | `0s` | Delay after readiness turns off and before listeners close |
 | `GYRIFI_DATA_DIR` | `/data` | Persistent data root |
 | `GYRIFI_SQLITE_PATH` | `$GYRIFI_DATA_DIR/state.db` | SQLite database path |
 | `GYRIFI_OBJECTS_PATH` | `$GYRIFI_DATA_DIR/objects` | Content-addressed object root |
@@ -174,6 +201,8 @@ Go supervises `llama-server` on loopback `8081`, waits for `/health`, and termin
 
 Requirements: Go 1.24+, Node.js 24+, pnpm 11. Docker only for the image.
 
+The CI workflow runs the Runtime, Studio, coverage, and shipping-image gates on every push and pull request. Run the same checks locally before pushing; CI reports failures but is not a substitute for local verification.
+
 ```sh
 # Studio
 pnpm install --frozen-lockfile
@@ -205,7 +234,7 @@ The CLI uses the same Engine as HTTP:
 
 ```sh
 go run ./cmd/gyrifi doctor     # ledger count and inference state as JSON
-go run ./cmd/gyrifi version
+go run ./cmd/gyrifi version    # gyrifi dev (unknown, unknown) without linker flags
 ```
 
 ---

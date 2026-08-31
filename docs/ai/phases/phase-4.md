@@ -8,7 +8,7 @@
 
 | ID | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| [GRF-233](../tickets/GRF-233-ci-pipeline.md) | CI pipeline | M | — | Not started |
+| [GRF-233](../tickets/GRF-233-ci-pipeline.md) | CI pipeline | M | — | Done |
 | [GRF-230](../tickets/GRF-230-studio-tests.md) | Studio component and integration test suite | L | GRF-202 | Done |
 | [GRF-231](../tickets/GRF-231-qdrant-qualification.md) | Qdrant integration qualification | L | — | Not started |
 | [GRF-232](../tickets/GRF-232-e2e-suite.md) | Browser end-to-end qualification | L | GRF-205 … GRF-208 | Done |
@@ -42,6 +42,110 @@ The four together mean the audit trail can be trusted end to end. Any one missin
 - [ ] Three consecutive clean runs of the e2e suite pass without flakiness.
 
 ## Completed entries
+
+### GRF-233 — CI pipeline
+
+| | |
+|---|---|
+| Completed | 2026-08-31 |
+| Commit / PR | `b01c3cc`; branch push run [33430112043](https://github.com/Gyrifi-Ai/Gyrif-context-ledger/actions/runs/33430112043) succeeded; PR unavailable under Enterprise Managed User policy |
+| Deviated from ticket | Yes — qualification used a real feature-branch push rather than a pull request; destructive gate, cache-timing, and cancellation experiments were not performed |
+
+**What was built**
+
+A single least-privilege GitHub Actions workflow now enforces the repository gate on every push and pull request. Runtime and Studio run independently with pinned toolchains and dependency caches; Image waits for both, builds through Buildx with traceable metadata, polls the real Runtime for health, validates its reported version, and uploads the image for downstream qualification. Commented integration and e2e extension points remain disabled and identify the tickets and repository settings needed to make them required checks.
+
+**Files added**
+
+- `.github/workflows/ci.yml` — Runtime, Studio, Image, disabled Qdrant integration, and disabled browser e2e jobs
+
+**Files changed**
+
+- `README.md` — CI status badge and enforced-gate documentation
+- `AGENTS.md` — identifies the workflow-enforced gate and its intentionally disabled extensions
+- `docs/ai/tech-spec.md` — CI contract, pinned environments, commands, dependency graph, image handoff, and extension ownership
+- `docs/ai/repo-structure.md` — workflow ownership and path
+- `docs/ai/tickets/GRF-233-ci-pipeline.md`, `docs/ai/tickets/INDEX.md`, and this file — verified acceptance results and completion records
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+The stable workflow surface is `.github/workflows/ci.yml` with required jobs named `Runtime`, `Studio`, and `Image`. `Image` has `needs: [runtime, studio]`. It exports `gyrifi-ci-image`, containing `gyrifi-ci.tar.gz`, for one day. Runtime uses Go from `runtime/go.mod`; Studio uses Node 24 and pnpm 11.15.1. `pnpm coverage` is now continuously enforced.
+
+Pushes trigger on every branch, not only the default branch. This is intentionally broader than the minimum contract and lets contributors validate real workflow execution even when organization policy prevents pull-request creation.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Use immutable SHAs for all actions | Mutable action tags are a supply-chain risk in the repository's quality authority | Pin release tags only | Tags can be moved after review |
+| Keep Runtime and Studio parallel and gate Image on both | Shortens the common failure path and avoids expensive image work after a source failure | One serial quality-gate job | It increases total duration and obscures ownership |
+| Use setup-action caches plus Buildx GHA layers | These caches are supported, scoped by dependency inputs, and need no custom persistence code | Hand-managed cache paths and keys | More maintenance with weaker tool integration |
+| Poll Runtime and install no container healthcheck solely for CI | The existing system-status endpoint is the product contract and the wait remains bounded | Fixed sleep or Dockerfile-only CI healthcheck | Sleeps are flaky; adding shipping behavior only for CI is unnecessary scope |
+| Export a compressed daemon image | It gives GRF-232 a direct handoff without publishing credentials | Publish to a registry | Publishing and credentials are explicitly out of scope |
+| Leave both qualification stubs disabled | GRF-231 owns real Qdrant qualification; the user explicitly required GRF-233's e2e stub to remain disabled | Enable the already-existing e2e package now | It contradicts the selected ticket boundary |
+
+**Deviations from the ticket**
+
+- The workflow was green on real push run 33430112043, not a pull request. GitHub rejected PR creation because the authenticated account is an Enterprise Managed User that cannot access the pull-request operation. Branch-push validation exercises the same workflow jobs, but does not prove the `pull_request` event path; that trigger is present in the workflow.
+- The test-plan experiments that intentionally introduce an unformatted file, vet error, Go/Vitest failure, TypeScript error, and broken Dockerfile were not run against the shared branch. The corresponding commands and failure-preserving shell settings are present, and the unmodified gate completed successfully.
+- Cold-versus-warm cache timing and rapid-push concurrency cancellation were not deliberately exercised. Cache save/restore wiring and ref-scoped `cancel-in-progress: true` are statically present; no stronger empirical claim is made.
+- The acceptance wording requested push to the default branch. The workflow listens to all push branches, a strict superset needed to qualify this branch under the account restriction.
+- All implementation acceptance criteria were met. The e2e job remains a commented disabled extension point, per the user's explicit instruction to follow GRF-233 literally.
+
+**Traps for future work**
+
+- The account can push branches and run Actions but cannot create a pull request; do not misreport branch-push evidence as PR evidence.
+- Keep Studio package scripts on direct Node entry points. The local workspace colon makes `node_modules/.bin` unavailable through PATH.
+- `load: true` is required before smoke testing or saving a Buildx result from the runner daemon.
+- Repository settings, not workflow YAML, make an enabled job a required check. GRF-231 and the eventual e2e activation must update both.
+- `BUILD_DATE` is computed by the workflow because GitHub does not provide the required RFC 3339 value directly.
+
+**Tests added**
+
+No source test modules were added. The workflow itself executes formatting and module-drift checks, Go vet/race/build, Studio typecheck/test/coverage/build, an actual image build, a bounded HTTP startup probe, exact version comparison, container cleanup, image export, and artifact upload.
+
+**Docs updated**
+
+- `docs/ai/tech-spec.md` §13 — complete enforced workflow contract
+- `docs/ai/repo-structure.md` — workflow location and ownership
+- `README.md` — badge and contributor-facing enforcement note
+- `AGENTS.md` §5 — CI enforcement and disabled-extension status
+- `docs/ai/tickets/GRF-233-ci-pipeline.md` — acceptance results and deviations
+- `docs/ai/tickets/INDEX.md` — GRF-233 marked Done
+- `docs/ai/phases/phase-4.md` — this completion record
+
+**Verification**
+
+```text
+$ GitHub Actions push run 33430112043 @ b01c3cc
+Runtime: gofmt and go mod tidy clean; go vet passed; go test ./... -race passed; go build ./... passed
+Studio: pnpm install --frozen-lockfile, typecheck, test, coverage, and build passed
+Test Files  47 passed (47)
+Tests       144 passed (144)
+All files  | 91.67% Stmts | 85.94% Branch | 71.47% Funcs | 91.67% Lines
+✓ built in 2.16s
+Image: Buildx build and bounded HTTP smoke test passed (`true`)
+Artifact gyrifi-ci-image uploaded: ID 9772390493, 59,215,088 bytes
+Run conclusion: success
+
+$ local quality gate
+Runtime: gofmt, go vet, go test ./... -race, and go build ./... passed
+Studio: frozen install, typecheck, 47 files / 144 tests, coverage, and production build passed
+All files  | 86.20% Stmts | 85.83% Branch | 71.14% Funcs | 86.20% Lines
+Docker: 31/31 build steps passed; embedded Runtime HTTP smoke test passed
+Ticket INDEX consistency: tickets consistent
+git diff --check: no output
+```
+
+**Follow-ups discovered**
+
+- GRF-223 replaces the initial non-empty image-version smoke assertion with exact linker-injected version equality. This follow-up was completed in commit `b09a8d0`.
+- GRF-231 must enable and qualify the Qdrant integration job and make it required.
+- Browser e2e CI activation remains separate work; GRF-232 supplied the suite, but this ticket deliberately retained the disabled extension point as requested.
 
 ### GRF-230 — Studio component and integration test suite
 

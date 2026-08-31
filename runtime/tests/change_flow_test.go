@@ -233,9 +233,9 @@ func TestChangeProposalEvaluationApprovalReleaseFlow(t *testing.T) {
 	if string(value.Value) != `{"id":42,"payload":{"answer":"yes"}}` {
 		t.Fatalf("rollback state mismatch: %s", value.Value)
 	}
-	history, err := application.ListReleases(ctx, ledgerID)
-	if err != nil || len(history) != 3 {
-		t.Fatalf("release history mismatch: %v %v", history, err)
+	history, err := application.ListReleases(ctx, ledgerID, engine.ListRequest{})
+	if err != nil || len(history.Items) != 3 {
+		t.Fatalf("release history mismatch: %v %v", history.Items, err)
 	}
 }
 
@@ -268,11 +268,11 @@ func TestTargetApplyFailureLeavesUnfinishedIntent(t *testing.T) {
 	if event := nextEvent(t, events); event.Kind != engine.EventReleaseFailed {
 		t.Fatalf("second failure event = %s", event.Kind)
 	}
-	releases, err := application.ListReleases(ctx, ledgerID)
+	releases, err := application.ListReleases(ctx, ledgerID, engine.ListRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(releases) != 0 {
+	if len(releases.Items) != 0 {
 		t.Fatal("HEAD history advanced after apply failure")
 	}
 	recoveryEvents, unsubscribeRecovery := application.Events().Subscribe(1)

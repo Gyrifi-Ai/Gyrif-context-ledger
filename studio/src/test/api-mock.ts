@@ -1,5 +1,6 @@
 import { vi, type Mock } from "vitest";
 import { ApiError, type Api } from "../api/client";
+import type { ListOptions } from "../api/types";
 
 export type MockApi = { [K in keyof Api]: Mock<Api[K]> };
 
@@ -16,6 +17,7 @@ export const mockApi: MockApi = {
   proposalApprovals: vi.fn<Api["proposalApprovals"]>(),
   evaluate: vi.fn<Api["evaluate"]>(),
   approve: vi.fn<Api["approve"]>(),
+  cancelProposal: vi.fn<Api["cancelProposal"]>(),
   release: vi.fn<Api["release"]>(),
   releaseIntents: vi.fn<Api["releaseIntents"]>(),
   releaseIntent: vi.fn<Api["releaseIntent"]>(),
@@ -35,6 +37,19 @@ function response(value: unknown): Response {
     : new Response(JSON.stringify(value), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
+function listOptions(url: URL): ListOptions | undefined {
+  const options: ListOptions = {};
+  const limit = url.searchParams.get("limit");
+  if (limit !== null) options.limit = Number(limit);
+  const cursor = url.searchParams.get("cursor");
+  if (cursor !== null) options.cursor = cursor;
+  const status = url.searchParams.get("status");
+  if (status !== null) options.status = status;
+  const action = url.searchParams.get("action");
+  if (action !== null) options.action = action;
+  return Object.keys(options).length > 0 ? options : undefined;
+}
+
 async function route(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://studio.test");
   const path = url.pathname;
@@ -42,13 +57,13 @@ async function route(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
   const match = (pattern: RegExp) => pattern.exec(path)?.slice(1).map(decodeURIComponent);
   try {
     if (method === "GET" && path === "/api/v1/system/status") return response(await mockApi.status(init));
-    if (method === "GET" && path === "/api/v1/ledgers") return response(await mockApi.ledgers(init));
+    if (method === "GET" && path === "/api/v1/ledgers") return response(await mockApi.ledgers(listOptions(url), init));
     if (method === "POST" && path === "/api/v1/ledgers") return response(await mockApi.createLedger(body(init) as Parameters<Api["createLedger"]>[0]));
     let values = match(/^\/api\/v1\/ledgers\/([^/]+)\/changes$/);
-    if (values && method === "GET") return response(await mockApi.changes(values[0], init));
+    if (values && method === "GET") return response(await mockApi.changes(values[0], listOptions(url), init));
     if (values && method === "POST") return response(await mockApi.createChange(values[0], body(init) as Parameters<Api["createChange"]>[1]));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals$/);
-    if (values && method === "GET") return response(await mockApi.proposals(values[0], init));
+    if (values && method === "GET") return response(await mockApi.proposals(values[0], listOptions(url), init));
     if (values && method === "POST") return response(await mockApi.createProposal(values[0], body(init) as Parameters<Api["createProposal"]>[1]));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)$/);
     if (values && method === "GET") return response(await mockApi.proposal(values[0], values[1], init));
@@ -57,6 +72,8 @@ async function route(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)\/approvals$/);
     if (values && method === "GET") return response(await mockApi.proposalApprovals(values[0], values[1], init));
     if (values && method === "POST") return response(await mockApi.approve(values[0], values[1], String(body(init).actor ?? "")));
+    values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)\/cancel$/);
+    if (values && method === "POST") return response(await mockApi.cancelProposal(values[0], values[1]));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)\/evaluation$/);
     if (values && method === "POST") return response(await mockApi.evaluate(values[0], values[1], String(body(init).criteria ?? "")));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals\/([^/]+)\/release$/);
@@ -70,7 +87,7 @@ async function route(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/release-intents\/([^/]+)\/resolve$/);
     if (values && method === "POST") return response(await mockApi.resolveReleaseIntent(values[0], values[1], String(body(init).note ?? "")));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/releases$/);
-    if (values && method === "GET") return response(await mockApi.releases(values[0], init));
+    if (values && method === "GET") return response(await mockApi.releases(values[0], listOptions(url), init));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/releases\/([^/]+)\/rollback$/);
     if (values && method === "POST") return response(await mockApi.rollback(values[0], values[1]));
     throw new Error(`Unexpected API request: ${method} ${path}`);
@@ -84,7 +101,7 @@ async function route(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
 
 export function resetApiMock(): void {
   Object.values(mockApi).forEach((mock) => mock.mockReset());
-  mockApi.status.mockResolvedValue({ status: "ok", version: "test", inference: "disabled" });
+  mockApi.status.mockResolvedValue({ status: "ok", version: "test", commit: "test-commit", buildDate: "2026-09-01T00:00:00Z", inference: "disabled", health: { database: "ok", target: "unknown", inference: "disabled", unresolvedIntents: 0 } });
   mockApi.ledgers.mockResolvedValue({ items: [] });
   mockApi.changes.mockResolvedValue({ items: [] });
   mockApi.proposals.mockResolvedValue({ items: [] });

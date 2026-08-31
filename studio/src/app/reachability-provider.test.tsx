@@ -13,7 +13,7 @@ function Health() {
 
 describe("ReachabilityProvider", () => {
   it("moves from a transport outage to connected on explicit retry", async () => {
-    mockApi.status.mockRejectedValueOnce(new Error("connection refused")).mockResolvedValue({ status: "ok", version: "1.2.3", inference: "disabled" });
+    mockApi.status.mockRejectedValueOnce(new Error("connection refused")).mockResolvedValue({ status: "ok", version: "1.2.3", commit: "abc123", buildDate: "2026-09-01T00:00:00Z", inference: "disabled", health: { database: "ok", target: "unknown", inference: "disabled", unresolvedIntents: 0 } });
     const { user } = renderWithProviders(<><Health /><ReachabilityBanner /></>);
     expect(await screen.findByText("Health: offline")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Cannot reach the Gyrifi runtime");

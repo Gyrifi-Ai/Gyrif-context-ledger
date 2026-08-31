@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { Change, ProposalDetail as ProposalDetailData } from "../../api/types";
 import { ProposalDetail } from "./proposal-detail";
 
-const mocks = vi.hoisted(() => ({ query: {} as Record<string, unknown>, mutationError: undefined as Error | undefined }));
+const mocks = vi.hoisted(() => ({ query: {} as Record<string, unknown>, mutationError: undefined as Error | undefined, mutationRun: vi.fn() }));
 
 vi.mock("../../app/use-ledger-events", () => ({ useLedgerEvents: vi.fn() }));
 vi.mock("../../app/reachability", () => ({ useSystemStatus: () => ({ state: "connected", inference: "disabled" }) }));
 vi.mock("../../app/use-async", () => ({
   useQuery: () => mocks.query,
-  useMutation: () => ({ run: vi.fn(), pending: false, blocked: false, disabledReason: undefined, error: mocks.mutationError, result: undefined, reset: vi.fn() }),
+  useMutation: () => ({ run: mocks.mutationRun, pending: false, blocked: false, disabledReason: undefined, error: mocks.mutationError, result: undefined, reset: vi.fn() }),
 }));
 
 const change: Change = { id: "chg_one", ledgerId: "ldg_one", sequence: 7, unit: "point/one", action: "PUT", desired: { value: true }, baseFingerprint: "", desiredFingerprint: "sha256:desired", status: "READY", createdAt: "2026-08-31T00:00:00Z" };
@@ -26,6 +26,7 @@ const detail: ProposalDetailData = {
     reason: "A current passing evaluation is required.",
     approvalAction: { enabled: false, reason: "A current passing evaluation is required before approval." },
     releaseAction: { enabled: false, reason: "A current passing evaluation is required." },
+    cancelAction: { enabled: true, reason: "" },
   },
 };
 
@@ -35,6 +36,7 @@ function queryState(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   mocks.mutationError = undefined;
+  mocks.mutationRun.mockReset();
   mocks.query = queryState({
     data: {
       detail,
@@ -57,7 +59,7 @@ describe("ProposalDetail", () => {
     expect(html).toContain("Natural-language evaluation is currently off. This stored check was recorded when inference was enabled.");
     expect(html).toContain("A current passing evaluation is required before approval.");
     expect(html).toContain("A current passing evaluation is required.");
-    expect(html).toContain("Cancellation is available in GRF-212.");
+    expect(html).toContain("Cancel Proposal");
   });
 
   it("renders loading, HTTP error, and stale populated detail states", () => {
@@ -91,5 +93,22 @@ describe("ProposalDetail", () => {
     expect(screen.getByRole("button", { name: "Release to Qdrant" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Release to Qdrant" })).toHaveAttribute("title", detail.gates.releaseAction.reason);
     expect(screen.getByText(detail.gates.releaseAction.reason)).toBeInTheDocument();
+  });
+
+  it("requires confirmation before cancellation and explains claim release", () => {
+    render(<ProposalDetail ledgerId="ldg_one" proposalId="pr_one" onUpdated={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel Proposal" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("The Changes will return to the inbox");
+    expect(dialog).toHaveTextContent("Existing evidence and approvals remain in the audit trail.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel Proposal" }));
+    expect(mocks.mutationRun).toHaveBeenCalledWith(undefined);
+  });
+
+  it("renders the server-authored cancellation reason", () => {
+    mocks.query = queryState({ data: { detail: { ...detail, gates: { ...detail.gates, cancelAction: { enabled: false, reason: "Release has already started for this Proposal." } } }, checks: [], approvals: [] } });
+    render(<ProposalDetail ledgerId="ldg_one" proposalId="pr_one" onUpdated={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Cancel Proposal" })).toBeDisabled();
+    expect(screen.getByText("Release has already started for this Proposal.")).toBeInTheDocument();
   });
 });

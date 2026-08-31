@@ -5,11 +5,12 @@ import "time"
 type ProposalStatus string
 
 const (
-	ProposalDraft    ProposalStatus = "DRAFT"
-	ProposalReviewed ProposalStatus = "REVIEWED"
-	ProposalApproved ProposalStatus = "APPROVED"
-	ProposalReleased ProposalStatus = "RELEASED"
-	ProposalBlocked  ProposalStatus = "BLOCKED"
+	ProposalDraft     ProposalStatus = "DRAFT"
+	ProposalReviewed  ProposalStatus = "REVIEWED"
+	ProposalApproved  ProposalStatus = "APPROVED"
+	ProposalReleased  ProposalStatus = "RELEASED"
+	ProposalBlocked   ProposalStatus = "BLOCKED"
+	ProposalCancelled ProposalStatus = "CANCELLED"
 )
 
 type Proposal struct {
