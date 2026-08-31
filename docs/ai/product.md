@@ -271,5 +271,4 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
 | No retention limits, quotas, or backup command | GRF-222 |
 | Ledgers and Changes are create-only — a mistaken ingestion is permanent | GRF-215 |
-| The inference child process is unsupervised and its output is discarded | GRF-225 |
 | No rate limiting — one client can starve every other | GRF-226 |

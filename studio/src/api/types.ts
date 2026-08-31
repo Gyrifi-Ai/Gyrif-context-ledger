@@ -116,6 +116,7 @@ export type SystemStatus = {
     database: "ok" | "unreachable";
     target: "ok" | "unreachable" | "unknown";
     inference: "ok" | "disabled" | "unhealthy";
+    inferenceState: "ready" | "starting" | "restarting" | "failed" | "stopped" | "disabled";
     unresolvedIntents: number;
   };
 };

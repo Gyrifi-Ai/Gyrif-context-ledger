@@ -36,7 +36,7 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 4. Build `slog` JSON logger to stdout at `info` or `debug`.
 5. `repository.OpenSQLite(ctx, SQLitePath, ObjectsPath)` — opens the DB, applies pragmas, runs migrations, creates the object store.
 6. `qdrant.New(QdrantURL, QdrantCollection, QdrantAPIKey)`.
-7. If `EvaluationProvider == "llamacpp"`: `os.Stat(ModelPath)`, then `inference.StartLlamaServer(...)`; `defer llama.Stop()`.
+7. If `EvaluationProvider == "llamacpp"`: `os.Stat(ModelPath)`, then `inference.StartLlamaServer(ctx, logger, executable, modelPath, port, maxRestarts)`; `defer llama.Stop()`. The returned server supervises the child for the remainder of the process lifetime.
 8. `engine.New(repo, target, provider)` — `provider` is a nil interface when inference is disabled.
 9. `cli.Run(ctx, args, application, os.Stdout)` — **if it handled application-backed or invalid args, return here; the HTTP server never starts.**
 10. `application.RecoverReleases(ctx)` — logs and continues on error.
@@ -71,6 +71,7 @@ ADR 0002 deliberately provides no application authentication or authorisation. E
 | `GYRIFI_MODEL_PATH` | `""` | required when provider is `llamacpp` |
 | `GYRIFI_LLAMA_SERVER_PATH` | `llama-server` | image sets `/opt/llama/llama-server` |
 | `GYRIFI_LLAMA_SERVER_PORT` | `8081` | integer in `1..65535` |
+| `GYRIFI_INFERENCE_MAX_RESTARTS` | `5` | positive integer; consecutive failed restart attempts before permanent failure |
 | `GYRIFI_LOG_LEVEL` | `info` | lowercased; `debug` raises the slog level |
 
 Empty-or-whitespace values fall back to the default (helper `environment(name, fallback)`).
@@ -133,7 +134,7 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}` | 200 | — | `ProposalDetail` |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/checks` | 200 | — | `{ "items": CheckResult[] }` (newest first) |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | 200 | — | `{ "items": Approval[] }` (newest first) |
-| POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation` | 200 | `{ "criteria" }` | `{ "passed", "summary", "previewFidelity", "findings"? }` |
+| POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/evaluation` | 200 / 503 | `{ "criteria" }` | `{ "passed", "summary", "previewFidelity", "findings"? }`; an unready supervised process returns `UNAVAILABLE` with `Evaluation is unavailable: the inference process is not running.` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/approvals` | **204** | `{ "actor" }` | — |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/cancel` | **204** | — | — |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}/release` | 201 | — | `Release` |
@@ -157,7 +158,7 @@ Unknown paths under `/api/` or `/events/` return `404 NOT_FOUND`. Everything els
 
 Readiness never probes Qdrant, inference, the object store, or Release Intents. In particular, `RECOVERY_REQUIRED` remains ready so operators can inspect and resolve it through the API.
 
-`SystemHealth` is `{ "database":"ok|unreachable", "target":"ok|unreachable|unknown", "inference":"ok|disabled|unhealthy", "unresolvedIntents": number }`. Status reads return immediately from an atomic cache and trigger at most one asynchronous refresh after 15 seconds. The refresh has a five-second context and includes database operational counts, object bytes, Qdrant collection health, and configured inference health. `unresolvedIntents` counts only `RECOVERY_REQUIRED` rows.
+`SystemHealth` is `{ "database":"ok|unreachable", "target":"ok|unreachable|unknown", "inference":"ok|disabled|unhealthy", "inferenceState":"ready|starting|restarting|failed|stopped|disabled", "unresolvedIntents": number }`. Status reads return immediately from an atomic cache and trigger at most one asynchronous refresh after 15 seconds. Supervised inference health is read from process state without an HTTP probe; the refresh otherwise has a five-second context and includes database operational counts, object bytes, and Qdrant collection health. `unresolvedIntents` counts only `RECOVERY_REQUIRED` rows.
 
 The metrics listener emits:
 
@@ -392,6 +393,8 @@ func (e *Engine) RecoverReleases(ctx) error
 func (e *Engine) Events() *Broker
 func (e *Engine) TargetCapabilities() targets.Capabilities
 func (e *Engine) InferenceName() string   // "disabled" when provider is nil
+func (e *Engine) InferenceReady() bool
+func (e *Engine) InferenceState() string // "disabled" when provider is nil
 func (e *Engine) Close() error
 func (e *Engine) Readiness(ctx context.Context) (bool, error)
 func (e *Engine) ProbeHealth(ctx context.Context) SystemHealth
@@ -430,7 +433,8 @@ func (e *Engine) ProbeHealth(ctx context.Context) SystemHealth
 - Calls `target.Preview` only — never `Apply`.
 - Builds `{proposal, changes, preview}` as the evidence context.
 - Inference disabled ⇒ `passed: true`, `kind: "deterministic"`, evidence = the context document.
-- Inference enabled ⇒ provider result verbatim, `kind: "natural-language"`, evidence = marshalled result. Provider failure ⇒ `UNAVAILABLE`.
+- Inference enabled and ready ⇒ provider result verbatim, `kind: "natural-language"`, evidence = marshalled result. Provider failure ⇒ `UNAVAILABLE`.
+- Supervised inference not ready ⇒ `UNAVAILABLE` with the stable process-not-running message before provider invocation; no CheckResult is persisted because infrastructure failure is not governance evidence.
 
 **`ApproveProposal`**
 - Requires `HasPassingCheck(proposalID, proposal.Hash)`.
@@ -768,13 +772,22 @@ type Provider interface {
 }
 
 type HealthChecker interface { Health(context.Context) error }
+type StateReporter interface {
+    Healthy() bool
+    State() string
+}
 ```
 
-`inference.StartLlamaServer(ctx, executable, modelPath, port)`:
+`inference.StartLlamaServer(ctx context.Context, logger *slog.Logger, executable, modelPath string, port, maxRestarts int) (*LlamaServer, error)`:
 
 - spawns `{executable} --host 127.0.0.1 --port {port} --model {modelPath}`,
 - polls `GET http://127.0.0.1:{port}/health` every 250 ms with a 45 s deadline, accepting 2xx,
-- returns a handle with `.Provider` and `.Stop()`.
+- continuously drains both child streams, logs each bounded line at `debug` with `component=llama-server` and `stream=stdout|stderr`, and retains the final ten bounded stderr lines for failure diagnostics,
+- gives initial readiness failures their captured stderr context,
+- has one supervisor own `Wait()`, log unexpected exit code and retained stderr, and restart with 1, 2, 4 … 60-second bounded exponential backoff,
+- re-runs readiness after every restart; successful readiness resets the consecutive-failure counter, while `maxRestarts` exhausted transitions permanently to `failed`,
+- exposes `Healthy()` and `State()` where state is `starting`, `ready`, `restarting`, `failed`, or `stopped`, and
+- returns a handle with `.Provider` and race-safe `.Stop()`; cancellation and intentional stop never restart the child, and shutdown remains SIGTERM → bounded five-second wait → kill.
 
 Evaluation calls `POST /v1/chat/completions` with `temperature: 0` and `response_format: {"type":"json_object"}`. The prompt requires strict JSON with `passed`, `summary`, and `findings`. Unparsable or free-form output is **rejected as an error**, never coerced into a pass.
 
@@ -871,6 +884,8 @@ The Releases page loads Releases, Proposals, and Release Intents as one workspac
 | `runtime/internal/ledger/invariants_test.go` | Proposal hash determinism and order sensitivity; approval staleness after re-hash |
 | `runtime/internal/targets/qdrant/qdrant_test.go` | collection path construction, `api-key` header, cosine vector equivalence, and structured verification mismatches |
 | `runtime/internal/inference/llamacpp_test.go` | structured-output requirement, free-form rejection |
+| `runtime/internal/inference/supervisor_test.go` | fake-child restart/backoff lifecycle, restart cap/reset, cancellation, repeated-cycle cleanup, and startup stderr diagnostics |
+| `runtime/tests/inference_availability_test.go` | inference process health/status, stable evaluation 503, and no CheckResult persistence during infrastructure outage |
 | `studio/src/api/client.test.ts` | versioned endpoint paths including Proposal detail/evidence and Release Intent recovery, structured/request-ID error mapping, transport versus HTTP reachability |
 | `studio/src/api/events.test.ts` | stream state, bounded CLOSED retry, manual reconnect, timer/source teardown, typed named-event parsing and dispatch |
 | `studio/src/app/error-boundary.test.tsx` | fallback/reset contract and once-per-error logging |
@@ -936,5 +951,4 @@ The e2e package is intentionally outside the root pnpm workspace and owns its lo
 | No retention budget, quota, or backup command | GRF-222 |
 | Qdrant adapter is only tested against a fake, never a live instance | GRF-231 |
 | No `DELETE`/withdraw/archive route for any entity; `routes()` registers none | GRF-215 |
-| `llama-server` is never `Wait()`ed on and its `Stdout`/`Stderr` are `nil` | GRF-225 |
 | No rate limiting; `SetMaxOpenConns(1)` makes write floods starve reads | GRF-226 |

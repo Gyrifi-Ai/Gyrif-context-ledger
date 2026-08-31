@@ -191,7 +191,7 @@ func (server *Server) status(writer http.ResponseWriter, _ *http.Request) {
 	health := server.health.current()
 	server.writeJSON(writer, http.StatusOK, map[string]any{
 		"status": "ok", "version": buildinfo.Version, "commit": buildinfo.Commit, "buildDate": buildinfo.Date, "inference": server.engine.InferenceName(),
-		"health": map[string]any{"database": health.Database, "target": health.Target, "inference": health.Inference, "unresolvedIntents": health.UnresolvedIntents},
+		"health": map[string]any{"database": health.Database, "target": health.Target, "inference": health.Inference, "inferenceState": health.InferenceState, "unresolvedIntents": health.UnresolvedIntents},
 	})
 }
 func (server *Server) adapters(writer http.ResponseWriter, _ *http.Request) {

@@ -4,10 +4,10 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { Change, ProposalDetail as ProposalDetailData } from "../../api/types";
 import { ProposalDetail } from "./proposal-detail";
 
-const mocks = vi.hoisted(() => ({ query: {} as Record<string, unknown>, mutationError: undefined as Error | undefined, mutationRun: vi.fn() }));
+const mocks = vi.hoisted(() => ({ query: {} as Record<string, unknown>, mutationError: undefined as Error | undefined, mutationRun: vi.fn(), systemStatus: { state: "connected", inference: "disabled" } as Record<string, unknown> }));
 
 vi.mock("../../app/use-ledger-events", () => ({ useLedgerEvents: vi.fn() }));
-vi.mock("../../app/reachability", () => ({ useSystemStatus: () => ({ state: "connected", inference: "disabled" }) }));
+vi.mock("../../app/reachability", () => ({ useSystemStatus: () => mocks.systemStatus }));
 vi.mock("../../app/use-async", () => ({
   useQuery: () => mocks.query,
   useMutation: () => ({ run: mocks.mutationRun, pending: false, blocked: false, disabledReason: undefined, error: mocks.mutationError, result: undefined, reset: vi.fn() }),
@@ -35,6 +35,7 @@ function queryState(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  mocks.systemStatus = { state: "connected", inference: "disabled" };
   mocks.mutationError = undefined;
   mocks.mutationRun.mockReset();
   mocks.query = queryState({
@@ -70,6 +71,13 @@ describe("ProposalDetail", () => {
     mocks.query = queryState({ data: { detail, checks: [], approvals: [] }, refetching: true });
     const stale = renderToStaticMarkup(<ProposalDetail ledgerId="ldg_one" proposalId="pr_one" onUpdated={() => undefined} />);
     expect(stale).toContain("Safety review");
+  });
+
+  it("renders an inference process outage distinctly from evaluation evidence", () => {
+    mocks.systemStatus = { state: "connected", inference: "llamacpp", dependencies: { database: "ok", target: "ok", inference: "unhealthy", inferenceState: "restarting", unresolvedIntents: 0 } };
+    render(<ProposalDetail ledgerId="ldg_one" proposalId="pr_one" onUpdated={() => undefined} />);
+    expect(screen.getByText("Natural-language evaluation is unavailable because the local inference process is restarting.")).toHaveAttribute("role", "alert");
+    expect(screen.getByLabelText("Evaluation evidence")).toHaveTextContent("Review required");
   });
 
   it("ignores stale approvals and retains the server release reason", () => {

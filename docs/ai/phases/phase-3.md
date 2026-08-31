@@ -12,7 +12,7 @@
 | [GRF-221](../tickets/GRF-221-change-preparation.md) | Asynchronous Change preparation and base fingerprint | L | — | Not started |
 | [GRF-222](../tickets/GRF-222-retention-backup.md) | Retention budgets, quotas, and backup command | L | — | Not started |
 | [GRF-224](../tickets/GRF-224-health-and-metrics.md) | Health, readiness, and operational metrics | M | — | Done |
-| [GRF-225](../tickets/GRF-225-inference-supervision.md) | Inference process supervision | M | — | Not started |
+| [GRF-225](../tickets/GRF-225-inference-supervision.md) | Inference process supervision | M | — | Done |
 | [GRF-220](../tickets/GRF-220-authentication.md) | Trusted deployment boundary decision | XL | — | Done |
 | [GRF-226](../tickets/GRF-226-rate-limiting.md) | Request rate limiting and abuse controls | M | — | Not started |
 | [GRF-227](../tickets/GRF-227-local-docker-launch.md) | Local Docker launch | M | — | Done |
@@ -48,7 +48,7 @@ Each ticket in this phase closes a way the product can fail silently:
 - [ ] Disk growth is bounded and a supported backup/restore procedure exists and is tested.
 - [x] The trusted VM/VPC deployment boundary and its lack of application-authenticated identity are documented without ambiguity.
 - [ ] Liveness, readiness, and metrics are exposed, and a `RECOVERY_REQUIRED` intent is visible without making the runtime unready.
-- [ ] The inference child process is supervised, its output is captured, and its failures are legible.
+- [x] The inference child process is supervised, its output is captured, and its failures are legible.
 - [ ] No single client can starve the runtime.
 - [ ] `go test ./...` green with `-race`; `docker build` green.
 
@@ -624,3 +624,131 @@ diff whitespace: clean
 **Follow-ups discovered**
 
 GRF-226 remains required for availability protection but is now independent and address-keyed. Application authentication may be reconsidered only when an ADR 0002 revisit trigger occurs; it is not an untracked implementation gap.
+
+### GRF-225 — Inference process supervision
+
+| | |
+|---|---|
+| Completed | 2026-09-01 |
+| Commit / PR | Uncommitted workspace change |
+| Deviated from ticket | No |
+
+**What was built**
+
+The optional `llama-server` child now has a process-lifetime supervisor rather than a one-shot startup. It continuously drains bounded stdout/stderr into structured debug logs, retains final stderr diagnostics, detects and reaps unexpected exits, and restarts with bounded exponential backoff until a configurable failure cap is reached. Runtime status exposes the precise supervisor state, evaluation returns a stable 503 without recording infrastructure failure as evidence, and Studio displays that outage separately from an evaluation result.
+
+**Files added**
+
+- `runtime/internal/inference/supervisor_test.go` — controllable child-process harness covering restart, cap/reset, shutdown, diagnostics, and resource cleanup
+- `runtime/tests/inference_availability_test.go` — public status/evaluation and no-evidence persistence integration contract
+
+**Files changed**
+
+- `runtime/internal/inference/llamacpp.go` — bounded stream capture, retained stderr, supervised restart lifecycle, state reporting, and race-safe stop
+- `runtime/internal/inference/llamacpp_test.go` — bounded output and structured logging tests
+- `runtime/internal/inference/provider.go` — optional process-state reporting interface
+- `runtime/internal/config/config.go` and `config_test.go` — configurable positive restart cap with default validation
+- `runtime/internal/bootstrap/bootstrap.go` — supplies the process logger and restart cap
+- `runtime/internal/engine/engine.go`, `evaluation.go`, and `health.go` — inference readiness/state, stable unavailability response, and coarse health mapping
+- `runtime/internal/interfaces/http/health.go` and `server.go` — immediate cached process state and `inferenceState` status serialization
+- `studio/src/api/types.ts` — typed inference lifecycle state
+- `studio/src/features/proposals/evidence-panel.tsx` and `proposal-detail.test.tsx` — distinct infrastructure-outage alert and coverage
+- `studio/src/app/reachability-provider.test.tsx` and `test/api-mock.ts` — updated system-status fixtures
+- `docs/ai/product.md`, `tech-spec.md`, `repo-structure.md`, and `design-system.md` — current product, lifecycle, tree, and UI contracts
+- `docs/ai/tickets/GRF-225-inference-supervision.md` and `INDEX.md` — accepted criteria and completion bookkeeping
+- `docs/ai/phases/phase-3.md` — Phase 3 status and this completion record
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```go
+func StartLlamaServer(ctx context.Context, logger *slog.Logger, executable, modelPath string, port, maxRestarts int) (*LlamaServer, error)
+
+type StateReporter interface {
+	Healthy() bool
+	State() string
+}
+
+func (server *LlamaServer) Healthy() bool
+func (server *LlamaServer) State() string
+func (server *LlamaServer) Stop() error
+
+func (engine *Engine) InferenceReady() bool
+func (engine *Engine) InferenceState() string
+```
+
+```text
+GYRIFI_INFERENCE_MAX_RESTARTS=5
+```
+
+`GET /api/v1/system/status` now includes `health.inferenceState` as `ready | starting | restarting | failed | stopped | disabled`, while retaining the GRF-224 coarse `health.inference` values. An evaluation made in a non-ready state returns HTTP 503 / `UNAVAILABLE` with `Evaluation is unavailable: the inference process is not running.` and writes no CheckResult.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Add optional `StateReporter` beside `Provider` | Engine can consume local process state without forcing state semantics onto every inference provider | Add `Healthy` and `State` directly to `Provider` | The ticket explicitly leaves the provider evaluation contract unchanged and non-process providers need not have this lifecycle |
+| Give exactly one goroutine ownership of `Cmd.Wait()` and publish one buffered exit result | Readiness, supervision, and shutdown can observe one reaped process without concurrent `Wait` calls | Let `Stop`, readiness, and supervisor each call `Wait` | `exec.Cmd.Wait` is single-owner and concurrent calls race or lose exit state |
+| Keep coarse health and add precise `inferenceState` | Existing GRF-224 clients retain `ok|disabled|unhealthy` while operators can see lifecycle detail | Replace `health.inference` with process states | It would silently break the existing wire contract and Studio fixtures |
+| Reset the restart-failure counter only after readiness succeeds | A recovered child should not inherit earlier failed-start debt | Reset immediately after `Start` | A process that starts but never becomes ready would evade the crash-loop cap |
+
+**Deviations from the ticket**
+
+None. Every acceptance criterion was implemented. GRF-224 had already landed, so its coarse inference health field was preserved and augmented with `inferenceState` rather than redefined.
+
+**Traps for future work**
+
+- `Cmd.Wait()` must continue to have one owner. Pipe readers drain to EOF before that owner reaps the child so final model-load diagnostics are retained.
+- `Stop()` and context cancellation are explicit supervisor signals; never infer intentional shutdown from an exit code because SIGTERM and crashes can overlap numerically.
+- The retained stderr ring is diagnostic context, not a log store. Child lines remain bounded and verbose output stays at debug level.
+- Race-instrumented helper binaries start materially slower than ordinary test binaries; fake children must remain alive long enough for the readiness probe to observe them.
+
+**Tests added**
+
+- `runtime/internal/inference/supervisor_test.go` — unexpected restart and state transition, crash-loop cap, readiness counter reset, cancellation without restart, repeated-cycle goroutine/file-descriptor cleanup, and startup stderr propagation
+- `runtime/internal/inference/llamacpp_test.go` — bounded long-line retention and structured debug forwarding
+- `runtime/tests/inference_availability_test.go` — exact HTTP 503, `health.inferenceState`, provider preflight, and zero CheckResult rows
+- `studio/src/features/proposals/proposal-detail.test.tsx` — infrastructure outage remains distinct while existing evaluation evidence stays visible
+
+**Docs updated**
+
+- `docs/ai/tech-spec.md` §§2, 3, 6, 10, 12, and 14 — config, status/evaluation contracts, signatures, lifecycle, tests, and gap closure
+- `docs/ai/product.md` §7 — removed the closed inference-supervision gap
+- `docs/ai/design-system.md` §5.3 — inference infrastructure alert behavior
+- `docs/ai/repo-structure.md` §1 — new supervisor and integration test files
+- `docs/ai/tickets/GRF-225-inference-supervision.md`, `INDEX.md`, and this file — completion records
+
+**Verification**
+
+```text
+$ test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference 6.572s
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests 3.403s
+
+$ pnpm install --frozen-lockfile
+Already up to date
+Done in 195ms using pnpm v11.15.1
+$ pnpm typecheck
+$ pnpm test
+Test Files  48 passed (48)
+Tests  153 passed (153)
+$ pnpm build
+✓ 1868 modules transformed.
+✓ built in 813ms
+
+$ docker build -t gyrifi:local .
+[+] Building 36.1s (31/31) FINISHED
+=> [runtime-build 8/8] RUN CGO_ENABLED=0 go test ./... && CGO_ENABLED=0 go build ... 27.7s
+=> => naming to docker.io/library/gyrifi:local
+
+$ ticket index consistency check
+tickets consistent
+```
+
+**Follow-ups discovered**
+
+None. Multiple inference workers, provider fallback, and model provisioning remain intentionally out of scope and do not require backlog changes.

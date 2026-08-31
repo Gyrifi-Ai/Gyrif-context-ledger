@@ -69,6 +69,7 @@ export function EvidencePanel({ ledgerId, proposal, check, onRefresh }: { ledger
       </form>
       {evaluation.pending && <article className="grid gap-3 rounded-md border border-border bg-muted/40 p-4" aria-label="Running evaluation"><Skeleton height="1.25rem" width="30%" /><Skeleton height="3rem" /><Skeleton height="4rem" /></article>}
       {evaluation.error && <ErrorState title="Unable to evaluate Proposal" message={evaluation.error.message} onRetry={() => void evaluation.run(criteria.trim())} retryDisabled={evaluation.blocked || !criteria.trim()} retryTitle={evaluation.disabledReason} />}
+      {health.dependencies?.inference === "unhealthy" && <div role="alert" className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">Natural-language evaluation is unavailable because the local inference process is {health.dependencies.inferenceState}.</div>}
       {(check || currentResult) ? (
         <article className="grid gap-4 rounded-md border border-border bg-muted/40 p-4" aria-label="Evaluation evidence">
           <div className="flex flex-wrap items-center gap-2">

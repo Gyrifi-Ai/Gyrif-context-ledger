@@ -530,6 +530,7 @@ Required behaviours:
 - **Criteria is user input**, persisted per proposal in `localStorage`, with 3–4 starter presets. The current hardcoded criteria string must go.
 - **Evidence renders findings** as a list of `{severity, unit, message}` rows with severity tones, plus the model identity and the bound proposal hash.
 - **Stale evidence is loud.** If the displayed evidence hash ≠ the proposal hash, show an amber banner: "Evidence was recorded for a different proposal hash and no longer applies."
+- **Inference infrastructure failure is not failed evidence.** When status reports `health.inference = "unhealthy"`, the Evidence panel shows a separate amber alert naming the process state (`starting`, `restarting`, `failed`, or `stopped`). Existing evidence remains visible and is not restyled as a failed evaluation.
 - Proposal creation is a drawer that reuses the same selectable `DataTable` of `READY` Changes, with explicit ordering controls (the hash is order-sensitive — the UI must show and let the user set the order).
 
 ### 5.4 Releases — implemented by GRF-208

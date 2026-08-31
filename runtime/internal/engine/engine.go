@@ -70,6 +70,21 @@ func (engine *Engine) InferenceName() string {
 	}
 	return engine.inference.Name()
 }
+func (engine *Engine) InferenceReady() bool {
+	if reporter, ok := engine.inference.(inference.StateReporter); ok {
+		return reporter.Healthy()
+	}
+	return true
+}
+func (engine *Engine) InferenceState() string {
+	if engine.inference == nil {
+		return "disabled"
+	}
+	if reporter, ok := engine.inference.(inference.StateReporter); ok {
+		return reporter.State()
+	}
+	return "ready"
+}
 func (engine *Engine) Close() error { return engine.repository.Close() }
 
 func (engine *Engine) CreateLedger(ctx context.Context, name, description string) (ledger.Ledger, error) {

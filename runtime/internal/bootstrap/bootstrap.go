@@ -59,7 +59,7 @@ func Run(ctx context.Context, args []string) error {
 		if _, err := os.Stat(settings.ModelPath); err != nil {
 			return fmt.Errorf("validate GGUF model: %w", err)
 		}
-		llama, err = inference.StartLlamaServer(ctx, settings.LlamaServerPath, settings.ModelPath, settings.LlamaServerPort)
+		llama, err = inference.StartLlamaServer(ctx, logger, settings.LlamaServerPath, settings.ModelPath, settings.LlamaServerPort, settings.InferenceRestarts)
 		if err != nil {
 			return err
 		}

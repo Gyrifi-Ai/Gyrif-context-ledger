@@ -46,6 +46,9 @@ func (engine *Engine) EvaluateProposal(ctx context.Context, ledgerID, proposalID
 	kind := "deterministic"
 	var evidence []byte
 	if engine.inference != nil {
+		if !engine.InferenceReady() {
+			return EvaluationResponse{}, wrap(CodeUnavailable, "Evaluation is unavailable: the inference process is not running.", errors.New("inference process is not ready"))
+		}
 		result, err := engine.inference.Evaluate(ctx, inference.EvaluationRequest{ProposalHash: proposal.Hash, Context: contextValue, Criteria: criteria})
 		if err != nil {
 			return EvaluationResponse{}, wrap(CodeUnavailable, "Local natural-language evaluation is unavailable.", err)

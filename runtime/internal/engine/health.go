@@ -11,6 +11,7 @@ type SystemHealth struct {
 	Database          string
 	Target            string
 	Inference         string
+	InferenceState    string
 	UnresolvedIntents int64
 	PendingChanges    int64
 	ObjectStoreBytes  int64
@@ -21,7 +22,7 @@ func (engine *Engine) Readiness(ctx context.Context) (bool, error) {
 }
 
 func (engine *Engine) ProbeHealth(ctx context.Context) SystemHealth {
-	health := SystemHealth{Database: "ok", Target: "unknown", Inference: "disabled"}
+	health := SystemHealth{Database: "ok", Target: "unknown", Inference: "disabled", InferenceState: engine.InferenceState()}
 	stats, err := engine.repository.DatabaseStats(ctx)
 	if err != nil {
 		health.Database = "unreachable"
@@ -43,7 +44,11 @@ func (engine *Engine) ProbeHealth(ctx context.Context) SystemHealth {
 	}
 	if engine.inference != nil {
 		health.Inference = "unhealthy"
-		if checker, ok := engine.inference.(inference.HealthChecker); ok && checker.Health(ctx) == nil {
+		if reporter, ok := engine.inference.(inference.StateReporter); ok {
+			if reporter.Healthy() {
+				health.Inference = "ok"
+			}
+		} else if checker, ok := engine.inference.(inference.HealthChecker); ok && checker.Health(ctx) == nil {
 			health.Inference = "ok"
 		}
 	}

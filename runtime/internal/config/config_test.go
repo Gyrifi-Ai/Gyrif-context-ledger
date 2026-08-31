@@ -12,6 +12,7 @@ func clearConfigEnvironment(t *testing.T) {
 		"GYRIFI_SQLITE_PATH", "GYRIFI_OBJECTS_PATH", "GYRIFI_QDRANT_URL", "GYRIFI_QDRANT_COLLECTION",
 		"GYRIFI_QDRANT_API_KEY", "GYRIFI_EVALUATION_PROVIDER", "GYRIFI_MODEL_PATH", "GYRIFI_LLAMA_SERVER_PATH",
 		"GYRIFI_LLAMA_SERVER_PORT", "GYRIFI_LOG_LEVEL",
+		"GYRIFI_INFERENCE_MAX_RESTARTS",
 	} {
 		t.Setenv(name, "")
 	}
@@ -23,7 +24,7 @@ func TestOperationalConfigurationDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.MetricsAddress != "127.0.0.1:9090" || value.DrainDelay != 0 {
+	if value.MetricsAddress != "127.0.0.1:9090" || value.DrainDelay != 0 || value.InferenceRestarts != 5 {
 		t.Fatalf("operational defaults = %q %s", value.MetricsAddress, value.DrainDelay)
 	}
 }
@@ -49,6 +50,13 @@ func TestOperationalConfigurationValidation(t *testing.T) {
 		}
 		if value.DrainDelay != 750*time.Millisecond {
 			t.Fatalf("drain delay = %s", value.DrainDelay)
+		}
+	})
+	t.Run("inference restarts is positive", func(t *testing.T) {
+		clearConfigEnvironment(t)
+		t.Setenv("GYRIFI_INFERENCE_MAX_RESTARTS", "0")
+		if _, err := Load(); err == nil {
+			t.Fatal("expected zero restart limit to fail")
 		}
 	})
 }

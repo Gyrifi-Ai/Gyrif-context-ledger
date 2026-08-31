@@ -29,7 +29,7 @@ func newHealthCache(application *engine.Engine) *healthCache {
 	if application.InferenceName() == "disabled" {
 		inferenceHealth = "disabled"
 	}
-	cache.value.Store(engine.SystemHealth{Database: "ok", Target: "unknown", Inference: inferenceHealth})
+	cache.value.Store(engine.SystemHealth{Database: "ok", Target: "unknown", Inference: inferenceHealth, InferenceState: application.InferenceState()})
 	return cache
 }
 

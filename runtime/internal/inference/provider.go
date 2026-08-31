@@ -33,3 +33,8 @@ type Provider interface {
 type HealthChecker interface {
 	Health(context.Context) error
 }
+
+type StateReporter interface {
+	Healthy() bool
+	State() string
+}

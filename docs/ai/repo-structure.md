@@ -85,7 +85,8 @@ runtime/
 │   ├── inference/
 │   │   ├── provider.go              #   Provider interface, EvaluationRequest/Result, Finding
 │   │   ├── llamacpp.go              #   StartLlamaServer, child process supervision, HTTP provider
-│   │   └── llamacpp_test.go
+│   │   ├── llamacpp_test.go         #   provider protocol and bounded output capture
+│   │   └── supervisor_test.go       #   controllable fake-child lifecycle and race coverage
 │   └── interfaces/                  # protocol translation only. no business rules.
 │       ├── cli/cli.go               #   doctor, version
 │       └── http/
@@ -105,6 +106,7 @@ runtime/
 └── tests/
     ├── change_flow_test.go          # end-to-end governance flow against fakes
     ├── proposal_detail_test.go      # detail gates, evidence, scoping, and HTTP contracts
+    ├── inference_availability_test.go # inference-down 503, status, and no-evidence contract
     ├── release_recovery_test.go     # Intent reads, retry/resolve, release guard, before-images
     └── pagination_test.go           # keyset traversal, concurrent inserts, filters, validation
 ```
