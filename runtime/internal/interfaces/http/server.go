@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/buildinfo"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
 )
@@ -24,7 +25,6 @@ var studio embed.FS
 type Server struct {
 	engine   *engine.Engine
 	logger   *slog.Logger
-	version  string
 	requests atomic.Uint64
 	handler  http.Handler
 }
@@ -35,8 +35,8 @@ type apiError struct {
 	} `json:"error"`
 }
 
-func New(application *engine.Engine, logger *slog.Logger, version string) *Server {
-	server := &Server{engine: application, logger: logger, version: version}
+func New(application *engine.Engine, logger *slog.Logger) *Server {
+	server := &Server{engine: application, logger: logger}
 	mux := http.NewServeMux()
 	server.routes(mux)
 	server.handler = server.middleware(mux)
@@ -116,7 +116,7 @@ func (server *Server) writeError(writer http.ResponseWriter, code engine.ErrorCo
 	server.writeJSON(writer, status, body)
 }
 func (server *Server) status(writer http.ResponseWriter, _ *http.Request) {
-	server.writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "version": server.version, "inference": server.engine.InferenceName()})
+	server.writeJSON(writer, http.StatusOK, map[string]any{"status": "ok", "version": buildinfo.Version, "commit": buildinfo.Commit, "buildDate": buildinfo.Date, "inference": server.engine.InferenceName()})
 }
 func (server *Server) adapters(writer http.ResponseWriter, _ *http.Request) {
 	server.writeJSON(writer, http.StatusOK, map[string]any{"items": []any{map[string]any{"id": "qdrant", "name": "Qdrant", "capabilities": server.engine.TargetCapabilities()}}})

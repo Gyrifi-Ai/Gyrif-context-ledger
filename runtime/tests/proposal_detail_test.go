@@ -175,7 +175,7 @@ func TestProposalEvidenceApprovalsAndLedgerScope(t *testing.T) {
 		}
 	}
 
-	server := httpinterface.New(application, slog.New(slog.NewTextHandler(io.Discard, nil)), "test")
+	server := httpinterface.New(application, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/ledgers/"+ledgerID+"/proposals/"+proposal.ID, nil)
 	server.Handler().ServeHTTP(response, request)

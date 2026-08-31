@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/buildinfo"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/config"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference"
@@ -18,8 +19,6 @@ import (
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant"
 )
-
-const Version = "0.1.0"
 
 func Run(ctx context.Context, args []string) error {
 	settings, err := config.Load()
@@ -78,11 +77,11 @@ func Run(ctx context.Context, args []string) error {
 	if err := application.RecoverReleases(ctx); err != nil {
 		logger.Error("release recovery needs attention", "error", err)
 	}
-	api := httpinterface.New(application, logger, Version)
+	api := httpinterface.New(application, logger)
 	server := &http.Server{Addr: settings.HTTPAddress, Handler: api.Handler(), BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
 	errChannel := make(chan error, 1)
 	go func() {
-		logger.Info("Gyrifi started", "address", settings.HTTPAddress, "data_directory", settings.DataDirectory, "inference", application.InferenceName())
+		logger.Info("Gyrifi started", "build", buildinfo.String(), "address", settings.HTTPAddress, "data_directory", settings.DataDirectory, "inference", application.InferenceName())
 		errChannel <- server.ListenAndServe()
 	}()
 	select {

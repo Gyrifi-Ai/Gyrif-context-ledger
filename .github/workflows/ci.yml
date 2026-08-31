@@ -141,9 +141,7 @@ jobs:
             sleep 1
           done
 
-          jq -e '.status == "ok" and (.version | type == "string" and length > 0)' <<<"${response}"
-          # GRF-223 replaces this non-empty check with equality against EXPECTED_VERSION
-          # when linker-injected build metadata becomes the runtime's single version source.
+          jq -e --arg version "${EXPECTED_VERSION}" '.status == "ok" and .version == $version' <<<"${response}"
       - name: Export image artifact
         shell: bash
         run: docker save gyrifi:ci | gzip --fast > "${RUNNER_TEMP}/gyrifi-ci.tar.gz"

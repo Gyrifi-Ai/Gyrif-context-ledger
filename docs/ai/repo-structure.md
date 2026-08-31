@@ -46,7 +46,8 @@ runtime/
 │   └── gyrifi/
 │       └── main.go                  # signal context, calls bootstrap.Run(ctx, os.Args[1:])
 ├── internal/
-│   ├── bootstrap/bootstrap.go       # composition root + lifecycle; const Version
+│   ├── buildinfo/                   # linker-injected Version, Commit, Date + stable String
+│   ├── bootstrap/bootstrap.go       # composition root + lifecycle
 │   ├── config/config.go             # env → Config, loaded exactly once
 │   ├── ledger/                      # PURE domain. no I/O, ever.
 │   │   ├── ledger.go                #   Ledger, Head
@@ -248,6 +249,8 @@ Run installs inside this package with `pnpm --ignore-workspace`; this prevents p
 | `llama-runtime` | `ghcr.io/ggml-org/llama.cpp:server` | source of `llama-server` and its native libs |
 | `runtime-build` | `golang:1.24-bookworm` | copies `studio/dist` into `internal/interfaces/http/static/`, runs `go test ./...`, builds `CGO_ENABLED=0` binary with `-trimpath -ldflags="-s -w"` |
 | `runtime` | `ubuntu:24.04` | minimal libs, non-root user `gyrifi` (uid/gid 10001), `VOLUME /data`, `EXPOSE 8080`, entrypoint `/usr/local/bin/gyrifi` |
+
+Image builds accept `VERSION`, `COMMIT`, and `BUILD_DATE`, each with development-safe defaults. The Runtime build preserves `CGO_ENABLED=0`, `-trimpath`, and `-s -w` while injecting those values into `internal/buildinfo`. The final image repeats them as OCI version, revision, and creation labels alongside the source URL and `AGPL-3.0-only` license.
 
 Node and Go are **build-stage only**. The final image contains one Go binary plus llama-server artifacts.
 

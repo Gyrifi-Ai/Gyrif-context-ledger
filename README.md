@@ -59,6 +59,18 @@ The Compose port is bound to `127.0.0.1` only. Until GRF-220 adds authentication
 
 The application image runs as a non-root user, exposes only `8080`, runs SQLite migrations at startup, and persists Gyrifi state under `/data`.
 
+Build a traceable image by supplying its version, commit, and UTC build timestamp:
+
+```sh
+docker build \
+  --build-arg VERSION=0.2.0 \
+  --build-arg COMMIT="$(git rev-parse HEAD)" \
+  --build-arg BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -t gyrifi:0.2.0 .
+```
+
+The same values appear in `gyrifi version`, the startup log, `/api/v1/system/status`, the Studio Runtime footer, and the image's OCI labels. Builds without arguments report `dev (unknown, unknown)`.
+
 ---
 
 ## Using Gyrifi
@@ -209,7 +221,7 @@ The CLI uses the same Engine as HTTP:
 
 ```sh
 go run ./cmd/gyrifi doctor     # ledger count and inference state as JSON
-go run ./cmd/gyrifi version
+go run ./cmd/gyrifi version    # gyrifi dev (unknown, unknown) without linker flags
 ```
 
 ---

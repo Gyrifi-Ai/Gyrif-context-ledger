@@ -53,7 +53,7 @@ func receiveFlush(t *testing.T, recorder *streamRecorder) string {
 
 func TestEventsConnectedFrameForwardingFilteringAndCancellation(t *testing.T) {
 	application := engine.New(nil, nil, nil)
-	server := New(application, slog.New(slog.NewTextHandler(io.Discard, nil)), "test")
+	server := New(application, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	request := httptest.NewRequest(http.MethodGet, "/events/v1?ledgerId=ldg_one", nil).WithContext(ctx)
 	recorder := newStreamRecorder()

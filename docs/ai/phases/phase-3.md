@@ -2,13 +2,13 @@
 
 **Goal:** make Gyrifi safe to run somewhere other than a developer's laptop. Everything here is a property the product currently lacks that would make a real deployment irresponsible.
 
-**Status:** Not started
+**Status:** In progress
 
 ## Tickets
 
 | ID | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| [GRF-223](../tickets/GRF-223-build-metadata.md) | Build metadata and version consistency | S | — | Not started |
+| [GRF-223](../tickets/GRF-223-build-metadata.md) | Build metadata and version consistency | S | — | In progress |
 | [GRF-221](../tickets/GRF-221-change-preparation.md) | Asynchronous Change preparation and base fingerprint | L | — | Not started |
 | [GRF-222](../tickets/GRF-222-retention-backup.md) | Retention budgets, quotas, and backup command | L | — | Not started |
 | [GRF-224](../tickets/GRF-224-health-and-metrics.md) | Health, readiness, and operational metrics | M | — | Not started |

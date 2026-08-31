@@ -28,7 +28,7 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 
 `cmd/gyrifi/main.go` builds a signal-cancelled context and calls `bootstrap.Run(ctx, os.Args[1:])`.
 
-`bootstrap.Run` order (`internal/bootstrap/bootstrap.go`, `const Version = "0.1.0"`):
+`bootstrap.Run` order (`internal/bootstrap/bootstrap.go`):
 
 1. `config.Load()` — fail fast on invalid env.
 2. `os.MkdirAll(DataDirectory, 0o750)` and `os.MkdirAll(dir(SQLitePath), 0o750)`.
@@ -39,7 +39,7 @@ Go direct dependency list is exactly one module. Frontend runtime dependency lis
 7. `engine.New(repo, target, provider)` — `provider` is a nil interface when inference is disabled.
 8. `cli.Run(ctx, args, application, os.Stdout)` — **if it handled the args, return here; the HTTP server never starts.**
 9. `application.RecoverReleases(ctx)` — logs and continues on error.
-10. Construct `httpinterface.New(application, logger, Version)`.
+10. Construct `httpinterface.New(application, logger)`. HTTP reads the process-wide linker-injected `buildinfo` values directly.
 11. `http.Server{BaseContext: signal context, ReadHeaderTimeout: 10s, ReadTimeout: 30s, WriteTimeout: 2m, IdleTimeout: 2m}` and `ListenAndServe`. Cancelling the process context cancels long-lived SSE request contexts before graceful shutdown waits for active connections.
 12. On `ctx.Done()`: `server.Shutdown` with a 10s timeout; deferred closes stop llama-server and the repository.
 
@@ -76,7 +76,7 @@ Signature: `Run(ctx, args []string, *engine.Engine, io.Writer) (handled bool, er
 |---|---|
 | *(none)* | `handled = false` → HTTP server starts |
 | `doctor` | prints `{"status":"ok","ledgers":N,"inference":"…"}` |
-| `version` / `--version` / `-version` | prints `gyrifi dev` — **inconsistent with `bootstrap.Version`, see GRF-223** |
+| `version` / `--version` / `-version` | prints `buildinfo.String()`: `gyrifi {version} ({commit}, {buildDate})` |
 | anything else | error `unknown command "…"` |
 
 ---
@@ -113,7 +113,7 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 
 | Method | Path | Success | Request body | Response body |
 |---|---|---|---|---|
-| GET | `/api/v1/system/status` | 200 | — | `{ "status":"ok", "version":"0.1.0", "inference":"disabled"\|"llamacpp" }` |
+| GET | `/api/v1/system/status` | 200 | — | `{ "status":"ok", "version":"dev", "commit":"unknown", "buildDate":"unknown", "inference":"disabled"\|"llamacpp" }` |
 | GET | `/api/v1/adapters` | 200 | — | `{ "items":[{ "id":"qdrant", "name":"Qdrant", "capabilities": Capabilities }] }` |
 | GET | `/api/v1/ledgers` | 200 | — | `{ "items": Ledger[] }` |
 | POST | `/api/v1/ledgers` | 201 | `{ "name", "description" }` | `Ledger` |
@@ -809,7 +809,7 @@ Large model downloads are never part of tests.
 
 `.github/workflows/ci.yml` enforces the Runtime, Studio, coverage, and shipping-image portions on pushes and pull requests. It grants only `contents: read`, cancels superseded runs for the same ref, and pins every external action to an immutable commit SHA. Runtime and Studio run in parallel; the image job depends on both and exports its smoke-tested `gyrifi:ci` image as a one-day artifact.
 
-The Runtime job reads Go 1.24 from `runtime/go.mod`, fails on unformatted files or a dirty `go mod tidy`, then runs `go vet ./...`, `go test ./... -race`, and `go build ./...`. The Studio job pins Node 24 and pnpm 11.15.1, performs a frozen root-workspace install, and calls the direct-entry package scripts for typechecking, tests, coverage, and build. The image job passes `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, uses Buildx GHA caching, and polls the embedded Runtime rather than sleeping for a fixed startup interval. GRF-223 will tighten the smoke assertion from a non-empty reported version to exact linker-injected build metadata.
+The Runtime job reads Go 1.24 from `runtime/go.mod`, fails on unformatted files or a dirty `go mod tidy`, then runs `go vet ./...`, `go test ./... -race`, and `go build ./...`. The Studio job pins Node 24 and pnpm 11.15.1, performs a frozen root-workspace install, and calls the direct-entry package scripts for typechecking, tests, coverage, and build. The image job passes `VERSION`, `COMMIT`, and `BUILD_DATE` build arguments, uses Buildx GHA caching, polls the embedded Runtime rather than sleeping for a fixed startup interval, and requires the reported version to equal the injected value.
 
 Integration and e2e job definitions remain commented extension points. GRF-231 owns enabling pinned-Qdrant integration as a required check. Browser CI enablement remains disabled under GRF-233's extension-point contract; the local e2e command below remains part of the complete developer gate.
 
@@ -848,7 +848,6 @@ The e2e package is intentionally outside the root pnpm workspace and owns its lo
 | No authentication or authorisation anywhere | GRF-220 |
 | `Change.baseFingerprint` is always `""`; no async preparation phase | GRF-221 |
 | No retention budget, quota, or backup command | GRF-222 |
-| `cli version` prints `gyrifi dev` while the API reports `0.1.0` | GRF-223 |
 | Qdrant adapter is only tested against a fake, never a live instance | GRF-231 |
 | No `DELETE`/withdraw/archive route for any entity; `routes()` registers none | GRF-215 |
 | No `/healthz` or `/readyz`; no metrics of any kind | GRF-224 |

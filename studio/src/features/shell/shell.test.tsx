@@ -11,7 +11,7 @@ import { RuntimeStatus } from "./runtime-status";
 const mocks = vi.hoisted(() => ({
   app: { ledger: null as Ledger | null, ledgers: [] as Ledger[], ledgerSwitcherRequest: 0, setLedgerId: vi.fn() },
   query: { data: undefined as { id: string }[] | undefined, error: undefined as Error | undefined, loading: false, refetching: false, unavailable: false, refetch: vi.fn() },
-  reachability: { health: { state: "connected", version: "1.0", inference: "disabled" } as RuntimeHealth, streamState: "open", streamExhausted: false, reconnectStream: vi.fn() },
+  reachability: { health: { state: "connected", version: "1.0", commit: "abc123", buildDate: "2026-09-01T00:00:00Z", inference: "disabled" } as RuntimeHealth, streamState: "open", streamExhausted: false, reconnectStream: vi.fn() },
 }));
 
 vi.mock("../../app/providers", () => ({ useAppState: () => mocks.app }));
@@ -30,7 +30,7 @@ beforeEach(() => {
   mocks.app.setLedgerId.mockReset();
   mocks.query.data = [];
   mocks.query.error = undefined;
-  mocks.reachability.health = { state: "connected", version: "1.0", inference: "disabled" };
+  mocks.reachability.health = { state: "connected", version: "1.0", commit: "abc123", buildDate: "2026-09-01T00:00:00Z", inference: "disabled" };
   mocks.reachability.streamState = "open";
   mocks.reachability.streamExhausted = false;
   mocks.reachability.reconnectStream.mockReset();
@@ -85,7 +85,8 @@ describe("shell controls", () => {
   it("renders runtime and event-stream states and reconnects", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<RuntimeStatus />);
-    expect(screen.getByText("Connected")).toHaveAttribute("title", "Runtime 1.0 · inference disabled");
+    expect(screen.getByText("Connected")).toHaveAttribute("title", "Runtime 1.0 (abc123, 2026-09-01T00:00:00Z) · inference disabled");
+    expect(screen.getByLabelText("Runtime version")).toHaveTextContent("1.0");
     mocks.reachability.health = { state: "degraded" };
     rerender(<RuntimeStatus />);
     expect(screen.getByText("Degraded")).toBeInTheDocument();

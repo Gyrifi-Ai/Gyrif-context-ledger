@@ -96,6 +96,8 @@ export type Release = {
 export type SystemStatus = {
   status: string;
   version: string;
+  commit: string;
+  buildDate: string;
   inference: string;
 };
 

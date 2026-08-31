@@ -189,7 +189,7 @@ func TestReleaseIntentReadAPIAndBeforeImagePresence(t *testing.T) {
 		t.Fatalf("cross-ledger load error = %v", err)
 	}
 
-	server := httpinterface.New(application, slog.New(slog.NewTextHandler(io.Discard, nil)), "test")
+	server := httpinterface.New(application, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/ledgers/"+ledgerValue.ID+"/release-intents?status=RECOVERY_REQUIRED", nil)
 	server.Handler().ServeHTTP(response, request)
