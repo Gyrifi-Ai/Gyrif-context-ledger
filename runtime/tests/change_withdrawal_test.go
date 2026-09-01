@@ -77,6 +77,7 @@ func TestWithdrawalGuardsAndReasonValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForChangeStatus(t, application, ledgerID, change.ID, ledger.ChangeReady)
 	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Claim", ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -113,6 +114,7 @@ func TestReleasedChangeCannotBeWithdrawn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForChangeStatus(t, application, ledgerID, change.ID, ledger.ChangeReady)
 	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Release", ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)

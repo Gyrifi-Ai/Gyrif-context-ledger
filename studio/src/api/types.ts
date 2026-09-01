@@ -29,6 +29,9 @@ export type Change = {
   baseFingerprint: string;
   desiredFingerprint: string;
   status: "ACCEPTED" | "READY" | "INVALID" | "RELEASED" | "WITHDRAWN";
+  invalidReason?: string;
+  noop?: boolean;
+  stalled?: boolean;
   createdAt: string;
 };
 

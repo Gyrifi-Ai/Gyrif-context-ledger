@@ -31,6 +31,7 @@ func approvedProposal(t *testing.T, application *engine.Engine, ledgerID, suffix
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForChangeStatus(t, application, ledgerID, change.ID, ledger.ChangeReady)
 	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Proposal " + suffix, ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -160,6 +161,9 @@ func TestReleaseIntentReadAPIAndBeforeImagePresence(t *testing.T) {
 		t.Fatal(err)
 	}
 	application := engine.New(repo, target, nil)
+	if err := application.StartPreparation(context.Background(), engine.PreparationOptions{BatchSize: 25, Lease: 50 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = application.Close() })
 	ledgerValue, err := application.CreateLedger(ctx, "Read ledger", "")
 	if err != nil {

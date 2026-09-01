@@ -80,3 +80,7 @@ type TargetAdapter interface {
 type HealthChecker interface {
 	Health(context.Context) error
 }
+
+type ChangePreparer interface {
+	Prepare(context.Context, ledger.Change) (Value, error)
+}

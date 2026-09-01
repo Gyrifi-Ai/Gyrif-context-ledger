@@ -45,6 +45,17 @@ type OperationalStats struct {
 	PendingChanges    int64
 }
 
+type PreparationUpdate struct {
+	LedgerID        string
+	ChangeID        string
+	Owner           string
+	Status          ledger.ChangeStatus
+	BaseFingerprint string
+	Noop            bool
+	InvalidReason   string
+	RetryAfter      *time.Time
+}
+
 type Repository interface {
 	Readiness(context.Context) (bool, error)
 	DatabaseStats(context.Context) (OperationalStats, error)
@@ -57,6 +68,8 @@ type Repository interface {
 	FindChangeByIdempotencyKey(context.Context, string, string) (ledger.Change, error)
 	InsertChange(context.Context, *ledger.Change) error
 	WithdrawChange(context.Context, string, string, string, time.Time) (bool, error)
+	ClaimChangesForPreparation(context.Context, string, int, int, time.Time, time.Time) ([]ledger.Change, error)
+	CompleteChangePreparation(context.Context, PreparationUpdate) (bool, error)
 	ListChanges(context.Context, string, ListOptions) (Page[ledger.Change], error)
 	LoadChanges(context.Context, string, []string) ([]ledger.Change, error)
 	InsertProposal(context.Context, ledger.Proposal) error

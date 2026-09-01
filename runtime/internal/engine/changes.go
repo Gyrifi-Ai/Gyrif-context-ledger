@@ -62,7 +62,7 @@ func (engine *Engine) CreateChange(ctx context.Context, ledgerID string, request
 	if err != nil {
 		return ledger.Change{}, wrap(CodeInternal, "Could not create the Change.", err)
 	}
-	value := ledger.Change{ID: id, LedgerID: ledgerID, Unit: request.Unit, Action: request.Action, Desired: request.Desired, DesiredFingerprint: ledger.Fingerprint(request.Desired), IdempotencyKey: request.IdempotencyKey, RequestFingerprint: requestFingerprint, Status: ledger.ChangeReady, CreatedAt: time.Now().UTC()}
+	value := ledger.Change{ID: id, LedgerID: ledgerID, Unit: request.Unit, Action: request.Action, Desired: request.Desired, DesiredFingerprint: ledger.Fingerprint(request.Desired), IdempotencyKey: request.IdempotencyKey, RequestFingerprint: requestFingerprint, Status: ledger.ChangeAccepted, CreatedAt: time.Now().UTC()}
 	if err := ledger.ValidateChange(value); err != nil {
 		return ledger.Change{}, wrap(CodeInvalid, err.Error(), err)
 	}
@@ -83,5 +83,6 @@ func (engine *Engine) CreateChange(ctx context.Context, ledgerID string, request
 	}
 	engine.metrics.ChangeAccepted()
 	engine.publish(EventChangeAccepted, ledgerID, value.ID)
+	engine.wakePreparation()
 	return value, nil
 }

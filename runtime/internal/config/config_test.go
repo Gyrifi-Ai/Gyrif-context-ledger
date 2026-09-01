@@ -13,6 +13,7 @@ func clearConfigEnvironment(t *testing.T) {
 		"GYRIFI_QDRANT_API_KEY", "GYRIFI_EVALUATION_PROVIDER", "GYRIFI_MODEL_PATH", "GYRIFI_LLAMA_SERVER_PATH",
 		"GYRIFI_LLAMA_SERVER_PORT", "GYRIFI_LOG_LEVEL",
 		"GYRIFI_INFERENCE_MAX_RESTARTS",
+		"GYRIFI_PREPARE_BATCH_SIZE", "GYRIFI_PREPARE_LEASE",
 	} {
 		t.Setenv(name, "")
 	}
@@ -24,7 +25,7 @@ func TestOperationalConfigurationDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.MetricsAddress != "127.0.0.1:9090" || value.DrainDelay != 0 || value.InferenceRestarts != 5 {
+	if value.MetricsAddress != "127.0.0.1:9090" || value.DrainDelay != 0 || value.InferenceRestarts != 5 || value.PrepareBatchSize != 25 || value.PrepareLease != 2*time.Minute {
 		t.Fatalf("operational defaults = %q %s", value.MetricsAddress, value.DrainDelay)
 	}
 }
@@ -57,6 +58,17 @@ func TestOperationalConfigurationValidation(t *testing.T) {
 		t.Setenv("GYRIFI_INFERENCE_MAX_RESTARTS", "0")
 		if _, err := Load(); err == nil {
 			t.Fatal("expected zero restart limit to fail")
+		}
+	})
+	t.Run("preparation settings are bounded", func(t *testing.T) {
+		for name, value := range map[string]string{"GYRIFI_PREPARE_BATCH_SIZE": "0", "GYRIFI_PREPARE_LEASE": "0s"} {
+			t.Run(name, func(t *testing.T) {
+				clearConfigEnvironment(t)
+				t.Setenv(name, value)
+				if _, err := Load(); err == nil {
+					t.Fatalf("expected %s validation failure", name)
+				}
+			})
 		}
 	})
 }

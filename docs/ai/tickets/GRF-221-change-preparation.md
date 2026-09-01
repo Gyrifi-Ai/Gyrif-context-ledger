@@ -68,22 +68,22 @@ Outcomes:
 
 ## Acceptance criteria
 
-- [ ] Migration `006_change_preparation.sql` adds to `changes`: `prepare_owner TEXT`, `prepare_claimed_at TEXT`, `prepare_attempts INTEGER NOT NULL DEFAULT 0`, `prepare_after TEXT`, `invalid_reason TEXT`, `noop INTEGER NOT NULL DEFAULT 0`. Existing rows are backfilled to `READY` and untouched otherwise.
-- [ ] `CreateChange` inserts `ACCEPTED` and still returns `202` with the same body shape.
-- [ ] Idempotent replays still return the existing Change without re-queuing preparation.
-- [ ] The worker lives in `runtime/internal/engine/preparation.go` and is started and stopped by `bootstrap` with the process context.
-- [ ] **No target I/O occurs inside a SQLite transaction.** A code review checklist item and, where feasible, a test using a target fake that asserts the DB is not holding a write transaction during its call.
-- [ ] Claims are reclaimed when `prepare_claimed_at` is older than a bounded lease (default 2 minutes), so a crash cannot strand a Change permanently.
-- [ ] Retryable failures use bounded exponential backoff (e.g. 1s, 2s, 4s … capped at 5 minutes) and never transition to `INVALID`.
-- [ ] After a configurable attempt ceiling the Change stays `ACCEPTED` and is surfaced as stalled; it is **not** marked `INVALID`.
-- [ ] `INVALID` is written only for adapter-reported semantic rejections, always with a non-empty `invalid_reason`.
-- [ ] `base_fingerprint` is computed with the same `ledger.Fingerprint` function used elsewhere — no parallel implementation.
-- [ ] Proposal creation rejects Changes that are not `READY` with `409 CONFLICT` naming the offending status.
-- [ ] The worker is idle-cheap: no busy loop, no per-second polling of an empty queue. Use a ticker with a modest interval plus a wake channel signalled by `CreateChange`.
-- [ ] Shutting the process down mid-preparation leaves no Change in an unrecoverable state, verified by a test.
-- [ ] New config: `GYRIFI_PREPARE_BATCH_SIZE` (default 25), `GYRIFI_PREPARE_LEASE` (default `2m`), validated like the existing config values.
-- [ ] Studio Changes inbox renders `ACCEPTED` (with a "Preparing" label and a `Skeleton` fingerprint), `INVALID` (with the reason), and a `No change needed` marker for `noop` rows. The status filter includes all four.
-- [ ] `go test ./...`, `pnpm typecheck`, `pnpm test` pass.
+- [x] Migration `006_change_preparation.sql` adds to `changes`: `prepare_owner TEXT`, `prepare_claimed_at TEXT`, `prepare_attempts INTEGER NOT NULL DEFAULT 0`, `prepare_after TEXT`, `invalid_reason TEXT`, `noop INTEGER NOT NULL DEFAULT 0`. Existing rows are backfilled to `READY` and untouched otherwise.
+- [x] `CreateChange` inserts `ACCEPTED` and still returns `202` with the same body shape.
+- [x] Idempotent replays still return the existing Change without re-queuing preparation.
+- [x] The worker lives in `runtime/internal/engine/preparation.go` and is started and stopped by `bootstrap` with the process context.
+- [x] **No target I/O occurs inside a SQLite transaction.** A code review checklist item and, where feasible, a test using a target fake that asserts the DB is not holding a write transaction during its call.
+- [x] Claims are reclaimed when `prepare_claimed_at` is older than a bounded lease (default 2 minutes), so a crash cannot strand a Change permanently.
+- [x] Retryable failures use bounded exponential backoff (e.g. 1s, 2s, 4s … capped at 5 minutes) and never transition to `INVALID`.
+- [x] After a configurable attempt ceiling the Change stays `ACCEPTED` and is surfaced as stalled; it is **not** marked `INVALID`.
+- [x] `INVALID` is written only for adapter-reported semantic rejections, always with a non-empty `invalid_reason`.
+- [x] `base_fingerprint` is computed with the same `ledger.Fingerprint` function used elsewhere — no parallel implementation.
+- [x] Proposal creation rejects Changes that are not `READY` with `409 CONFLICT` naming the offending status.
+- [x] The worker is idle-cheap: no busy loop, no per-second polling of an empty queue. Use a ticker with a modest interval plus a wake channel signalled by `CreateChange`.
+- [x] Shutting the process down mid-preparation leaves no Change in an unrecoverable state, verified by a test.
+- [x] New config: `GYRIFI_PREPARE_BATCH_SIZE` (default 25), `GYRIFI_PREPARE_LEASE` (default `2m`), validated like the existing config values.
+- [x] Studio Changes inbox renders `ACCEPTED` (with a "Preparing" label and a `Skeleton` fingerprint), `INVALID` (with the reason), and a `No change needed` marker for `noop` rows. The status filter includes all four.
+- [x] `go test ./...`, `pnpm typecheck`, `pnpm test` pass.
 
 ## Implementation notes
 

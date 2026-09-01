@@ -6,6 +6,7 @@ import { ApiError } from "../../api/client";
 import type { Change } from "../../api/types";
 import { ChangesPage } from "./changes-page";
 import { SelectionActionBar } from "./selection-action-bar";
+import { ChangeDetailDrawer } from "./change-detail-drawer";
 
 const mocks = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
@@ -78,6 +79,19 @@ describe("ChangesPage", () => {
     expect(html).toContain('aria-label="Select chg_released"');
     expect(html).toContain('title="RELEASED Changes cannot be added to a Proposal."');
     expect(html).toMatch(/aria-label="Select chg_released"[^>]*disabled/);
+  });
+
+  it("renders preparation, semantic rejection, and no-op outcomes", () => {
+    const accepted: Change = { ...ready, id: "chg_accepted", status: "ACCEPTED" };
+    mocks.query = queryState({ data: { items: [accepted, { ...ready, noop: true }] } });
+    const inbox = renderToStaticMarkup(<ChangesPage />);
+    expect(inbox).toContain("Preparing");
+    expect(inbox).toContain("No change needed");
+
+    const invalid: Change = { ...ready, status: "INVALID", invalidReason: "unsupported vector dimensions" };
+    const detail = renderToStaticMarkup(<ChangeDetailDrawer change={invalid} onClose={() => undefined} onWithdraw={() => undefined} />);
+    expect(detail).toContain("Invalid Change");
+    expect(detail).toContain("unsupported vector dimensions");
   });
 
   it("renders loading, empty, and error states", () => {

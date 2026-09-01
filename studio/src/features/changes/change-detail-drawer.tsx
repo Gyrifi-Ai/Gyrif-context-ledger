@@ -8,6 +8,7 @@ import { ConfirmDialog } from "../../ui/patterns/confirm-dialog";
 import { CodeBlock } from "../../ui/patterns/code-block";
 import { HashChip } from "../../ui/patterns/hash-chip";
 import { StatusBadge } from "../../ui/patterns/status-badge";
+import { Skeleton } from "../../ui/feedback/skeleton";
 import { changeTone } from "../shared/status";
 
 export function ChangeDetailDrawer({ change, onClose, onWithdraw, withdrawPending = false, withdrawBlocked = false, withdrawDisabledReason, withdrawError }: { change: Change | null; onClose: () => void; onWithdraw: (reason: string) => void; withdrawPending?: boolean; withdrawBlocked?: boolean; withdrawDisabledReason?: string; withdrawError?: string }) {
@@ -28,10 +29,12 @@ export function ChangeDetailDrawer({ change, onClose, onWithdraw, withdrawPendin
             <dt className="text-muted-foreground">Sequence</dt><dd>{change.sequence}</dd>
             <dt className="text-muted-foreground">Unit</dt><dd className="break-all font-mono text-xs">{change.unit}</dd>
             <dt className="text-muted-foreground">Action</dt><dd>{change.action}</dd>
-            <dt className="text-muted-foreground">Status</dt><dd><StatusBadge label={change.status} tone={changeTone(change.status)} /></dd>
+            <dt className="text-muted-foreground">Status</dt><dd><StatusBadge label={change.stalled ? "Stalled" : change.status === "ACCEPTED" ? "Preparing" : change.status} tone={changeTone(change.status)} /></dd>
             <dt className="text-muted-foreground">Created</dt><dd><time dateTime={change.createdAt}>{change.createdAt}</time></dd>
           </dl>
-          <div><p className="mb-2 text-xs font-medium text-muted-foreground">Base fingerprint</p>{change.baseFingerprint ? <HashChip value={change.baseFingerprint} /> : <p>Not captured — base fingerprints are recorded from GRF-221 onward.</p>}</div>
+          <div><p className="mb-2 text-xs font-medium text-muted-foreground">Base fingerprint</p>{change.status === "ACCEPTED" ? <div aria-label="Preparing base fingerprint"><Skeleton width="12rem" /></div> : change.baseFingerprint ? <HashChip value={change.baseFingerprint} /> : <p>Unit absent when prepared.</p>}</div>
+          {change.status === "INVALID" && <div role="alert" className="rounded-md border border-danger/30 bg-danger/5 p-3"><p className="font-medium text-danger">Invalid Change</p><p className="mt-1">{change.invalidReason}</p></div>}
+          {change.noop && <p className="rounded-md border border-border bg-muted/40 p-3 font-medium">No change needed</p>}
           <div><p className="mb-2 text-xs font-medium text-muted-foreground">Desired fingerprint</p><HashChip value={change.desiredFingerprint} /></div>
           <div><p className="mb-2 text-xs font-medium text-muted-foreground">Desired value</p><CodeBlock value={change.desired ?? null} /></div>
         </div>

@@ -260,13 +260,14 @@ func scanChange(scanner interface{ Scan(...any) error }) (ledger.Change, error) 
 	var item ledger.Change
 	var created string
 	var desired []byte
-	err := scanner.Scan(&item.ID, &item.LedgerID, &item.Sequence, &item.Unit, &item.Action, &desired, &item.BaseFingerprint, &item.DesiredFingerprint, &item.IdempotencyKey, &item.RequestFingerprint, &item.Status, &created)
+	err := scanner.Scan(&item.ID, &item.LedgerID, &item.Sequence, &item.Unit, &item.Action, &desired, &item.BaseFingerprint, &item.DesiredFingerprint, &item.IdempotencyKey, &item.RequestFingerprint, &item.Status, &item.InvalidReason, &item.Noop, &item.PreparationAttempts, &created)
 	item.Desired = desired
+	item.Stalled = item.Status == ledger.ChangeAccepted && item.PreparationAttempts >= 10
 	item.CreatedAt = parseTime(created)
 	return item, err
 }
 
-const changeColumns = `id,ledger_id,sequence,unit_key,action,desired,base_fingerprint,desired_fingerprint,idempotency_key,request_fingerprint,status,created_at`
+const changeColumns = `id,ledger_id,sequence,unit_key,action,desired,base_fingerprint,desired_fingerprint,idempotency_key,request_fingerprint,status,COALESCE(invalid_reason,''),noop,prepare_attempts,created_at`
 
 func (repository *SQLite) FindChangeByIdempotencyKey(ctx context.Context, ledgerID, key string) (ledger.Change, error) {
 	item, err := scanChange(repository.db.QueryRowContext(ctx, `SELECT `+changeColumns+` FROM changes WHERE ledger_id=? AND idempotency_key=?`, ledgerID, key))
@@ -367,7 +368,79 @@ func (repository *SQLite) WithdrawChange(ctx context.Context, ledgerID, changeID
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE changes SET status=?,withdrawn_at=?,withdrawn_reason=? WHERE ledger_id=? AND id=?`, ledger.ChangeWithdrawn, formatTime(withdrawnAt), reason, ledgerID, changeID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE changes SET status=?,withdrawn_at=?,withdrawn_reason=?,prepare_owner=NULL,prepare_claimed_at=NULL,prepare_after=NULL WHERE ledger_id=? AND id=?`, ledger.ChangeWithdrawn, formatTime(withdrawnAt), reason, ledgerID, changeID); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+func (repository *SQLite) ClaimChangesForPreparation(ctx context.Context, owner string, limit, maxAttempts int, now, leaseExpiredBefore time.Time) ([]ledger.Change, error) {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM changes
+		WHERE status=? AND prepare_attempts<? AND (prepare_after IS NULL OR prepare_after<=?)
+		AND (prepare_owner IS NULL OR prepare_claimed_at<?)
+		ORDER BY created_at,id LIMIT ?`, ledger.ChangeAccepted, maxAttempts, formatTime(now), formatTime(leaseExpiredBefore), limit)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, limit)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	items := make([]ledger.Change, 0, len(ids))
+	for _, id := range ids {
+		result, err := tx.ExecContext(ctx, `UPDATE changes SET prepare_owner=?,prepare_claimed_at=? WHERE id=? AND status=? AND (prepare_owner IS NULL OR prepare_claimed_at<?)`, owner, formatTime(now), id, ledger.ChangeAccepted, formatTime(leaseExpiredBefore))
+		if err != nil {
+			return nil, err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if changed == 0 {
+			continue
+		}
+		item, err := scanChange(tx.QueryRowContext(ctx, `SELECT `+changeColumns+` FROM changes WHERE id=?`, id))
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (repository *SQLite) CompleteChangePreparation(ctx context.Context, update PreparationUpdate) (bool, error) {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var result sql.Result
+	if update.RetryAfter != nil {
+		result, err = tx.ExecContext(ctx, `UPDATE changes SET prepare_owner=NULL,prepare_claimed_at=NULL,prepare_attempts=prepare_attempts+1,prepare_after=? WHERE ledger_id=? AND id=? AND status=? AND prepare_owner=?`, formatTime(*update.RetryAfter), update.LedgerID, update.ChangeID, ledger.ChangeAccepted, update.Owner)
+	} else {
+		result, err = tx.ExecContext(ctx, `UPDATE changes SET status=?,base_fingerprint=?,noop=?,invalid_reason=?,prepare_owner=NULL,prepare_claimed_at=NULL,prepare_after=NULL WHERE ledger_id=? AND id=? AND status=? AND prepare_owner=?`, update.Status, update.BaseFingerprint, update.Noop, update.InvalidReason, update.LedgerID, update.ChangeID, ledger.ChangeAccepted, update.Owner)
+	}
+	if err != nil {
+		return false, err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed == 0 {
 		return false, err
 	}
 	return true, tx.Commit()

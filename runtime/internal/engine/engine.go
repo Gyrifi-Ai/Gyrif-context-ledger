@@ -44,13 +44,17 @@ func PublicError(err error) (ErrorCode, string) {
 }
 
 type Engine struct {
-	repository   repository.Repository
-	target       targets.TargetAdapter
-	targetHealth any
-	inference    inference.Provider
-	metrics      MetricSink
-	releaseMu    sync.Mutex
-	events       *Broker
+	repository      repository.Repository
+	target          targets.TargetAdapter
+	targetHealth    any
+	inference       inference.Provider
+	metrics         MetricSink
+	releaseMu       sync.Mutex
+	events          *Broker
+	preparationMu   sync.Mutex
+	preparation     *preparationWorker
+	preparationWake chan struct{}
+	noTargetWarning sync.Once
 }
 
 func New(repo repository.Repository, target targets.TargetAdapter, provider inference.Provider, sinks ...MetricSink) *Engine {
@@ -62,7 +66,7 @@ func New(repo repository.Repository, target targets.TargetAdapter, provider infe
 	if target != nil {
 		metered = &meteredTarget{target: target, metrics: metrics}
 	}
-	return &Engine{repository: repo, target: metered, targetHealth: target, inference: provider, metrics: metrics, events: &Broker{}}
+	return &Engine{repository: repo, target: metered, targetHealth: target, inference: provider, metrics: metrics, events: &Broker{}, preparationWake: make(chan struct{}, 1)}
 }
 func (engine *Engine) InferenceName() string {
 	if engine.inference == nil {
@@ -85,7 +89,10 @@ func (engine *Engine) InferenceState() string {
 	}
 	return "ready"
 }
-func (engine *Engine) Close() error { return engine.repository.Close() }
+func (engine *Engine) Close() error {
+	engine.StopPreparation()
+	return engine.repository.Close()
+}
 
 func (engine *Engine) CreateLedger(ctx context.Context, name, description string) (ledger.Ledger, error) {
 	name = strings.TrimSpace(name)

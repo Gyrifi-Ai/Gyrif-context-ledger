@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference"
@@ -34,6 +35,9 @@ func TestUnavailableInferenceDoesNotPersistCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	application := engine.New(repo, &memoryTarget{values: map[string]json.RawMessage{}}, unavailableInference{})
+	if err := application.StartPreparation(context.Background(), engine.PreparationOptions{BatchSize: 25, Lease: 50 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = application.Close() })
 	ledgerValue, err := application.CreateLedger(ctx, "Inference ledger", "")
 	if err != nil {

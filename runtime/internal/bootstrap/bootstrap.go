@@ -81,6 +81,9 @@ func Run(ctx context.Context, args []string) error {
 	if err := application.RecoverReleases(ctx); err != nil {
 		logger.Error("release recovery needs attention", "error", err)
 	}
+	if err := application.StartPreparation(ctx, engine.PreparationOptions{BatchSize: settings.PrepareBatchSize, Lease: settings.PrepareLease}); err != nil {
+		return fmt.Errorf("start Change preparation: %w", err)
+	}
 	api := httpinterface.New(application, logger, metrics)
 	defer api.Close()
 	server := &http.Server{Addr: settings.HTTPAddress, Handler: api.Handler(), BaseContext: func(net.Listener) context.Context { return ctx }, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}

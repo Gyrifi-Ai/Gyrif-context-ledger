@@ -9,7 +9,7 @@
 | ID | Title | Size | Depends on | Status |
 |---|---|---|---|---|
 | [GRF-223](../tickets/GRF-223-build-metadata.md) | Build metadata and version consistency | S | — | Done |
-| [GRF-221](../tickets/GRF-221-change-preparation.md) | Asynchronous Change preparation and base fingerprint | L | — | Not started |
+| [GRF-221](../tickets/GRF-221-change-preparation.md) | Asynchronous Change preparation and base fingerprint | L | — | Done |
 | [GRF-222](../tickets/GRF-222-retention-backup.md) | Retention budgets, quotas, and backup command | L | — | Not started |
 | [GRF-224](../tickets/GRF-224-health-and-metrics.md) | Health, readiness, and operational metrics | M | — | Done |
 | [GRF-225](../tickets/GRF-225-inference-supervision.md) | Inference process supervision | M | — | Done |
@@ -752,3 +752,123 @@ tickets consistent
 **Follow-ups discovered**
 
 None. Multiple inference workers, provider fallback, and model provisioning remain intentionally out of scope and do not require backlog changes.
+
+### GRF-221 — Asynchronous Change preparation and base fingerprint
+
+| | |
+|---|---|
+| Completed | 2026-09-01 |
+| Commit / PR | Uncommitted workspace change |
+| Deviated from ticket | No |
+
+**What was built**
+
+New Changes now commit as `ACCEPTED` and are prepared by a bounded in-process worker after release recovery. The worker atomically claims eligible rows, reads and validates the target outside SQLite transactions, then owner-guards READY, INVALID, or retry updates. It captures observed fingerprints, identifies no-ops, reclaims expired leases, exposes exhausted retries as stalled, and publishes completion events; Studio renders each outcome.
+
+**Files added**
+
+- `runtime/migrations/006_change_preparation.sql` — preparation lease, retry, semantic failure, no-op, and queue schema
+- `runtime/internal/engine/preparation.go` — worker lifecycle and target/retry orchestration
+- `runtime/internal/ledger/preparation_outcome_test.go` — exhaustive pure outcome table
+- `runtime/tests/change_preparation_test.go` — target outcomes, retries, shutdown, no-target, and 200-Change concurrency coverage
+
+**Files changed**
+
+- `runtime/internal/{bootstrap,config,engine,ledger,repository,targets}` — worker composition, settings, contracts, persistence, Qdrant validation, events, and lifecycle integration
+- `runtime/tests` and `runtime/internal/interfaces/http/*_test.go` — existing flows now wait for durable asynchronous readiness
+- `studio/src/api/types.ts` and `studio/src/features/changes/*` — preparation wire fields and outcome presentation
+- `docs/ai/{product,tech-spec,repo-structure,design-system}.md` — current preparation contracts
+- `docs/ai/tickets/{GRF-221-change-preparation,INDEX}.md` and this file — completion records
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```go
+type PreparationOptions struct {
+	BatchSize int
+	Lease     time.Duration
+}
+func (engine *Engine) StartPreparation(context.Context, PreparationOptions) error
+func (engine *Engine) StopPreparation()
+
+type ChangePreparer interface {
+	Prepare(context.Context, ledger.Change) (Value, error)
+}
+
+func (repository *SQLite) ClaimChangesForPreparation(context.Context, string, int, int, time.Time, time.Time) ([]ledger.Change, error)
+func (repository *SQLite) CompleteChangePreparation(context.Context, repository.PreparationUpdate) (bool, error)
+```
+
+```text
+GYRIFI_PREPARE_BATCH_SIZE=25
+GYRIFI_PREPARE_LEASE=2m
+```
+
+`Change` responses add `invalidReason?`, `noop`, and `stalled`. Migration 006 adds `prepare_owner`, `prepare_claimed_at`, `prepare_attempts`, `prepare_after`, `invalid_reason`, and `noop`. Events add `change.ready` and `change.invalid`.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Keep the ten-attempt ceiling internal | The ticket authorizes configuration only for batch size and lease | Add another environment key | Expands the operational contract beyond scope |
+| Make Qdrant implement optional `ChangePreparer` | Desired semantic validation must happen before READY while ordinary targets can retain `Read` | Call `Compile` | Qdrant compilation also performs collection network I/O unrelated to local desired validation |
+| Owner- and status-guard every completion | Reclaim or withdrawal must make stale work harmless | Update by Change ID alone | A delayed worker could overwrite `WITHDRAWN` or another owner's result |
+| Wait for generated rollback Changes before constructing their Proposal | Existing rollback remains one operation while the READY-only invariant becomes real | Return a transient conflict after creating rollback Changes | Would break the established rollback API contract and force caller retries |
+
+**Deviations from the ticket**
+
+None. Qdrant currently has no batch-read API, so the optional implementation note to batch where supported does not apply; preparation uses its existing individual read contract.
+
+**Traps for future work**
+
+- The metered target wrapper does not expose optional adapter interfaces; preparation checks the original adapter retained in `targetHealth` for `ChangePreparer` and otherwise uses the metered `Read` path.
+- Target I/O must remain between claim commit and completion transaction. Never move adapter calls into either repository method.
+- The worker's attempt ceiling and `scanChange` stalled projection must change together.
+- Rollback synthesis now depends on the preparation worker being started by bootstrap before the endpoint is served.
+
+**Tests added**
+
+- `runtime/internal/ledger/preparation_outcome_test.go` — all PUT/DELETE present/absent/equal outcomes
+- `runtime/internal/repository/sqlite_test.go` — expired lease reclaim and stale-owner rejection
+- `runtime/tests/change_preparation_test.go` — observed fingerprints, no-op, semantic INVALID reason, retry without invalidation, no-target readiness, cancellable shutdown, and exactly-once reads for 200 concurrent Changes
+- `studio/src/features/changes/changes-page.test.tsx` — Preparing, semantic reason, and no-op rendering
+
+**Docs updated**
+
+- `docs/ai/product.md` §§2, 3, 5, and 7 — real lifecycle and gap closure
+- `docs/ai/tech-spec.md` §§2, 6–8, 12, and 14 — settings, worker, wire/schema, tests, and gap closure
+- `docs/ai/repo-structure.md` — preparation worker location
+- `docs/ai/design-system.md` §5.2 — preparation outcome presentation
+
+**Verification**
+
+```text
+$ test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok runtime/internal/engine 1.647s
+ok runtime/internal/interfaces/http 3.428s
+ok runtime/internal/repository 3.700s
+ok runtime/tests 12.034s
+
+$ pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Already up to date
+Test Files 48 passed (48)
+Tests 158 passed (158)
+✓ 1868 modules transformed.
+✓ built in 792ms
+
+$ docker build -t gyrifi:local .
+[+] Building 36.0s (31/31) FINISHED
+=> => naming to docker.io/library/gyrifi:local
+
+$ ticket index consistency check
+tickets consistent
+$ git diff --check
+diff whitespace: clean
+```
+
+**Follow-ups discovered**
+
+Qdrant advertises batch capability for apply semantics but exposes no batch-read adapter contract. A future performance ticket may add batch reads if preparation throughput demonstrates that individual reads are limiting; no dependency or speculative interface was added here.

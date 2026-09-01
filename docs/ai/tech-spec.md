@@ -72,6 +72,8 @@ ADR 0002 deliberately provides no application authentication or authorisation. E
 | `GYRIFI_LLAMA_SERVER_PATH` | `llama-server` | image sets `/opt/llama/llama-server` |
 | `GYRIFI_LLAMA_SERVER_PORT` | `8081` | integer in `1..65535` |
 | `GYRIFI_INFERENCE_MAX_RESTARTS` | `5` | positive integer; consecutive failed restart attempts before permanent failure |
+| `GYRIFI_PREPARE_BATCH_SIZE` | `25` | integer from 1 through 200 |
+| `GYRIFI_PREPARE_LEASE` | `2m` | positive Go duration |
 | `GYRIFI_LOG_LEVEL` | `info` | lowercased; `debug` raises the slog level |
 
 Empty-or-whitespace values fall back to the default (helper `environment(name, fallback)`).
@@ -192,6 +194,8 @@ data: {"kind":"proposal.created","ledgerId":"ldg_…","subjectId":"pr_…","at":
 | Event kind | Durable transition | `subjectId` |
 |---|---|---|
 | `change.accepted` | a new Change is inserted; idempotent replays do not emit | Change ID |
+| `change.ready` | preparation records the observed base and commits `READY` | Change ID |
+| `change.invalid` | the target adapter semantically rejects desired state | Change ID |
 | `proposal.created` | a Proposal and its ordered claims are inserted | Proposal ID |
 | `proposal.evaluated` | evaluation evidence is saved | Proposal ID |
 | `proposal.approved` | approval bound to the current hash is saved | Proposal ID |
@@ -234,6 +238,9 @@ type Change struct {
     IdempotencyKey     string          `json:"-"`                    // never serialised
     RequestFingerprint string          `json:"-"`                    // never serialised
     Status             ChangeStatus    `json:"status"`
+    InvalidReason      string          `json:"invalidReason,omitempty"`
+    Noop               bool            `json:"noop"`
+    Stalled            bool            `json:"stalled"`
     CreatedAt          time.Time       `json:"createdAt"`
 }
 
@@ -334,7 +341,7 @@ The read-API `CheckResult` exposes `id`, `proposalHash`, `kind`, `passed`, `summ
 | `ProposalStatus` | `DRAFT`, `REVIEWED`, `APPROVED`, `RELEASED`, `BLOCKED`, `CANCELLED` |
 | `ReleaseIntentStatus` | `READY`, `APPLYING`, `VERIFYING`, `FINALIZED`, `RECOVERY_REQUIRED`, `ABANDONED` |
 
-`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, `RELEASED` after finalization, and `CANCELLED` by Draft cancellation. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, HEAD, and terminal-state predicates. `Change.status` is accepted as `READY`, becomes `RELEASED` on finalization, or becomes `WITHDRAWN` through the guarded lifecycle endpoint.
+`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, `RELEASED` after finalization, and `CANCELLED` by Draft cancellation. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, HEAD, and terminal-state predicates. `Change.status` begins as `ACCEPTED`, preparation writes `READY` or semantic `INVALID`, finalization writes `RELEASED`, and the guarded lifecycle endpoint writes `WITHDRAWN`.
 
 ---
 
@@ -412,6 +419,8 @@ func (e *Engine) ProbeHealth(ctx context.Context) SystemHealth
 - `PUT` desired JSON is compacted via `json.Compact`; invalid JSON ⇒ `INVALID_ARGUMENT`.
 - `DELETE` forces `Desired = nil`.
 - Repository scans route nullable `desired` through `[]byte`, so lists containing DELETE Changes remain readable and omit `desired` from the JSON response.
+- New rows commit as `ACCEPTED`; only a successful insert wakes preparation. Idempotent replay returns the existing row without re-queueing it.
+- `StartPreparation(ctx, PreparationOptions{BatchSize, Lease})` claims bounded batches, performs target reads outside transactions, and owner-guards READY/INVALID/retry commits. Retry delays double from one second to a five-minute cap; ten failures leave the row `ACCEPTED` and expose `stalled=true`.
 - Idempotency is checked **before** insert and again on insert failure (race-safe fallback).
 - Status is set to `READY` at insert.
 - Desired bytes are written to the CAS as `VALUE` before the row insert.
@@ -673,6 +682,8 @@ All timestamps are TEXT in UTC (`time.Now().UTC()`).
 ### Migration 005 — Lifecycle management
 
 `005_lifecycle.sql` adds nullable `ledgers.archived_at`, `changes.withdrawn_at`, and `changes.withdrawn_reason`, plus an archive-aware Ledger list index. The nullable columns preserve all pre-existing rows as active and unwithdrawn. The ticket's planned filename was `007_lifecycle.sql`; actual immutable apply order requires 005.
+
+`006_change_preparation.sql` adds reclaimable preparation ownership/timing, attempt tracking, `invalid_reason`, and `noop` to Changes, backfills previously unused preparation states to `READY`, and adds the queue index. Completion updates require the current owner and `ACCEPTED` status, so withdrawal or lease reclaim prevents stale workers from overwriting lifecycle state.
 
 **Migration rules:** never edit an applied migration. Add `00N_description.sql`. SQLite cannot drop or alter most constraints — prefer additive columns with defaults, or a create-copy-rename table rebuild inside one transaction.
 
@@ -981,6 +992,5 @@ The e2e package is intentionally outside the root pnpm workspace and owns its lo
 
 | Gap | Ticket |
 |---|---|
-| `Change.baseFingerprint` is always `""`; no async preparation phase | GRF-221 |
 | No retention budget, quota, or backup command | GRF-222 |
 | No rate limiting; `SetMaxOpenConns(1)` makes write floods starve reads | GRF-226 |

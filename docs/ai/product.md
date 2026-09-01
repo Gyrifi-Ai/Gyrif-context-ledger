@@ -52,7 +52,7 @@ One desired-state mutation of one **logical unit**. For the Qdrant adapter, the 
 | `sequence` | Monotonic per Ledger, assigned by the repository |
 | `status` | `ACCEPTED` \| `READY` \| `INVALID` \| `RELEASED` \| `WITHDRAWN` |
 
-**Current behaviour:** a newly accepted Change is inserted directly as `READY`. The `ACCEPTED` state and `baseFingerprint` capture exist in the model but are not produced by the acceptance path yet (GRF-221).
+New Changes are durably inserted as `ACCEPTED`. The background preparation worker observes the target outside any database transaction, then records `baseFingerprint` and transitions the Change to `READY`, or to `INVALID` only for an adapter-reported semantic rejection. Matching PUTs and absent DELETEs remain `READY` with `noop=true`; retry exhaustion remains `ACCEPTED` with `stalled=true`.
 
 Changes are **desired-state**, not diffs. Two Changes to the same unit in one Proposal are not merged; the plan applies them in Proposal order.
 
@@ -278,6 +278,5 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 
 | Gap | Ticket |
 |---|---|
-| `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
 | No retention limits, quotas, or backup command | GRF-222 |
 | No rate limiting — one client can starve every other | GRF-226 |

@@ -40,7 +40,7 @@ const columns: Column<Change>[] = [
     header: "DESIRED FINGERPRINT",
     render: (change) => <span onClick={(event) => event.stopPropagation()}><HashChip value={change.desiredFingerprint} /></span>,
   },
-  { key: "status", header: "STATUS", render: (change) => <StatusBadge label={change.status} tone={changeTone(change.status)} /> },
+  { key: "status", header: "STATUS", render: (change) => <div className="flex flex-wrap items-center gap-2"><StatusBadge label={change.stalled ? "Stalled" : change.status === "ACCEPTED" ? "Preparing" : change.status} tone={changeTone(change.status)} />{change.noop && <span className="text-xs font-medium text-muted-foreground">No change needed</span>}</div> },
   { key: "age", header: "AGE", render: (change) => <time dateTime={change.createdAt} title={change.createdAt}>{formatAge(change.createdAt)}</time> },
 ];
 

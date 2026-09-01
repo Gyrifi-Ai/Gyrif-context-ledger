@@ -23,11 +23,15 @@ type memoryTarget struct {
 	failVerify bool
 	failRead   bool
 	applyCalls int
+	readCalls  map[string]int
 }
 
 func (target *memoryTarget) Read(_ context.Context, unit string) (targets.Value, error) {
 	target.mu.Lock()
 	defer target.mu.Unlock()
+	if target.readCalls != nil {
+		target.readCalls[unit]++
+	}
 	if target.failRead {
 		return targets.Value{}, errors.New("injected read failure")
 	}
@@ -107,12 +111,34 @@ func newEngine(t *testing.T, target *memoryTarget) (*engine.Engine, string) {
 		t.Fatal(err)
 	}
 	application := engine.New(repo, target, nil)
+	if err := application.StartPreparation(context.Background(), engine.PreparationOptions{BatchSize: 25, Lease: 50 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
 	ledgerValue, err := application.CreateLedger(context.Background(), "Test ledger", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = application.Close() })
 	return application, ledgerValue.ID
+}
+
+func waitForChangeStatus(t *testing.T, application *engine.Engine, ledgerID, changeID string, status ledger.ChangeStatus) ledger.Change {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		page, err := application.ListChanges(context.Background(), ledgerID, engine.ListRequest{Limit: 200, Status: string(status)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, change := range page.Items {
+			if change.ID == changeID {
+				return change
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("Change %s did not reach %s", changeID, status)
+	return ledger.Change{}
 }
 
 func nextEvent(t *testing.T, events <-chan engine.Event) engine.Event {
@@ -148,6 +174,7 @@ func TestChangeProposalEvaluationApprovalReleaseFlow(t *testing.T) {
 	if _, err := application.CreateChange(ctx, ledgerID, request); err == nil {
 		t.Fatal("idempotency key reuse should conflict")
 	}
+	waitForChangeStatus(t, application, ledgerID, change.ID, ledger.ChangeReady)
 	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Answer update", ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -167,19 +194,20 @@ func TestChangeProposalEvaluationApprovalReleaseFlow(t *testing.T) {
 	}
 	wantKinds := []engine.EventKind{
 		engine.EventChangeAccepted,
+		engine.EventChangeReady,
 		engine.EventProposalCreated,
 		engine.EventProposalEvaluated,
 		engine.EventProposalApproved,
 		engine.EventReleaseStarted,
 		engine.EventReleaseCompleted,
 	}
-	wantSubjects := []string{change.ID, proposal.ID, proposal.ID, proposal.ID, "intent_", release.ID}
+	wantSubjects := []string{change.ID, change.ID, proposal.ID, proposal.ID, proposal.ID, "intent_", release.ID}
 	for index, wantKind := range wantKinds {
 		event := nextEvent(t, events)
 		if event.Kind != wantKind || event.LedgerID != ledgerID {
 			t.Fatalf("event %d = %#v, want kind %s for ledger %s", index, event, wantKind, ledgerID)
 		}
-		if index == 4 {
+		if index == 5 {
 			if !strings.HasPrefix(event.SubjectID, wantSubjects[index]) {
 				t.Fatalf("release.started subject = %q", event.SubjectID)
 			}
@@ -199,6 +227,7 @@ func TestChangeProposalEvaluationApprovalReleaseFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForChangeStatus(t, application, ledgerID, second.ID, ledger.ChangeReady)
 	secondProposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Second update", ChangeIDs: []string{second.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -247,6 +276,7 @@ func TestTargetApplyFailureLeavesUnfinishedIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForChangeStatus(t, application, ledgerID, change.ID, ledger.ChangeReady)
 	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Failure", ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -293,6 +323,7 @@ func TestTargetVerifyFailurePublishesReleaseFailed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForChangeStatus(t, application, ledgerID, change.ID, ledger.ChangeReady)
 	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Verification failure", ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)

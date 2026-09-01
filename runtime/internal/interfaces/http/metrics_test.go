@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
@@ -93,6 +94,9 @@ func metricsFlowServer(t *testing.T) (*Server, *engine.Engine, *Metrics, *metric
 	metrics := NewMetrics()
 	target := &metricsTarget{values: make(map[string]targets.Value)}
 	application := engine.New(repo, target, nil, metrics)
+	if err := application.StartPreparation(context.Background(), engine.PreparationOptions{BatchSize: 25, Lease: 50 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = application.Close() })
 	server := New(application, slog.New(slog.NewTextHandler(io.Discard, nil)), metrics)
 	t.Cleanup(server.Close)
@@ -200,6 +204,7 @@ func TestDomainCountersTrackDurableGovernanceFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitReady(t, application, ledgerValue.ID, change.ID)
 	proposal, err := application.CreateProposal(ctx, ledgerValue.ID, engine.CreateProposalRequest{Title: "metrics", ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -218,6 +223,7 @@ func TestDomainCountersTrackDurableGovernanceFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitReady(t, application, ledgerValue.ID, secondChange.ID)
 	secondProposal, err := application.CreateProposal(ctx, ledgerValue.ID, engine.CreateProposalRequest{Title: "metrics 2", ChangeIDs: []string{secondChange.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -261,6 +267,7 @@ func TestReleaseFailureCountersTrackApplyErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitReady(t, application, ledgerValue.ID, change.ID)
 	proposal, err := application.CreateProposal(ctx, ledgerValue.ID, engine.CreateProposalRequest{Title: "failure", ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)

@@ -36,6 +36,8 @@ func TestCancelProposalReleasesClaimsAndRetainsAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForChangeStatus(t, application, ledgerID, first.ID, ledger.ChangeReady)
+	waitForChangeStatus(t, application, ledgerID, second.ID, ledger.ChangeReady)
 	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Cancel me", ChangeIDs: []string{first.ID, second.ID}})
 	if err != nil {
 		t.Fatal(err)

@@ -71,10 +71,31 @@ func testHealthServer(t *testing.T, target targets.TargetAdapter) (*Server, *eng
 		target = &healthTarget{}
 	}
 	application := engine.New(repo, target, nil)
+	if err := application.StartPreparation(context.Background(), engine.PreparationOptions{BatchSize: 25, Lease: 50 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = application.Close() })
 	server := New(application, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(server.Close)
 	return server, application, repo, databasePath
+}
+
+func waitReady(t *testing.T, application *engine.Engine, ledgerID, changeID string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		page, err := application.ListChanges(context.Background(), ledgerID, engine.ListRequest{Limit: 200, Status: string(ledger.ChangeReady)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, change := range page.Items {
+			if change.ID == changeID {
+				return
+			}
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("Change %s did not reach READY", changeID)
 }
 
 func request(t *testing.T, handler http.Handler, method, path string) *httptest.ResponseRecorder {
@@ -158,6 +179,7 @@ func TestReadyzIgnoresRecoveryRequiredIntents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitReady(t, application, ledgerValue.ID, change.ID)
 	proposal, err := application.CreateProposal(ctx, ledgerValue.ID, engine.CreateProposalRequest{Title: "ready", ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)

@@ -104,6 +104,14 @@ func (adapter *Adapter) Read(ctx context.Context, unit string) (targets.Value, e
 	}
 	return targets.Value{Unit: unit, Value: logicalValue, Fingerprint: ledger.Fingerprint(logicalValue), Exists: true}, nil
 }
+func (adapter *Adapter) Prepare(ctx context.Context, change ledger.Change) (targets.Value, error) {
+	if change.Action == ledger.ChangePut {
+		if _, err := normalizePoint(change.Desired); err != nil {
+			return targets.Value{}, fmt.Errorf("%w: normalize desired Qdrant point %s: %v", targets.ErrSemantic, change.Unit, err)
+		}
+	}
+	return adapter.Read(ctx, change.Unit)
+}
 func (adapter *Adapter) Fingerprint(ctx context.Context, unit string) (string, error) {
 	value, err := adapter.Read(ctx, unit)
 	if err != nil {

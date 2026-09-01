@@ -26,6 +26,9 @@ func newProposalDetailEngine(t *testing.T) (*engine.Engine, *repository.SQLite, 
 		t.Fatal(err)
 	}
 	application := engine.New(repo, &memoryTarget{values: map[string]json.RawMessage{}}, nil)
+	if err := application.StartPreparation(context.Background(), engine.PreparationOptions{BatchSize: 25, Lease: 50 * time.Millisecond}); err != nil {
+		t.Fatal(err)
+	}
 	ledgerValue, err := application.CreateLedger(context.Background(), "Detail ledger", "")
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +44,7 @@ func createProposalForDetail(t *testing.T, application *engine.Engine, ledgerID,
 	if err != nil {
 		t.Fatal(err)
 	}
+	waitForChangeStatus(t, application, ledgerID, change.ID, ledger.ChangeReady)
 	proposal, err := application.CreateProposal(ctx, ledgerID, engine.CreateProposalRequest{Title: "Proposal " + suffix, ChangeIDs: []string{change.ID}})
 	if err != nil {
 		t.Fatal(err)

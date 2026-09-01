@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger"
 	"github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository"
@@ -94,6 +95,31 @@ func (engine *Engine) CreateRollbackProposal(ctx context.Context, ledgerID, targ
 			return ledger.Proposal{}, err
 		}
 		changeIDs = append(changeIDs, change.ID)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		changes, err := engine.repository.LoadChanges(ctx, ledgerID, changeIDs)
+		if err != nil {
+			return ledger.Proposal{}, wrap(CodeInternal, "Could not inspect rollback Changes.", err)
+		}
+		ready := true
+		for _, change := range changes {
+			if change.Status != ledger.ChangeReady {
+				ready = false
+				break
+			}
+		}
+		if ready {
+			break
+		}
+		if time.Now().After(deadline) {
+			return ledger.Proposal{}, wrap(CodeUnavailable, "Rollback Changes are still preparing.", targets.ErrUnavailable)
+		}
+		select {
+		case <-ctx.Done():
+			return ledger.Proposal{}, ctx.Err()
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 	proposal, err := engine.CreateProposal(ctx, ledgerID, CreateProposalRequest{Title: "Restore state from " + targetReleaseID, ChangeIDs: changeIDs})
 	if err != nil {

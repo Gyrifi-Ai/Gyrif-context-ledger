@@ -71,7 +71,8 @@ runtime/
 │   │   ├── evaluation.go            #   EvaluateProposal
 │   │   ├── releases.go              #   ReleaseProposal, RecoverReleases
 │   │   ├── release_intents.go        #   Intent inspection, verification-only retry, explicit abandonment
-│   │   └── rollback.go              #   CreateRollbackProposal
+│   │   ├── rollback.go              #   CreateRollbackProposal
+│   │   └── preparation.go           #   reclaimable asynchronous Change preparation
 │   ├── repository/                  # Gyrifi-owned persistence only
 │   │   ├── repository.go            #   Repository interface + sentinel errors
 │   │   ├── sqlite.go                #   OpenSQLite, pragmas, all SQL, transactions

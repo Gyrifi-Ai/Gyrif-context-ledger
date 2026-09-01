@@ -38,6 +38,39 @@ func proposalRepository(t *testing.T) (*SQLite, ledger.Proposal) {
 	return repository, proposal
 }
 
+func TestPreparationClaimLeaseAndOwnerGuard(t *testing.T) {
+	directory := t.TempDir()
+	repository, err := OpenSQLite(context.Background(), filepath.Join(directory, "state.db"), filepath.Join(directory, "objects"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = repository.Close() })
+	ledgerValue := ledger.Ledger{ID: "ldg_prepare", Name: "Preparation", CreatedAt: time.Now().UTC()}
+	if err := repository.CreateLedger(context.Background(), ledgerValue); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	change := ledger.Change{ID: "chg_prepare", LedgerID: ledgerValue.ID, Unit: "unit", Action: ledger.ChangeDelete, DesiredFingerprint: ledger.Fingerprint(nil), IdempotencyKey: "prepare", RequestFingerprint: "sha256:prepare", Status: ledger.ChangeAccepted, CreatedAt: now}
+	if err := repository.InsertChange(context.Background(), &change); err != nil {
+		t.Fatal(err)
+	}
+	first, err := repository.ClaimChangesForPreparation(context.Background(), "owner-one", 1, 10, now, now.Add(-time.Minute))
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first claim = %#v, %v", first, err)
+	}
+	second, err := repository.ClaimChangesForPreparation(context.Background(), "owner-two", 1, 10, now.Add(3*time.Minute), now.Add(time.Minute))
+	if err != nil || len(second) != 1 {
+		t.Fatalf("reclaimed = %#v, %v", second, err)
+	}
+	committed, err := repository.CompleteChangePreparation(context.Background(), PreparationUpdate{LedgerID: ledgerValue.ID, ChangeID: change.ID, Owner: "owner-one", Status: ledger.ChangeReady})
+	if err != nil || committed {
+		t.Fatalf("stale completion = %t, %v", committed, err)
+	}
+	committed, err = repository.CompleteChangePreparation(context.Background(), PreparationUpdate{LedgerID: ledgerValue.ID, ChangeID: change.ID, Owner: "owner-two", Status: ledger.ChangeReady})
+	if err != nil || !committed {
+		t.Fatalf("current completion = %t, %v", committed, err)
+	}
+}
 func TestListCheckResultsNewestFirst(t *testing.T) {
 	ctx := context.Background()
 	repository, proposal := proposalRepository(t)
