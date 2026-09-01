@@ -9,10 +9,11 @@ import { countReadyChanges, validateLedgerForm } from "./ledgers-page.logic";
 
 const mocks = vi.hoisted(() => ({
   queryStates: new Map<string, Record<string, unknown>>(),
-  mutation: {
-    run: vi.fn(), pending: false, blocked: false, disabledReason: undefined as string | undefined,
-    error: undefined as Error | undefined, result: undefined, reset: vi.fn(),
-  },
+  mutationIndex: 0,
+  mutations: [
+    { run: vi.fn(), pending: false, blocked: false, disabledReason: undefined as string | undefined, error: undefined as Error | undefined, result: undefined, reset: vi.fn() },
+    { run: vi.fn(), pending: false, blocked: false, disabledReason: undefined as string | undefined, error: undefined as Error | undefined, result: undefined, reset: vi.fn() },
+  ],
   appState: {
     ledgerId: "",
     refreshLedgers: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock("../../app/providers", () => ({ useAppState: () => mocks.appState }));
 vi.mock("../../app/use-ledger-events", () => ({ useLedgerEvents: vi.fn() }));
 vi.mock("../../app/use-async", () => ({
   useQuery: (key: string) => mocks.queryStates.get(key) ?? queryState({ data: 0 }),
-  useMutation: () => mocks.mutation,
+  useMutation: () => mocks.mutations[mocks.mutationIndex++ % 2],
 }));
 
 function queryState(overrides: Record<string, unknown> = {}) {
@@ -48,15 +49,18 @@ const ledger: Ledger = {
 
 beforeEach(() => {
   mocks.queryStates.clear();
+  mocks.mutationIndex = 0;
   mocks.appState.ledgerId = "";
   mocks.appState.refreshLedgers.mockReset();
   mocks.appState.setLedgerId.mockReset();
-  mocks.mutation.run.mockReset();
-  mocks.mutation.reset.mockReset();
-  mocks.mutation.pending = false;
-  mocks.mutation.blocked = false;
-  mocks.mutation.disabledReason = undefined;
-  mocks.mutation.error = undefined;
+  for (const mutation of mocks.mutations) {
+    mutation.run.mockReset();
+    mutation.reset.mockReset();
+    mutation.pending = false;
+    mutation.blocked = false;
+    mutation.disabledReason = undefined;
+    mutation.error = undefined;
+  }
 });
 
 describe("LedgersPage", () => {
@@ -97,7 +101,7 @@ describe("LedgersPage", () => {
 
   it("surfaces duplicate-name conflicts only on the name field", () => {
     mocks.queryStates.set("ledgers", queryState({ data: { items: [] } }));
-    mocks.mutation.error = new ApiError("CONFLICT", "A ledger with that name already exists.", 409, "http");
+    mocks.mutations[0].error = new ApiError("CONFLICT", "A ledger with that name already exists.", 409, "http");
     const html = renderToStaticMarkup(<LedgersPage />);
     expect(html.match(/A ledger with that name already exists\./g)).toHaveLength(1);
     expect(html).not.toContain("Unable to create ledger");
@@ -126,7 +130,7 @@ describe("LedgersPage", () => {
     await user.type(screen.getByRole("textbox", { name: "Name" }), "  support-kb  ");
     await user.type(screen.getByRole("textbox", { name: "Description" }), "Support answers");
     await user.click(screen.getByRole("button", { name: "Create ledger" }));
-    expect(mocks.mutation.run).toHaveBeenCalledWith({ ledgerName: "support-kb", ledgerDescription: "Support answers" });
+    expect(mocks.mutations[0].run).toHaveBeenCalledWith({ ledgerName: "support-kb", ledgerDescription: "Support answers" });
   });
 
   it("switches the active ledger from a rendered card", async () => {
@@ -141,13 +145,25 @@ describe("LedgersPage", () => {
   it("disables creation while the Runtime is unreachable", async () => {
     const user = userEvent.setup();
     mocks.queryStates.set("ledgers", queryState({ data: { items: [] } }));
-    mocks.mutation.blocked = true;
-    mocks.mutation.disabledReason = "Cannot reach the Gyrifi runtime.";
+    mocks.mutations[0].blocked = true;
+    mocks.mutations[0].disabledReason = "Cannot reach the Gyrifi runtime.";
     render(<LedgersPage />);
     await user.click(screen.getByRole("button", { name: "Create your first ledger" }));
     const create = screen.getByRole("button", { name: "Create ledger" });
     expect(create).toBeDisabled();
     expect(create).toHaveAttribute("title", "Cannot reach the Gyrifi runtime.");
+  });
+
+  it("reveals archived Ledgers and confirms archive actions", async () => {
+    const user = userEvent.setup();
+    const archived = { ...ledger, id: "ldg_archived", name: "old-ledger", archivedAt: "2026-08-31T12:00:00Z" };
+    mocks.queryStates.set("ledgers", queryState({ data: { items: [ledger, archived] } }));
+    render(<LedgersPage />);
+    expect(screen.getByText("ARCHIVED")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Archived" }));
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+    await user.click(screen.getByRole("button", { name: "Archive Ledger" }));
+    expect(mocks.mutations[1].run).toHaveBeenCalledWith(ledger);
   });
 });
 

@@ -125,10 +125,13 @@ Request bodies are capped at **4 MiB** (`http.MaxBytesReader`) and decoded with 
 | GET | `/readyz` | 200 / 503 | — | `{ "ready":true }` or `{ "ready":false, "reasons":[…] }` |
 | GET | `/api/v1/system/status` | 200 | — | `{ "status":"ok", "version":"dev", "commit":"unknown", "buildDate":"unknown", "inference":"disabled"\|"llamacpp", "health": SystemHealth }` |
 | GET | `/api/v1/adapters` | 200 | — | `{ "items":[{ "id":"qdrant", "name":"Qdrant", "capabilities": Capabilities }] }` |
-| GET | `/api/v1/ledgers` | 200 | — | `{ "items": Ledger[], "nextCursor"? }` |
+| GET | `/api/v1/ledgers` | 200 | — | `{ "items": Ledger[], "nextCursor"? }`; archived rows excluded unless `?includeArchived=true` |
 | POST | `/api/v1/ledgers` | 201 | `{ "name", "description" }` | `Ledger` |
+| POST | `/api/v1/ledgers/{ledgerID}/archive` | **204** | — | —; idempotent, rejects in-flight work |
+| POST | `/api/v1/ledgers/{ledgerID}/unarchive` | **204** | — | —; idempotent |
 | GET | `/api/v1/ledgers/{ledgerID}/changes` | 200 | — | `{ "items": Change[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/changes` | **202** | `{ "unit", "action", "desired", "idempotencyKey" }` | `Change` |
+| POST | `/api/v1/ledgers/{ledgerID}/changes/{changeID}/withdraw` | **204** | `{ "reason": string }` | —; idempotent once withdrawn |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals` | 200 | — | `{ "items": Proposal[], "nextCursor"? }` |
 | POST | `/api/v1/ledgers/{ledgerID}/proposals` | 201 | `{ "title", "changeIds":[…] }` | `Proposal` |
 | GET | `/api/v1/ledgers/{ledgerID}/proposals/{proposalID}` | 200 | — | `ProposalDetail` |
@@ -211,6 +214,7 @@ type Ledger struct {
     Name        string    `json:"name"`
     Description string    `json:"description"`
     CreatedAt   time.Time `json:"createdAt"`
+    ArchivedAt  *time.Time `json:"archivedAt,omitempty"`
 }
 
 type Head struct {
@@ -326,11 +330,11 @@ The read-API `CheckResult` exposes `id`, `proposalHash`, `kind`, `passed`, `summ
 | Type | Values |
 |---|---|
 | `ChangeAction` | `PUT`, `DELETE` |
-| `ChangeStatus` | `ACCEPTED`, `READY`, `INVALID`, `RELEASED` |
+| `ChangeStatus` | `ACCEPTED`, `READY`, `INVALID`, `RELEASED`, `WITHDRAWN` |
 | `ProposalStatus` | `DRAFT`, `REVIEWED`, `APPROVED`, `RELEASED`, `BLOCKED`, `CANCELLED` |
 | `ReleaseIntentStatus` | `READY`, `APPLYING`, `VERIFYING`, `FINALIZED`, `RECOVERY_REQUIRED`, `ABANDONED` |
 
-`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, `RELEASED` after finalization, and `CANCELLED` by Draft cancellation. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, HEAD, and terminal-state predicates. `Change.status` is only ever written as `READY` or `RELEASED`.
+`Proposal.status` is written as `DRAFT`, `REVIEWED` or `BLOCKED` after evaluation, `APPROVED` after approval, `RELEASED` after finalization, and `CANCELLED` by Draft cancellation. These values summarize workflow activity; release authority is always recomputed from current evidence, approval, HEAD, and terminal-state predicates. `Change.status` is accepted as `READY`, becomes `RELEASED` on finalization, or becomes `WITHDRAWN` through the guarded lifecycle endpoint.
 
 ---
 
@@ -533,7 +537,7 @@ PRAGMA busy_timeout=5000;
 
 Migrations are embedded with `//go:embed` in `runtime/migrations/migrations.go` and applied in filename order before anything else runs. Each applied version is recorded in `schema_migrations`.
 
-`FinalizeRelease` is the only multi-table transaction: insert `releases`, update `ledger_heads`, set the Proposal `RELEASED`, set its Changes `RELEASED`, set the intent `FINALIZED` — with a HEAD-unchanged guard inside the transaction.
+`FinalizeRelease` atomically inserts `releases`, updates `ledger_heads`, sets the Proposal and Changes `RELEASED`, and sets the intent `FINALIZED`, with a HEAD-unchanged guard inside the transaction. Cancellation, withdrawal, and archival also re-read every governing status or claim on the same write transaction before updating.
 
 ### Object store (`internal/repository/objects.go`)
 
@@ -558,7 +562,8 @@ CREATE TABLE ledgers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    archived_at TEXT                         -- added by migration 005
 );
 
 CREATE TABLE ledger_heads (
@@ -579,6 +584,8 @@ CREATE TABLE changes (
     request_fingerprint TEXT NOT NULL,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL,
+    withdrawn_at TEXT,                      -- added by migration 005
+    withdrawn_reason TEXT,                  -- added by migration 005
     UNIQUE (ledger_id, sequence),
     UNIQUE (ledger_id, idempotency_key)
 );
@@ -662,6 +669,10 @@ All timestamps are TEXT in UTC (`time.Now().UTC()`).
 ### Migration 004 — List indexes
 
 `004_list_indexes.sql` adds `(created_at DESC, id DESC)` keyset indexes for Ledgers and Ledger-scoped Changes, Proposals, and Releases, plus status-leading indexes for Change and Proposal filters. The pinned SQLite planner uses those indexes for cursor predicates and avoids temporary sorting. The existing Change status/action filter remains a bound SQL predicate; the status-leading index narrows the candidate range before SQLite evaluates action.
+
+### Migration 005 — Lifecycle management
+
+`005_lifecycle.sql` adds nullable `ledgers.archived_at`, `changes.withdrawn_at`, and `changes.withdrawn_reason`, plus an archive-aware Ledger list index. The nullable columns preserve all pre-existing rows as active and unwithdrawn. The ticket's planned filename was `007_lifecycle.sql`; actual immutable apply order requires 005.
 
 **Migration rules:** never edit an applied migration. Add `00N_description.sql`. SQLite cannot drop or alter most constraints — prefer additive columns with defaults, or a create-copy-rename table rebuild inside one transaction.
 
@@ -830,7 +841,7 @@ type Api = typeof api;
 
 `request` always sets `Content-Type: application/json`. A rejected `fetch` throws a `transport` `ApiError` with status `0` and publishes an unreachable request-health event; an intentional `AbortError` is passed through without changing reachability. Any HTTP response first publishes reachable, then a non-2xx response throws an `http` `ApiError` preserving `body.error.code`, `body.error.message`, and `X-Request-ID` when present. Malformed error envelopes use `code: "UNKNOWN"` and `Request failed ({status})`. A `204` resolves `undefined`. Read methods accept an optional `RequestInit` so callers can supply an `AbortSignal`. All paths are relative; Vite proxies `/api` and `/events` to `127.0.0.1:18080` in development, and production is same-origin.
 
-`api` methods: `status`, `ledgers`, `createLedger`, `changes`, `createChange`, `proposals`, `createProposal`, `proposal`, `proposalChecks`, `proposalApprovals`, `evaluate`, `approve`, `release`, `releaseIntents`, `releaseIntent`, `retryReleaseIntent`, `resolveReleaseIntent`, `releases`, `rollback`. `evaluate` exposes the full persisted evidence payload (`passed`, `summary`, `previewFidelity`, optional `findings`, `model`, and `evidence`); `approve` sends the Studio's editable actor. The Release Intent methods provide the typed GRF-208 consumer contract, including expanded operations, before-image presence, and mismatch results.
+`api` methods: `status`, `ledgers`, `createLedger`, `archiveLedger`, `unarchiveLedger`, `changes`, `createChange`, `withdrawChange`, `proposals`, `createProposal`, `proposal`, `proposalChecks`, `proposalApprovals`, `evaluate`, `approve`, `release`, `releaseIntents`, `releaseIntent`, `retryReleaseIntent`, `resolveReleaseIntent`, `releases`, `rollback`. `evaluate` exposes the full persisted evidence payload (`passed`, `summary`, `previewFidelity`, optional `findings`, `model`, and `evidence`); `approve` sends the Studio's editable actor. The Release Intent methods provide the typed GRF-208 consumer contract, including expanded operations, before-image presence, and mismatch results.
 
 `ProposalDetail.gates` contains aggregate release predicates plus `approvalAction` and `releaseAction` `{ enabled, reason }` values. `features/proposals/gates.ts` projects those per-action values by identity; feature code renders them verbatim and never derives governance permissions from Proposal status.
 
@@ -872,7 +883,7 @@ type DomainEvent = { kind: EventKind; ledgerId: string; subjectId: string; at: s
 function subscribeToLedgerEvents(ledgerId: string, handler: (event: DomainEvent) => void): EventSubscription;
 ```
 
-Named SSE frames are parsed against the exact event-kind union; malformed or unknown frames are ignored. Native reconnect handles transient `CONNECTING` errors. A permanently `CLOSED` source is replaced explicitly with jittered exponential delays from 1 second to a 30-second cap and a six-attempt ceiling; after the ceiling, the topbar exposes `Reconnect`. Closing the subscription closes the source and clears its timer.
+Named SSE frames are parsed against the exact event-kind union, including `change.withdrawn`, `ledger.archived`, and `ledger.unarchived`; malformed or unknown frames are ignored. Native reconnect handles transient `CONNECTING` errors. A permanently `CLOSED` source is replaced explicitly with jittered exponential delays from 1 second to a 30-second cap and a six-attempt ceiling; after the ceiling, the topbar exposes `Reconnect`. Closing the subscription closes the source and clears its timer.
 
 `app/reachability.tsx` owns the application-level Runtime and the one unfiltered stream subscription. It dispatches each domain event only to active invalidation callbacks registered for the matching Ledger; callbacks refetch REST state and never apply event payloads directly. A reconnect fans out to every callback because events may have been missed. The provider probes `api.status()` immediately, every 30 seconds while connected, and with a 1, 2, 4, 8, 16, 30-second retry sequence while offline. Polling and active probes stop while `document.hidden`; visibility restoration triggers an immediate retry. Any successful request clears the persistent transport banner. `features/shell/runtime-status.tsx` renders HTTP and stream state together; `app/reachability-banner.tsx` renders the offline message and immediate Retry action.
 
@@ -972,5 +983,4 @@ The e2e package is intentionally outside the root pnpm workspace and owns its lo
 |---|---|
 | `Change.baseFingerprint` is always `""`; no async preparation phase | GRF-221 |
 | No retention budget, quota, or backup command | GRF-222 |
-| No `DELETE`/withdraw/archive route for any entity; `routes()` registers none | GRF-215 |
 | No rate limiting; `SetMaxOpenConns(1)` makes write floods starve reads | GRF-226 |

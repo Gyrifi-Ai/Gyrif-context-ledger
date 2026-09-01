@@ -28,7 +28,7 @@ import { SelectionActionBar } from "./selection-action-bar";
 import { ChangeDetailDrawer } from "./change-detail-drawer";
 
 const confirmationDuration = 3_000;
-const statusOptions: ChangeFilters["status"][] = ["ALL", "ACCEPTED", "READY", "INVALID", "RELEASED"];
+const statusOptions: ChangeFilters["status"][] = ["ALL", "ACCEPTED", "READY", "INVALID", "RELEASED", "WITHDRAWN"];
 const actionOptions: ChangeFilters["action"][] = ["ALL", "PUT", "DELETE"];
 
 const columns: Column<Change>[] = [
@@ -149,6 +149,12 @@ export function ChangesPage() {
       throw error;
     }
   });
+  const withdrawMutation = useMutation(async ({ change, reason }: { change: Change; reason: string }) => {
+    await api.withdrawChange(ledgerId, change.id, reason);
+    setDetail({ ...change, status: "WITHDRAWN" });
+    changesQuery.refetch();
+    showConfirmation(`Change ${change.id} withdrawn.`, change.id);
+  });
 
   useEffect(() => () => {
     if (confirmationTimer.current) clearTimeout(confirmationTimer.current);
@@ -252,7 +258,7 @@ export function ChangesPage() {
 
       <SelectionActionBar count={selectedIds.length} onClear={() => setSelectedIds([])} onCreateProposal={openProposal} />
 
-      <ChangeDetailDrawer change={detail} onClose={() => setDetail(null)} />
+      <ChangeDetailDrawer change={detail} onClose={() => setDetail(null)} onWithdraw={(reason) => { if (detail) void withdrawMutation.run({ change: detail, reason }); }} withdrawPending={withdrawMutation.pending} withdrawBlocked={withdrawMutation.blocked} withdrawDisabledReason={withdrawMutation.disabledReason} withdrawError={withdrawMutation.error?.message} />
 
       <Drawer
         open={submitOpen}

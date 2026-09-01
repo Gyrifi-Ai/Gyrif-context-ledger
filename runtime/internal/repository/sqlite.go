@@ -144,11 +144,37 @@ func (repository *SQLite) CreateLedger(ctx context.Context, value ledger.Ledger)
 	return tx.Commit()
 }
 
+func scanLedger(scanner interface{ Scan(...any) error }) (ledger.Ledger, error) {
+	var item ledger.Ledger
+	var created string
+	var archived sql.NullString
+	err := scanner.Scan(&item.ID, &item.Name, &item.Description, &created, &archived)
+	item.CreatedAt = parseTime(created)
+	if archived.Valid {
+		value := parseTime(archived.String)
+		item.ArchivedAt = &value
+	}
+	return item, err
+}
+
+func (repository *SQLite) LoadLedger(ctx context.Context, id string) (ledger.Ledger, error) {
+	item, err := scanLedger(repository.db.QueryRowContext(ctx, `SELECT id,name,description,created_at,archived_at FROM ledgers WHERE id=?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return ledger.Ledger{}, ErrNotFound
+	}
+	return item, err
+}
+
 func (repository *SQLite) ListLedgers(ctx context.Context, options ListOptions) (Page[ledger.Ledger], error) {
-	query := `SELECT id,name,description,created_at FROM ledgers`
+	query := `SELECT id,name,description,created_at,archived_at FROM ledgers`
 	args := make([]any, 0, 3)
+	separator := ` WHERE `
+	if !options.IncludeArchived {
+		query += separator + `archived_at IS NULL`
+		separator = ` AND `
+	}
 	if options.Cursor != nil {
-		query += ` WHERE (created_at, id) < (?, ?)`
+		query += separator + `(created_at, id) < (?, ?)`
 		args = append(args, formatTime(options.Cursor.CreatedAt), options.Cursor.ID)
 	}
 	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
@@ -160,12 +186,10 @@ func (repository *SQLite) ListLedgers(ctx context.Context, options ListOptions) 
 	defer rows.Close()
 	items := make([]ledger.Ledger, 0, options.Limit+1)
 	for rows.Next() {
-		var item ledger.Ledger
-		var created string
-		if err := rows.Scan(&item.ID, &item.Name, &item.Description, &created); err != nil {
+		item, err := scanLedger(rows)
+		if err != nil {
 			return Page[ledger.Ledger]{}, err
 		}
-		item.CreatedAt = parseTime(created)
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -176,6 +200,60 @@ func (repository *SQLite) ListLedgers(ctx context.Context, options ListOptions) 
 		page.Items = page.Items[:options.Limit]
 	}
 	return page, nil
+}
+
+func (repository *SQLite) ArchiveLedger(ctx context.Context, ledgerID string, archivedAt time.Time) (bool, error) {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var current sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT archived_at FROM ledgers WHERE id=?`, ledgerID).Scan(&current); errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	} else if err != nil {
+		return false, err
+	}
+	if current.Valid {
+		return false, nil
+	}
+	var proposalID string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM proposals WHERE ledger_id=? AND status=? LIMIT 1`, ledgerID, ledger.ProposalDraft).Scan(&proposalID); err == nil {
+		return false, fmt.Errorf("%w: Proposal %s", ErrLedgerWorkInFlight, proposalID)
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	var intentID string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM release_intents WHERE ledger_id=? AND status NOT IN (?,?) LIMIT 1`, ledgerID, ledger.IntentFinalized, ledger.IntentAbandoned).Scan(&intentID); err == nil {
+		return false, fmt.Errorf("%w: Release Intent %s", ErrLedgerWorkInFlight, intentID)
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE ledgers SET archived_at=? WHERE id=?`, formatTime(archivedAt), ledgerID); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
+func (repository *SQLite) UnarchiveLedger(ctx context.Context, ledgerID string) (bool, error) {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var archived sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT archived_at FROM ledgers WHERE id=?`, ledgerID).Scan(&archived); errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	} else if err != nil {
+		return false, err
+	}
+	if !archived.Valid {
+		return false, nil
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE ledgers SET archived_at=NULL WHERE id=?`, ledgerID); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 func scanChange(scanner interface{ Scan(...any) error }) (ledger.Change, error) {
@@ -204,6 +282,14 @@ func (repository *SQLite) InsertChange(ctx context.Context, value *ledger.Change
 		return err
 	}
 	defer tx.Rollback()
+	var archived sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT archived_at FROM ledgers WHERE id=?`, value.LedgerID).Scan(&archived); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	} else if archived.Valid {
+		return ErrLedgerArchived
+	}
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence),0)+1 FROM changes WHERE ledger_id=?`, value.LedgerID).Scan(&value.Sequence); err != nil {
 		return fmt.Errorf("allocate change sequence: %w", err)
 	}
@@ -220,6 +306,9 @@ func (repository *SQLite) ListChanges(ctx context.Context, ledgerID string, opti
 	if options.Status != nil {
 		query += ` AND status=?`
 		args = append(args, *options.Status)
+	} else {
+		query += ` AND status<>?`
+		args = append(args, ledger.ChangeWithdrawn)
 	}
 	if options.Action != nil {
 		query += ` AND action=?`
@@ -254,6 +343,36 @@ func (repository *SQLite) ListChanges(ctx context.Context, ledgerID string, opti
 	return page, nil
 }
 
+func (repository *SQLite) WithdrawChange(ctx context.Context, ledgerID, changeID, reason string, withdrawnAt time.Time) (bool, error) {
+	tx, err := repository.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var status ledger.ChangeStatus
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM changes WHERE ledger_id=? AND id=?`, ledgerID, changeID).Scan(&status); errors.Is(err, sql.ErrNoRows) {
+		return false, ErrNotFound
+	} else if err != nil {
+		return false, err
+	}
+	if status == ledger.ChangeWithdrawn {
+		return false, nil
+	}
+	if err := ledger.CanWithdrawChange(ledger.Change{Status: status}); err != nil {
+		return false, err
+	}
+	var proposalID string
+	if err := tx.QueryRowContext(ctx, `SELECT proposal_id FROM proposal_changes WHERE change_id=?`, changeID).Scan(&proposalID); err == nil {
+		return false, &ChangeClaimError{ProposalID: proposalID}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE changes SET status=?,withdrawn_at=?,withdrawn_reason=? WHERE ledger_id=? AND id=?`, ledger.ChangeWithdrawn, formatTime(withdrawnAt), reason, ledgerID, changeID); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
 func (repository *SQLite) LoadChanges(ctx context.Context, ledgerID string, ids []string) ([]ledger.Change, error) {
 	items := make([]ledger.Change, 0, len(ids))
 	for _, id := range ids {
@@ -279,6 +398,14 @@ func (repository *SQLite) InsertProposal(ctx context.Context, value ledger.Propo
 		return err
 	}
 	defer tx.Rollback()
+	var archived sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT archived_at FROM ledgers WHERE id=?`, value.LedgerID).Scan(&archived); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	} else if archived.Valid {
+		return ErrLedgerArchived
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO proposals(id,ledger_id,title,base_release_id,proposal_hash,status,change_ids,created_at) VALUES(?,?,?,?,?,?,?,?)`, value.ID, value.LedgerID, value.Title, value.BaseReleaseID, value.Hash, value.Status, string(changeIDs), formatTime(value.CreatedAt)); err != nil {
 		return fmt.Errorf("insert proposal: %w", err)
 	}

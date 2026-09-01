@@ -15,10 +15,11 @@ const (
 type ChangeStatus string
 
 const (
-	ChangeAccepted ChangeStatus = "ACCEPTED"
-	ChangeReady    ChangeStatus = "READY"
-	ChangeInvalid  ChangeStatus = "INVALID"
-	ChangeReleased ChangeStatus = "RELEASED"
+	ChangeAccepted  ChangeStatus = "ACCEPTED"
+	ChangeReady     ChangeStatus = "READY"
+	ChangeInvalid   ChangeStatus = "INVALID"
+	ChangeReleased  ChangeStatus = "RELEASED"
+	ChangeWithdrawn ChangeStatus = "WITHDRAWN"
 )
 
 type Change struct {

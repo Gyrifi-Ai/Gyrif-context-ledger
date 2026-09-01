@@ -10,6 +10,9 @@ type EventKind string
 
 const (
 	EventChangeAccepted         EventKind = "change.accepted"
+	EventChangeWithdrawn        EventKind = "change.withdrawn"
+	EventLedgerArchived         EventKind = "ledger.archived"
+	EventLedgerUnarchived       EventKind = "ledger.unarchived"
 	EventProposalCreated        EventKind = "proposal.created"
 	EventProposalEvaluated      EventKind = "proposal.evaluated"
 	EventProposalApproved       EventKind = "proposal.approved"

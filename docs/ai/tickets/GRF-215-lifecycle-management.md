@@ -50,34 +50,34 @@ So this ticket adds **withdrawal**, not deletion. Nothing is erased; a terminal 
 
 **Change withdrawal**
 
-- [ ] New `ChangeStatus` member `WITHDRAWN`.
-- [ ] `ledger.CanWithdrawChange(c ledger.Change) error` added to `invariants.go` as the pure rule.
-- [ ] Withdrawal is permitted only when the Change's status is `ACCEPTED`, `READY`, or `INVALID`.
-- [ ] Withdrawing a `RELEASED` Change ⇒ `409 CONFLICT` "A released Change is part of the audit trail and cannot be withdrawn."
-- [ ] Withdrawing a Change claimed by a Proposal ⇒ `409 CONFLICT` "This Change belongs to Proposal {id}. Cancel the Proposal first." — pointing at GRF-212.
-- [ ] Withdrawing an already-`WITHDRAWN` Change is idempotent and returns `204`.
-- [ ] A `WITHDRAWN` Change can never be selected into a Proposal; `CreateProposal` rejects it with `409` naming the status.
-- [ ] The Change row is **retained**, with its idempotency key intact — so a repeat of the same erroneous ingestion still deduplicates rather than creating a second copy.
-- [ ] Withdrawal records who and when: new columns `withdrawn_at TEXT`, `withdrawn_reason TEXT`.
-- [ ] The request body requires a non-empty `reason`; an empty or missing reason ⇒ `400 INVALID_ARGUMENT`.
+- [x] New `ChangeStatus` member `WITHDRAWN`.
+- [x] `ledger.CanWithdrawChange(c ledger.Change) error` added to `invariants.go` as the pure rule.
+- [x] Withdrawal is permitted only when the Change's status is `ACCEPTED`, `READY`, or `INVALID`.
+- [x] Withdrawing a `RELEASED` Change ⇒ `409 CONFLICT` "A released Change is part of the audit trail and cannot be withdrawn."
+- [x] Withdrawing a Change claimed by a Proposal ⇒ `409 CONFLICT` "This Change belongs to Proposal {id}. Cancel the Proposal first." — pointing at GRF-212.
+- [x] Withdrawing an already-`WITHDRAWN` Change is idempotent and returns `204`.
+- [x] A `WITHDRAWN` Change can never be selected into a Proposal; `CreateProposal` rejects it with `409` naming the status.
+- [x] The Change row is **retained**, with its idempotency key intact — so a repeat of the same erroneous ingestion still deduplicates rather than creating a second copy.
+- [x] Withdrawal records who and when: new columns `withdrawn_at TEXT`, `withdrawn_reason TEXT`.
+- [x] The request body requires a non-empty `reason`; an empty or missing reason ⇒ `400 INVALID_ARGUMENT`.
 
 **Ledger archival**
 
-- [ ] New column `archived_at TEXT` on `ledgers`.
-- [ ] `POST .../archive` sets it; `POST .../unarchive` clears it. Both return `204` and are idempotent.
-- [ ] Archiving is rejected with `409 CONFLICT` when the Ledger has a Proposal in `DRAFT` or a Release Intent that is not `FINALIZED` or `ABANDONED` — you may not archive a Ledger with work in flight.
-- [ ] `GET /api/v1/ledgers` excludes archived Ledgers by default and includes them with `?includeArchived=true`.
-- [ ] An archived Ledger rejects new Changes and new Proposals with `409 CONFLICT` "This Ledger is archived."
-- [ ] An archived Ledger remains fully **readable** — its Changes, Proposals, and Releases are all still retrievable. Archival hides it from the working set; it does not hide history.
-- [ ] Rollback against an archived Ledger is rejected; unarchive first.
+- [x] New column `archived_at TEXT` on `ledgers`.
+- [x] `POST .../archive` sets it; `POST .../unarchive` clears it. Both return `204` and are idempotent.
+- [x] Archiving is rejected with `409 CONFLICT` when the Ledger has a Proposal in `DRAFT` or a Release Intent that is not `FINALIZED` or `ABANDONED` — you may not archive a Ledger with work in flight.
+- [x] `GET /api/v1/ledgers` excludes archived Ledgers by default and includes them with `?includeArchived=true`.
+- [x] An archived Ledger rejects new Changes and new Proposals with `409 CONFLICT` "This Ledger is archived."
+- [x] An archived Ledger remains fully **readable** — its Changes, Proposals, and Releases are all still retrievable. Archival hides it from the working set; it does not hide history.
+- [x] Rollback against an archived Ledger is rejected; unarchive first.
 
 **Schema and general**
 
-- [ ] Migration `007_lifecycle.sql` (renumber to match actual apply order; record the number in the phase log). `001_initial.sql` is not modified.
-- [ ] `WITHDRAWN` added to the frontend status union and to the `design-system.md` §2.2 tone map as `neutral`. The exhaustive TypeScript mapping must fail to compile until it is added.
-- [ ] Studio: a `Withdraw` action in the Change detail drawer behind a `ConfirmDialog` with a required reason field; withdrawn Changes are hidden from the inbox by default and reachable via the status filter.
-- [ ] Studio: `Archive` in the Ledgers page row actions behind a `ConfirmDialog`; an `Archived` toggle reveals archived Ledgers; the topbar switcher excludes them.
-- [ ] `go test ./...`, `pnpm typecheck`, `pnpm test` pass.
+- [x] Migration `007_lifecycle.sql` (renumber to match actual apply order; record the number in the phase log). `001_initial.sql` is not modified.
+- [x] `WITHDRAWN` added to the frontend status union and to the `design-system.md` §2.2 tone map as `neutral`. The exhaustive TypeScript mapping must fail to compile until it is added.
+- [x] Studio: a `Withdraw` action in the Change detail drawer behind a `ConfirmDialog` with a required reason field; withdrawn Changes are hidden from the inbox by default and reachable via the status filter.
+- [x] Studio: `Archive` in the Ledgers page row actions behind a `ConfirmDialog`; an `Archived` toggle reveals archived Ledgers; the topbar switcher excludes them.
+- [x] `go test ./...`, `pnpm typecheck`, `pnpm test` pass.
 
 ## Implementation notes
 

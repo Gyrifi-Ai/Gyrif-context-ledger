@@ -23,6 +23,9 @@ func (engine *Engine) CreateChange(ctx context.Context, ledgerID string, request
 	if err := ensureLedgerID(ledgerID); err != nil {
 		return ledger.Change{}, wrap(CodeInvalid, "Ledger is required.", err)
 	}
+	if err := engine.ensureLedgerWritable(ctx, ledgerID); err != nil {
+		return ledger.Change{}, err
+	}
 	request.Unit = strings.TrimSpace(request.Unit)
 	request.IdempotencyKey = strings.TrimSpace(request.IdempotencyKey)
 	if request.IdempotencyKey == "" {
@@ -69,6 +72,9 @@ func (engine *Engine) CreateChange(ctx context.Context, ledgerID string, request
 		}
 	}
 	if err := engine.repository.InsertChange(ctx, &value); err != nil {
+		if errors.Is(err, repository.ErrLedgerArchived) {
+			return ledger.Change{}, wrap(CodeConflict, "This Ledger is archived.", err)
+		}
 		existing, lookupErr := engine.repository.FindChangeByIdempotencyKey(ctx, ledgerID, request.IdempotencyKey)
 		if lookupErr == nil && existing.RequestFingerprint == requestFingerprint {
 			return existing, nil

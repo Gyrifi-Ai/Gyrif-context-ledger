@@ -3,6 +3,7 @@ export type Ledger = {
   name: string;
   description: string;
   createdAt: string;
+  archivedAt?: string;
 };
 
 export type ListOptions = {
@@ -10,6 +11,7 @@ export type ListOptions = {
   cursor?: string;
   status?: string;
   action?: string;
+  includeArchived?: boolean;
 };
 
 export type ListPage<T> = {
@@ -26,7 +28,7 @@ export type Change = {
   desired: unknown;
   baseFingerprint: string;
   desiredFingerprint: string;
-  status: "ACCEPTED" | "READY" | "INVALID" | "RELEASED";
+  status: "ACCEPTED" | "READY" | "INVALID" | "RELEASED" | "WITHDRAWN";
   createdAt: string;
 };
 
@@ -123,6 +125,9 @@ export type SystemStatus = {
 
 export type EventKind =
   | "change.accepted"
+  | "change.withdrawn"
+  | "ledger.archived"
+  | "ledger.unarchived"
   | "proposal.created"
   | "proposal.evaluated"
   | "proposal.approved"

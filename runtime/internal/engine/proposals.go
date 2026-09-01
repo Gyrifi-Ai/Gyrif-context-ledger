@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -16,6 +17,9 @@ type CreateProposalRequest struct {
 }
 
 func (engine *Engine) CreateProposal(ctx context.Context, ledgerID string, request CreateProposalRequest) (ledger.Proposal, error) {
+	if err := engine.ensureLedgerWritable(ctx, ledgerID); err != nil {
+		return ledger.Proposal{}, err
+	}
 	request.Title = strings.TrimSpace(request.Title)
 	if request.Title == "" || len(request.ChangeIDs) == 0 {
 		return ledger.Proposal{}, wrap(CodeInvalid, "Proposal title and at least one Change are required.", ledger.ErrInvalid)
@@ -27,7 +31,7 @@ func (engine *Engine) CreateProposal(ctx context.Context, ledgerID string, reque
 	seen := make(map[string]struct{}, len(changes))
 	for _, change := range changes {
 		if change.Status != ledger.ChangeReady {
-			return ledger.Proposal{}, wrap(CodeConflict, "Only Ready Changes can be proposed.", ledger.ErrConflict)
+			return ledger.Proposal{}, wrap(CodeConflict, fmt.Sprintf("Change %s is %s and cannot be proposed.", change.ID, change.Status), ledger.ErrConflict)
 		}
 		if _, exists := seen[change.ID]; exists {
 			return ledger.Proposal{}, wrap(CodeInvalid, "A Change may only be selected once.", ledger.ErrInvalid)
@@ -48,6 +52,9 @@ func (engine *Engine) CreateProposal(ctx context.Context, ledgerID string, reque
 		return ledger.Proposal{}, wrap(CodeInternal, "Could not hash Proposal.", err)
 	}
 	if err := engine.repository.InsertProposal(ctx, value); err != nil {
+		if errors.Is(err, repository.ErrLedgerArchived) {
+			return ledger.Proposal{}, wrap(CodeConflict, "This Ledger is archived.", err)
+		}
 		return ledger.Proposal{}, wrap(CodeConflict, "One or more Changes are already in another active Proposal.", err)
 	}
 	engine.metrics.ProposalCreated()

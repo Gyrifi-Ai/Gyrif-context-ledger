@@ -43,7 +43,7 @@ There is also no backup story. `/data` holds `gyrifi.db`, `gyrifi.db-wal`, `gyri
 
 An object is **reachable** if any of the following reference its hash:
 
-1. a `changes` row's desired value,
+1. a non-withdrawn `changes` row's desired value; a withdrawn, unreleased Change's value becomes unreachable after the normal grace period unless another rule retains it,
 2. a `release_intents` plan's expected or before-image values, for any intent not `FINALIZED` **or** for any `FINALIZED` intent belonging to a release at or after the oldest release still within the rollback window,
 3. a `checks` evidence blob.
 

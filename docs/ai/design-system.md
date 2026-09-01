@@ -153,6 +153,7 @@ Components use **only** these.
 | `REVIEWED` | review |
 | `APPROVED` | success |
 | `CANCELLED` | neutral |
+| `WITHDRAWN` | neutral |
 | Intent `READY`, `APPLYING`, `VERIFYING` | warning |
 | Intent `FINALIZED` | success |
 | Intent `RECOVERY_REQUIRED` | danger |
@@ -445,7 +446,7 @@ Native `<dialog>` with backdrop `rgb(6 8 12 / 0.72)`. Required for **Release** a
 
 ### 5.1 Ledgers — implemented by GRF-205
 
-The implemented page uses the shared `PageHeader`, a one/two/three-column card grid at the 900 px and 1440 px viewport boundaries, isolated READY-Change and Release counts, and the shared right-hand `Drawer` for creation. Selection and successful creation announce "Now governing {name}" inline for three seconds; duplicate-name conflicts remain attached to the name field.
+The implemented page uses the shared `PageHeader`, a one/two/three-column card grid at the 900 px and 1440 px viewport boundaries, isolated READY-Change and Release counts, and the shared right-hand `Drawer` for creation. Selection and successful creation announce "Now governing {name}" inline for three seconds; duplicate-name conflicts remain attached to the name field. Each card has a confirmed Archive/Unarchive action, archived cards carry a neutral badge, and the `Archived` toggle opts the page into retired Ledgers. The topbar switcher continues to request the default active-only working set.
 
 ```
 LEDGERS
@@ -468,7 +469,7 @@ A ledger is a governed namespace with its own inbox, proposals, and release hist
 
 ### 5.2 Changes — implemented by GRF-206
 
-The implemented inbox owns its `PageHeader`, derives its READY/RELEASED/INVALID strip from the loaded rows, and sends status/action filters to the Runtime. Unit search intentionally matches only loaded rows and says so. READY rows alone are selectable; selection opens an ordered Proposal drawer through the sticky action bar. Row detail and PUT/DELETE submission use right-hand drawers, with blur/submit JSON validation, visible idempotency keys, exact server errors, stale-data retention, and a three-second accepted-Change confirmation.
+The implemented inbox owns its `PageHeader`, derives its READY/RELEASED/INVALID strip from the loaded rows, and sends status/action filters to the Runtime. Unit search intentionally matches only loaded rows and says so. READY rows alone are selectable; selection opens an ordered Proposal drawer through the sticky action bar. Row detail and PUT/DELETE submission use right-hand drawers, with blur/submit JSON validation, visible idempotency keys, exact server errors, stale-data retention, and a three-second accepted-Change confirmation. Eligible Change detail includes a destructive `Withdraw` confirmation whose primary action remains disabled until a non-empty reason is entered. `WITHDRAWN` is absent from the default inbox and remains reachable through the status filter.
 
 ```
 DURABLE INBOX

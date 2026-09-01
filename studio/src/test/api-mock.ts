@@ -8,8 +8,11 @@ export const mockApi: MockApi = {
   status: vi.fn<Api["status"]>(),
   ledgers: vi.fn<Api["ledgers"]>(),
   createLedger: vi.fn<Api["createLedger"]>(),
+  archiveLedger: vi.fn<Api["archiveLedger"]>(),
+  unarchiveLedger: vi.fn<Api["unarchiveLedger"]>(),
   changes: vi.fn<Api["changes"]>(),
   createChange: vi.fn<Api["createChange"]>(),
+  withdrawChange: vi.fn<Api["withdrawChange"]>(),
   proposals: vi.fn<Api["proposals"]>(),
   createProposal: vi.fn<Api["createProposal"]>(),
   proposal: vi.fn<Api["proposal"]>(),
@@ -47,6 +50,8 @@ function listOptions(url: URL): ListOptions | undefined {
   if (status !== null) options.status = status;
   const action = url.searchParams.get("action");
   if (action !== null) options.action = action;
+  const includeArchived = url.searchParams.get("includeArchived");
+  if (includeArchived !== null) options.includeArchived = includeArchived === "true";
   return Object.keys(options).length > 0 ? options : undefined;
 }
 
@@ -59,9 +64,13 @@ async function route(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
     if (method === "GET" && path === "/api/v1/system/status") return response(await mockApi.status(init));
     if (method === "GET" && path === "/api/v1/ledgers") return response(await mockApi.ledgers(listOptions(url), init));
     if (method === "POST" && path === "/api/v1/ledgers") return response(await mockApi.createLedger(body(init) as Parameters<Api["createLedger"]>[0]));
-    let values = match(/^\/api\/v1\/ledgers\/([^/]+)\/changes$/);
+    let values = match(/^\/api\/v1\/ledgers\/([^/]+)\/(archive|unarchive)$/);
+    if (values && method === "POST") return response(values[1] === "archive" ? await mockApi.archiveLedger(values[0]) : await mockApi.unarchiveLedger(values[0]));
+    values = match(/^\/api\/v1\/ledgers\/([^/]+)\/changes$/);
     if (values && method === "GET") return response(await mockApi.changes(values[0], listOptions(url), init));
     if (values && method === "POST") return response(await mockApi.createChange(values[0], body(init) as Parameters<Api["createChange"]>[1]));
+    values = match(/^\/api\/v1\/ledgers\/([^/]+)\/changes\/([^/]+)\/withdraw$/);
+    if (values && method === "POST") return response(await mockApi.withdrawChange(values[0], values[1], String(body(init).reason ?? "")));
     values = match(/^\/api\/v1\/ledgers\/([^/]+)\/proposals$/);
     if (values && method === "GET") return response(await mockApi.proposals(values[0], listOptions(url), init));
     if (values && method === "POST") return response(await mockApi.createProposal(values[0], body(init) as Parameters<Api["createProposal"]>[1]));

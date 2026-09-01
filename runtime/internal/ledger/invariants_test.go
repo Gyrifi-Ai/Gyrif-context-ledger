@@ -53,3 +53,16 @@ func TestCanCancelProposal(t *testing.T) {
 		}
 	}
 }
+
+func TestCanWithdrawChange(t *testing.T) {
+	for _, status := range []ChangeStatus{ChangeAccepted, ChangeReady, ChangeInvalid} {
+		if err := CanWithdrawChange(Change{Status: status}); err != nil {
+			t.Fatalf("CanWithdrawChange(%s) = %v", status, err)
+		}
+	}
+	for _, status := range []ChangeStatus{ChangeReleased, ChangeWithdrawn, "UNKNOWN"} {
+		if err := CanWithdrawChange(Change{Status: status}); !errors.Is(err, ErrConflict) {
+			t.Fatalf("CanWithdrawChange(%s) error = %v", status, err)
+		}
+	}
+}

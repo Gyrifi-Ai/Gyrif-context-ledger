@@ -19,6 +19,11 @@ type rollbackState struct {
 // CreateRollbackProposal reconstructs the desired state at targetReleaseID and
 // expresses it as ordinary Changes in a new forward-history Proposal.
 func (engine *Engine) CreateRollbackProposal(ctx context.Context, ledgerID, targetReleaseID string) (ledger.Proposal, error) {
+	engine.releaseMu.Lock()
+	defer engine.releaseMu.Unlock()
+	if err := engine.ensureLedgerWritable(ctx, ledgerID); err != nil {
+		return ledger.Proposal{}, err
+	}
 	var releases []ledger.Release
 	var cursor *repository.Cursor
 	for {

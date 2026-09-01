@@ -60,8 +60,11 @@ func (server *Server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/adapters", server.adapters)
 	mux.HandleFunc("GET /api/v1/ledgers", server.listLedgers)
 	mux.HandleFunc("POST /api/v1/ledgers", server.createLedger)
+	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/archive", server.archiveLedger)
+	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/unarchive", server.unarchiveLedger)
 	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/changes", server.listChanges)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/changes", server.createChange)
+	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/changes/{changeID}/withdraw", server.withdrawChange)
 	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/proposals", server.listProposals)
 	mux.HandleFunc("POST /api/v1/ledgers/{ledgerID}/proposals", server.createProposal)
 	mux.HandleFunc("GET /api/v1/ledgers/{ledgerID}/proposals/{proposalID}", server.proposalDetail)
@@ -202,6 +205,14 @@ func (server *Server) listLedgers(writer http.ResponseWriter, request *http.Requ
 	if !ok {
 		return
 	}
+	if request.URL.Query().Has("includeArchived") {
+		value, err := strconv.ParseBool(request.URL.Query().Get("includeArchived"))
+		if err != nil {
+			server.writeError(writer, engine.CodeInvalid, "includeArchived must be true or false.", http.StatusBadRequest)
+			return
+		}
+		input.IncludeArchived = value
+	}
 	page, err := server.engine.ListLedgers(request.Context(), input)
 	if err != nil {
 		server.writeEngineError(writer, err)
@@ -223,6 +234,20 @@ func (server *Server) createLedger(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	server.writeJSON(writer, http.StatusCreated, value)
+}
+func (server *Server) archiveLedger(writer http.ResponseWriter, request *http.Request) {
+	if err := server.engine.ArchiveLedger(request.Context(), request.PathValue("ledgerID")); err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
+}
+func (server *Server) unarchiveLedger(writer http.ResponseWriter, request *http.Request) {
+	if err := server.engine.UnarchiveLedger(request.Context(), request.PathValue("ledgerID")); err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 func (server *Server) listChanges(writer http.ResponseWriter, request *http.Request) {
 	input, ok := server.parseListRequest(writer, request)
@@ -254,6 +279,19 @@ func (server *Server) createChange(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	server.writeJSON(writer, http.StatusAccepted, value)
+}
+func (server *Server) withdrawChange(writer http.ResponseWriter, request *http.Request) {
+	var input struct {
+		Reason string `json:"reason"`
+	}
+	if !server.decode(writer, request, &input) {
+		return
+	}
+	if err := server.engine.WithdrawChange(request.Context(), request.PathValue("ledgerID"), request.PathValue("changeID"), input.Reason); err != nil {
+		server.writeEngineError(writer, err)
+		return
+	}
+	writer.WriteHeader(http.StatusNoContent)
 }
 func (server *Server) listProposals(writer http.ResponseWriter, request *http.Request) {
 	input, ok := server.parseListRequest(writer, request)

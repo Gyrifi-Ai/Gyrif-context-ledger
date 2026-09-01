@@ -67,6 +67,7 @@ function listPath(path: string, options?: ListOptions): string {
   if (options?.cursor !== undefined) query.set("cursor", options.cursor);
   if (options?.status !== undefined) query.set("status", options.status);
   if (options?.action !== undefined) query.set("action", options.action);
+  if (options?.includeArchived !== undefined) query.set("includeArchived", String(options.includeArchived));
   const encoded = query.toString();
   return encoded ? `${path}?${encoded}` : path;
 }
@@ -75,8 +76,11 @@ export const api = {
   status: (init?: RequestInit) => request<SystemStatus>("/api/v1/system/status", init),
   ledgers: (options?: ListOptions, init?: RequestInit) => request<ListPage<Ledger>>(listPath("/api/v1/ledgers", options), init),
   createLedger: (input: { name: string; description?: string }) => request<Ledger>("/api/v1/ledgers", { method: "POST", body: JSON.stringify(input) }),
+  archiveLedger: (ledgerId: string) => request<void>(`/api/v1/ledgers/${ledgerId}/archive`, { method: "POST" }),
+  unarchiveLedger: (ledgerId: string) => request<void>(`/api/v1/ledgers/${ledgerId}/unarchive`, { method: "POST" }),
   changes: (ledgerId: string, options?: ListOptions, init?: RequestInit) => request<ListPage<Change>>(listPath(`/api/v1/ledgers/${ledgerId}/changes`, options), init),
   createChange: (ledgerId: string, input: { unit: string; action: "PUT" | "DELETE"; desired?: unknown; idempotencyKey: string }) => request<Change>(`/api/v1/ledgers/${ledgerId}/changes`, { method: "POST", body: JSON.stringify(input) }),
+  withdrawChange: (ledgerId: string, changeId: string, reason: string) => request<void>(`/api/v1/ledgers/${ledgerId}/changes/${changeId}/withdraw`, { method: "POST", body: JSON.stringify({ reason }) }),
   proposals: (ledgerId: string, options?: ListOptions, init?: RequestInit) => request<ListPage<Proposal>>(listPath(`/api/v1/ledgers/${ledgerId}/proposals`, options), init),
   createProposal: (ledgerId: string, input: { title: string; changeIds: string[] }) => request<Proposal>(`/api/v1/ledgers/${ledgerId}/proposals`, { method: "POST", body: JSON.stringify(input) }),
   proposal: (ledgerId: string, proposalId: string, init?: RequestInit) => request<ProposalDetail>(`/api/v1/ledgers/${ledgerId}/proposals/${proposalId}`, init),

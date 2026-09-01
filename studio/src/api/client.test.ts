@@ -58,6 +58,23 @@ describe("API client", () => {
     expect(fetchMock.mock.calls[0][1]).not.toHaveProperty("body");
   });
 
+  it("uses the lifecycle endpoints and archived list flag", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.withdrawChange("ldg_one", "chg_one", "wrong source");
+    await api.archiveLedger("ldg_one");
+    await api.unarchiveLedger("ldg_one");
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ items: [] }), { status: 200 }));
+    await api.ledgers({ includeArchived: true });
+    expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+      "/api/v1/ledgers/ldg_one/changes/chg_one/withdraw",
+      "/api/v1/ledgers/ldg_one/archive",
+      "/api/v1/ledgers/ldg_one/unarchive",
+      "/api/v1/ledgers?includeArchived=true",
+    ]);
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "POST", body: JSON.stringify({ reason: "wrong source" }) });
+  });
+
   it("uses the Release Intent inspection and recovery endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } })));
     vi.stubGlobal("fetch", fetchMock);

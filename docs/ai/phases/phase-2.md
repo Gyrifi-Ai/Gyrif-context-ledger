@@ -2,7 +2,7 @@
 
 **Goal:** close the gaps where the runtime holds state it will not let anyone read, or reaches a state it will not let anyone leave. Every one of these tickets fixes a place where the audit trail exists in the database but not in the API.
 
-**Status:** In progress
+**Status:** Complete
 
 ## Tickets
 
@@ -13,7 +13,7 @@
 | [GRF-212](../tickets/GRF-212-proposal-cancellation.md) | Proposal cancellation and claim release | M | — | Done |
 | [GRF-213](../tickets/GRF-213-release-intent-api.md) | Release intent inspection and recovery API | L | — | Done |
 | [GRF-214](../tickets/GRF-214-pagination.md) | Pagination and filtering for list endpoints | M | — | Done |
-| [GRF-215](../tickets/GRF-215-lifecycle-management.md) | Ledger and Change lifecycle management | M | GRF-212 | Not started |
+| [GRF-215](../tickets/GRF-215-lifecycle-management.md) | Ledger and Change lifecycle management | M | GRF-212 | Done |
 
 ## Phase-level notes
 
@@ -21,19 +21,20 @@
 - This phase introduces the first migrations after `001_initial.sql`. `001_initial.sql` is frozen; every schema change is a new numbered file. Migration numbers are allocated in ticket order: 002 (GRF-212), 003 (GRF-213), 004 (GRF-214), 007 (GRF-215). If tickets land out of order, renumber to match the actual apply order and record it here.
 - GRF-213 landed before GRF-212, so its migration uses the next actual apply-order number, `002_release_intent_resolution.sql`, instead of the ticket's planned `003`.
 - GRF-212 consequently uses `003_proposal_cancellation.sql`, instead of the ticket's planned `002`.
+- GRF-215 uses `005_lifecycle.sql`, instead of the ticket's planned `007`, because 004 was the latest immutable migration when it landed.
 - Three tickets add enum members — `ProposalStatus.CANCELLED` (GRF-212), `ReleaseIntentStatus.ABANDONED` (GRF-213), and `ChangeStatus.WITHDRAWN` (GRF-215). All must be reflected in `design-system.md` §2.2 status tone mapping and in the exhaustive TypeScript mapping, or the frontend build breaks. That breakage is intentional and desirable.
 - GRF-212 and GRF-215 both manipulate `proposal_changes` claims. Do GRF-212 first; GRF-215's withdrawal guard depends on cancellation existing as the escape hatch for a claimed Change.
 - No new Go dependencies are permitted in this phase.
 
 ## Exit criteria
 
-- [ ] All six tickets complete.
-- [ ] No state the runtime records is unreadable through the API.
-- [ ] No state the runtime can enter is unresolvable through the API.
-- [ ] No mistake a user can make is irreversible except by design.
-- [ ] Every list endpoint is bounded.
-- [ ] `/events/v1` carries real domain events and Studio no longer polls.
-- [ ] `go test ./...` green, including new migration tests.
+- [x] All six tickets complete.
+- [x] No state the runtime records is unreadable through the API.
+- [x] No state the runtime can enter is unresolvable through the API.
+- [x] No mistake a user can make is irreversible except by design.
+- [x] Every list endpoint is bounded.
+- [x] `/events/v1` carries real domain events and Studio no longer polls.
+- [x] `go test ./...` green, including new migration tests.
 
 ## Completed entries
 
@@ -819,4 +820,153 @@ diff whitespace: clean
 **Follow-ups discovered**
 
 - Exact per-Ledger READY Change and Release counts need a future aggregate endpoint if product copy must represent the entire dataset rather than the bounded loaded page. Restoring unbounded list reads is not an acceptable solution.
+
+### GRF-215 — Ledger and Change lifecycle management
+
+| | |
+|---|---|
+| Completed | 2026-09-01 |
+| Commit / PR | Autonomous checkpoint; owner review pending |
+| Deviated from ticket | Yes — no withdrawal actor column; see below |
+
+**What was built**
+
+Operators can now withdraw an unreleased, unclaimed Change without deleting its row or idempotency identity, and can reversibly archive a quiet Ledger without hiding its history. Repository transactions re-read statuses, claims, Draft Proposals, and non-terminal Release Intents before changing lifecycle state. Runtime defaults hide withdrawn Changes and archived Ledgers, while explicit filters, Studio confirmations, and advisory lifecycle events keep those records reachable and current.
+
+**Files added**
+
+- `runtime/internal/engine/lifecycle.go` — Engine lifecycle orchestration, public errors, release-work serialization, and post-commit events.
+- `runtime/migrations/005_lifecycle.sql` — nullable withdrawal and archive metadata plus the active-Ledger list index.
+- `runtime/tests/change_withdrawal_test.go` — HTTP and Engine withdrawal behavior, conflicts, idempotency, deduplication, and status filtering.
+- `runtime/tests/ledger_archive_test.go` — work-in-flight guards, filtering, read-only history, mutation rejection, events, and restoration.
+
+**Files changed**
+
+- `runtime/internal/ledger/change.go`, `runtime/internal/ledger/ledger.go`, `runtime/internal/ledger/invariants.go`, `runtime/internal/ledger/invariants_test.go` — lifecycle domain state, archive wire metadata, and the pure withdrawal matrix.
+- `runtime/internal/repository/repository.go`, `runtime/internal/repository/sqlite.go` — lifecycle contracts, transactional guards, metadata scans, and default filters.
+- `runtime/internal/engine/changes.go`, `lists.go`, `proposals.go`, `rollback.go`, `events.go` — archived write rejection, WITHDRAWN filtering/status errors, rollback serialization, and event vocabulary.
+- `runtime/internal/interfaces/http/server.go`, `runtime/tests/pagination_test.go` — lifecycle routes, `includeArchived` parsing, and the expanded status contract.
+- `studio/src/api/types.ts`, `client.ts`, `events.ts`, `client.test.ts` — lifecycle wire types, methods, event parsing, and exact endpoint tests.
+- `studio/src/features/changes/change-detail-drawer.tsx`, `changes-page.tsx`, `changes-page.test.tsx` — required-reason withdrawal confirmation and explicit WITHDRAWN filter.
+- `studio/src/features/ledgers/ledgers-page.tsx`, `ledgers-page.test.tsx` — archive/unarchive card actions, confirmation, badge, and Archived toggle.
+- `studio/src/features/proposals/proposal-detail.tsx`, `features/shared/status.ts`, `features/shared/status.test.ts`, `test/api-mock.ts` — claimed-Change withdrawal disablement, exhaustive neutral tone, and lifecycle test routing.
+- `docs/ai/product.md`, `tech-spec.md`, `design-system.md`, `tickets/GRF-222-retention-backup.md`, `tickets/INDEX.md` — current lifecycle behavior, schema/API/UI contracts, retention reachability, and status.
+
+**Files removed**
+
+None.
+
+**Contracts introduced or changed**
+
+```go
+const ChangeWithdrawn ChangeStatus = "WITHDRAWN"
+
+func CanWithdrawChange(change Change) error
+
+type Ledger struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	ArchivedAt  *time.Time `json:"archivedAt,omitempty"`
+}
+
+func (engine *Engine) WithdrawChange(ctx context.Context, ledgerID, changeID, reason string) error
+func (engine *Engine) ArchiveLedger(ctx context.Context, ledgerID string) error
+func (engine *Engine) UnarchiveLedger(ctx context.Context, ledgerID string) error
+
+LoadLedger(context.Context, string) (ledger.Ledger, error)
+ArchiveLedger(context.Context, string, time.Time) (bool, error)
+UnarchiveLedger(context.Context, string) (bool, error)
+WithdrawChange(context.Context, string, string, string, time.Time) (bool, error)
+```
+
+```text
+POST /api/v1/ledgers/{ledgerID}/changes/{changeID}/withdraw { "reason": string } -> 204
+POST /api/v1/ledgers/{ledgerID}/archive                                      -> 204
+POST /api/v1/ledgers/{ledgerID}/unarchive                                    -> 204
+GET  /api/v1/ledgers?includeArchived=true                                    -> ListPage<Ledger>
+```
+
+```ts
+type Ledger = { id: string; name: string; description: string; createdAt: string; archivedAt?: string };
+type ChangeStatus = "ACCEPTED" | "READY" | "INVALID" | "RELEASED" | "WITHDRAWN";
+
+archiveLedger(ledgerId: string): Promise<void>;
+unarchiveLedger(ledgerId: string): Promise<void>;
+withdrawChange(ledgerId: string, changeId: string, reason: string): Promise<void>;
+```
+
+Migration 005 adds `changes.withdrawn_at TEXT`, `changes.withdrawn_reason TEXT`, and `ledgers.archived_at TEXT`. New event kinds are `change.withdrawn`, `ledger.archived`, and `ledger.unarchived`.
+
+**Key decisions**
+
+| Decision | Why | Rejected alternative | Why rejected |
+|---|---|---|---|
+| Keep withdrawn rows and filter `status <> WITHDRAWN` only when no explicit status is requested | Preserves idempotency and audit history while making `?status=WITHDRAWN` reachable with correct server pagination | Delete or client-filter withdrawn rows | Deletion violates the governing principle; client filtering creates short/empty pages and lies about pagination |
+| Put claim/status and in-flight checks in repository transactions | The state governing each update must be read on the same serialized SQLite write connection | Engine check followed by update | A concurrent cancellation, release, or Proposal claim creates a check-then-act race |
+| Serialize archival and rollback with `releaseMu` | Rollback synthesizes multiple ordinary Changes before its Proposal exists; archival must not land midway through that sequence | Depend only on per-row archived guards | It can leave a partially prepared rollback inbox on an archived Ledger |
+| Emit `ledger.unarchived` as well as the two ticket-required event kinds | Studio working-set lists must refresh after the reverse transition too | Refresh only on direct mutation response | Other open Studio sessions would retain stale archived state |
+| Expose nullable `archivedAt` on the Ledger wire type | Studio must distinguish archived rows returned by `includeArchived=true` to label and unarchive them | Infer archival from the query mode | A mixed active/archived list cannot be rendered truthfully without row metadata |
+
+**Deviations from the ticket**
+
+The criterion prose says withdrawal records "who and when", but its specified request and schema contain only `reason`, `withdrawn_reason`, and `withdrawn_at`. ADR 0002 deliberately provides no authenticated caller identity, so this implementation does not invent or persist an untrustworthy actor. It implements the explicit reason/time contract. Migration 005 replaces the planned 007 as the ticket explicitly permits renumbering to actual immutable apply order. No other deviations.
+
+**Traps for future work**
+
+- Do not restore withdrawn-row filtering in Studio; it must remain in the Runtime so keyset page boundaries remain correct.
+- `proposal_changes` contains active claims only after GRF-212. The immutable `proposals.change_ids` snapshot, not claim rows, preserves cancelled Proposal history.
+- Archival must remain serialized with rollback/release work. A per-insert archived guard alone cannot make multi-Change rollback preparation atomic.
+- Archive list responses must carry `archivedAt`; `includeArchived=true` returns a mixed list rather than an archived-only list.
+- Withdrawal desired objects are intentionally not deleted here. GRF-222 owns grace-period reclamation and now excludes withdrawn, unreleased Change references from retention reachability.
+
+**Tests added**
+
+- `runtime/internal/ledger/invariants_test.go` — every valid Change status plus unknown-state withdrawal behavior.
+- `runtime/tests/change_withdrawal_test.go` — 204 transition/retry, one event, default/status lists, same-key dedupe, Proposal rejection, active claim/cancellation, required reason, and released conflict.
+- `runtime/tests/ledger_archive_test.go` — Draft and unfinalized-Intent conflicts, idempotency, metadata/filtering, Change/Proposal/Release reads, mutation/rollback rejection, events, and unarchive restoration.
+- `studio/src/api/client.test.ts` — exact lifecycle paths, request body, and `includeArchived` encoding.
+- `studio/src/features/changes/changes-page.test.tsx` — reason-required confirmation and no action for released Changes.
+- `studio/src/features/ledgers/ledgers-page.test.tsx` — archived badge/toggle and confirmed card action.
+
+**Docs updated**
+
+- `docs/ai/product.md` §2 / §3 / §5 / §6 / §7 — lifecycle states, workflows, invariants, Studio surface, and closed gap.
+- `docs/ai/tech-spec.md` §3 / §4 / §7 / §8 / §12 / §14 — HTTP, wire, transaction, migration, API/event, and gap contracts.
+- `docs/ai/design-system.md` §2.2 / §5.1 / §5.2 — neutral WITHDRAWN tone and lifecycle interactions.
+- `docs/ai/tickets/GRF-222-retention-backup.md` — withdrawn unreleased desired values become unreachable subject to its grace period.
+- `docs/ai/tickets/INDEX.md` and this phase log — completion bookkeeping.
+
+**Verification**
+
+```text
+$ cd runtime && test -z "$(gofmt -l .)" && go vet ./... && go test ./... -race && go build ./...
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/engine (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/inference (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/cli (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/interfaces/http (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/ledger (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/repository (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/internal/targets/qdrant (cached)
+ok github.com/gyrifi/gyrif-context-ledger/runtime/tests 3.828s
+
+$ cd studio && pnpm install --frozen-lockfile && pnpm typecheck && pnpm test && pnpm build
+Scope: all 2 workspace projects
+Already up to date
+Test Files  48 passed (48)
+Tests       157 passed (157)
+vite v7.1.4 building for production...
+✓ 1868 modules transformed.
+✓ built in 904ms
+
+$ docker build -t gyrifi:local .
+[+] Building 35.9s (31/31) FINISHED
+=> naming to docker.io/library/gyrifi:local
+```
+
+**Follow-ups discovered**
+
+- GRF-222 must treat a withdrawn, unreleased Change's desired object as unreachable after its grace period; its ticket now states that rule.
+- If trustworthy withdrawal attribution becomes required, the deployment-boundary decision must change first. Do not add a caller-asserted actor and describe it as authenticated identity.
 

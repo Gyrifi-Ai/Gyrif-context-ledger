@@ -154,7 +154,7 @@ func TestListValidationAndLedgerPaging(t *testing.T) {
 		{"/api/v1/ledgers?limit=nope", "Limit must be between 1 and 200."},
 		{"/api/v1/ledgers?cursor=", "The cursor is not valid."},
 		{"/api/v1/ledgers/" + ledgerID + "/changes?cursor=garbage", "The cursor is not valid."},
-		{"/api/v1/ledgers/" + ledgerID + "/changes?status=UNKNOWN", "Status must be one of: ACCEPTED, READY, INVALID, RELEASED."},
+		{"/api/v1/ledgers/" + ledgerID + "/changes?status=UNKNOWN", "Status must be one of: ACCEPTED, READY, INVALID, RELEASED, WITHDRAWN."},
 		{"/api/v1/ledgers/" + ledgerID + "/changes?action=PATCH", "Action must be one of: PUT, DELETE."},
 		{"/api/v1/ledgers/" + ledgerID + "/proposals?status=UNKNOWN", "Status must be one of: DRAFT, REVIEWED, APPROVED, RELEASED, BLOCKED, CANCELLED."},
 	}

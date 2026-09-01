@@ -3,7 +3,7 @@ import type { Change, Proposal, ReleaseIntentStatus } from "../../api/types";
 import type { StatusTone } from "../../ui/patterns/status-badge";
 import { changeTone, intentTone, proposalTone } from "./status";
 
-const changeTones: Record<Change["status"], StatusTone> = { ACCEPTED: "info", READY: "neutral", INVALID: "danger", RELEASED: "success" };
+const changeTones: Record<Change["status"], StatusTone> = { ACCEPTED: "info", READY: "neutral", INVALID: "danger", RELEASED: "success", WITHDRAWN: "neutral" };
 const proposalTones: Record<Proposal["status"], StatusTone> = { DRAFT: "neutral", REVIEWED: "review", APPROVED: "success", RELEASED: "success", BLOCKED: "danger", CANCELLED: "neutral" };
 const intentTones: Record<ReleaseIntentStatus, StatusTone> = { READY: "warning", APPLYING: "warning", VERIFYING: "warning", FINALIZED: "success", RECOVERY_REQUIRED: "danger", ABANDONED: "neutral" };
 

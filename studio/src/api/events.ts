@@ -29,6 +29,9 @@ const baseDelay = 1_000;
 const maximumDelay = 30_000;
 const eventKinds: EventKind[] = [
   "change.accepted",
+  "change.withdrawn",
+  "ledger.archived",
+  "ledger.unarchived",
   "proposal.created",
   "proposal.evaluated",
   "proposal.approved",

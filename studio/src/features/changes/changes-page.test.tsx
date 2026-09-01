@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   mutations: [
     { run: vi.fn(), pending: false, blocked: false, disabledReason: undefined as string | undefined, error: undefined as Error | undefined, result: undefined, reset: vi.fn() },
     { run: vi.fn(), pending: false, blocked: false, disabledReason: undefined as string | undefined, error: undefined as Error | undefined, result: undefined, reset: vi.fn() },
+    { run: vi.fn(), pending: false, blocked: false, disabledReason: undefined as string | undefined, error: undefined as Error | undefined, result: undefined, reset: vi.fn() },
   ],
   appState: { ledgerId: "ldg_one", openLedgerSwitcher: vi.fn() },
 }));
@@ -21,7 +22,7 @@ vi.mock("../../app/providers", () => ({ useAppState: () => mocks.appState }));
 vi.mock("../../app/use-ledger-events", () => ({ useLedgerEvents: vi.fn() }));
 vi.mock("../../app/use-async", () => ({
   useQuery: () => mocks.query,
-  useMutation: () => mocks.mutations[mocks.mutationIndex++ % mocks.mutations.length],
+  useMutation: () => mocks.mutations[mocks.mutationIndex++ % 3],
 }));
 
 function queryState(overrides: Record<string, unknown> = {}) {
@@ -168,5 +169,24 @@ describe("ChangesPage", () => {
     await user.paste();
     await user.click(within(dialog).getByRole("button", { name: "Submit change" }));
     expect(mocks.mutations[0].run).toHaveBeenCalledWith(expect.objectContaining({ unit: "point/new", action: "PUT", desired: { ok: true } }));
+  });
+
+  it("requires a reason and withdraws eligible Changes from detail", async () => {
+    const user = userEvent.setup();
+    render(<ChangesPage />);
+    await user.click(screen.getByRole("cell", { name: "point/ready" }));
+    await user.click(screen.getByRole("button", { name: "Withdraw" }));
+    const confirmation = screen.getByRole("dialog", { name: "Withdraw Change?" });
+    expect(within(confirmation).getByRole("button", { name: "Withdraw Change" })).toBeDisabled();
+    await user.type(within(confirmation).getByRole("textbox", { name: "Withdrawal reason" }), "wrong source");
+    await user.click(within(confirmation).getByRole("button", { name: "Withdraw Change" }));
+    expect(mocks.mutations[2].run).toHaveBeenCalledWith({ change: ready, reason: "wrong source" });
+  });
+
+  it("does not offer withdrawal for released Changes", async () => {
+    const user = userEvent.setup();
+    render(<ChangesPage />);
+    await user.click(screen.getByRole("cell", { name: "point/released" }));
+    expect(screen.queryByRole("button", { name: "Withdraw" })).not.toBeInTheDocument();
   });
 });

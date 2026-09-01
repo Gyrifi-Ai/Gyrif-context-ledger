@@ -15,10 +15,11 @@ const (
 )
 
 type ListRequest struct {
-	Limit  int
-	Cursor string
-	Status string
-	Action string
+	Limit           int
+	Cursor          string
+	Status          string
+	Action          string
+	IncludeArchived bool
 }
 
 type ListPage[T any] struct {
@@ -27,7 +28,7 @@ type ListPage[T any] struct {
 }
 
 var (
-	changeStatuses   = []string{string(ledger.ChangeAccepted), string(ledger.ChangeReady), string(ledger.ChangeInvalid), string(ledger.ChangeReleased)}
+	changeStatuses   = []string{string(ledger.ChangeAccepted), string(ledger.ChangeReady), string(ledger.ChangeInvalid), string(ledger.ChangeReleased), string(ledger.ChangeWithdrawn)}
 	proposalStatuses = []string{string(ledger.ProposalDraft), string(ledger.ProposalReviewed), string(ledger.ProposalApproved), string(ledger.ProposalReleased), string(ledger.ProposalBlocked), string(ledger.ProposalCancelled)}
 	changeActions    = []string{string(ledger.ChangePut), string(ledger.ChangeDelete)}
 )
@@ -79,6 +80,7 @@ func (engine *Engine) ListLedgers(ctx context.Context, request ListRequest) (Lis
 	if err != nil {
 		return ListPage[ledger.Ledger]{}, err
 	}
+	options.IncludeArchived = request.IncludeArchived
 	page, err := engine.repository.ListLedgers(ctx, options)
 	if err != nil {
 		return ListPage[ledger.Ledger]{}, wrap(CodeInternal, "Could not load ledgers.", err)

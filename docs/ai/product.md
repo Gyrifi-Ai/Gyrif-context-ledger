@@ -33,7 +33,7 @@ Ledger
 
 ### Ledger
 
-A governed namespace. Has a unique `name`, a description, and exactly one `HEAD` row created with it. `HEAD.releaseId` is `""` until the first Release.
+A governed namespace. Has a unique `name`, a description, and exactly one `HEAD` row created with it. `HEAD.releaseId` is `""` until the first Release. A nullable `archivedAt` retires the Ledger from the working set without hiding history; unarchiving clears it.
 
 Ledgers are **not** scoped to a Qdrant collection today — the target collection is process-global via `GYRIFI_QDRANT_COLLECTION`. All Ledgers in one process govern the same collection.
 
@@ -50,11 +50,13 @@ One desired-state mutation of one **logical unit**. For the Qdrant adapter, the 
 | `desiredFingerprint` | `sha256:` over canonicalised desired JSON |
 | `requestFingerprint` | `sha256:` over `{unit, action, desired}` — used for idempotency equality |
 | `sequence` | Monotonic per Ledger, assigned by the repository |
-| `status` | `ACCEPTED` \| `READY` \| `INVALID` \| `RELEASED` |
+| `status` | `ACCEPTED` \| `READY` \| `INVALID` \| `RELEASED` \| `WITHDRAWN` |
 
 **Current behaviour:** a newly accepted Change is inserted directly as `READY`. The `ACCEPTED` state and `baseFingerprint` capture exist in the model but are not produced by the acceptance path yet (GRF-221).
 
 Changes are **desired-state**, not diffs. Two Changes to the same unit in one Proposal are not merged; the plan applies them in Proposal order.
+
+Withdrawal is a terminal, recorded intent transition for unreleased Changes. It retains the row and idempotency key, records `withdrawn_at` and a required `withdrawn_reason`, hides the Change from the default inbox, and prevents Proposal selection. A released Change can never be withdrawn; a claimed Change must first be released by cancelling its Draft Proposal.
 
 ### Proposal
 
@@ -145,11 +147,15 @@ flowchart LR
 
 **No target I/O happens here.** The response is emitted only after commit.
 
+Archived Ledgers reject this mutation. `POST .../changes/{changeID}/withdraw` permits only `ACCEPTED`, `READY`, or `INVALID`, performs status and active-claim guards inside the write transaction, and returns `204`; an already-withdrawn Change is an idempotent success.
+
 ### Step 2 — Create a Proposal
 
 `POST /api/v1/ledgers/{id}/proposals` with `{ title, changeIds }`.
 
 Fails with `CONFLICT` if any Change is not `READY` or is already claimed. Partial Proposals are impossible — the claim insert is transactional and all-or-nothing.
+
+Archived Ledgers reject Proposal creation. Archival itself is reversible but cannot begin while a Draft Proposal or non-terminal Release Intent exists. Archived Ledgers remain readable and reject new Changes, new Proposals, and rollback preparation.
 
 ### Step 3 — Evaluate
 
@@ -244,6 +250,10 @@ These are enforced by code and tests. **Do not weaken any of them.**
 | 18 | A Ledger cannot start another release while an Intent requires recovery | `ReleaseProposal` queries `RECOVERY_REQUIRED` intents before gate evaluation |
 | 19 | Recovery retry verifies only; it never reapplies target writes | `RetryReleaseIntent` calls `TargetAdapter.Verify`, then the shared finalisation path |
 | 20 | Abandonment is explicit, attributed with a note, and never advances `HEAD` | atomic `ResolveReleaseIntent` transition from `RECOVERY_REQUIRED` to `ABANDONED` |
+| 21 | Withdrawal never erases a Change or its idempotency identity | transaction-safe status update guarded by `CanWithdrawChange`; no delete path |
+| 22 | Released or actively claimed Changes cannot be withdrawn | in-transaction status and `proposal_changes` claim checks |
+| 23 | Archival cannot strand in-flight governance work | in-transaction Draft Proposal and non-terminal Intent guards |
+| 24 | Archived Ledgers are readable but reject new mutation and rollback work | repository write guards plus Engine rollback guard |
 
 ---
 
@@ -253,8 +263,8 @@ Four top-level areas, nothing else:
 
 | Area | Purpose |
 |---|---|
-| **Ledgers** | Create and select the active Ledger. Selection persists in `localStorage` under `gyrifi.ledger`. |
-| **Changes** | Durable inbox, PUT/DELETE submission, Change inspection, and the ordered selection flow that starts Proposal creation from `READY` Changes. |
+| **Ledgers** | Create, select, archive, and unarchive Ledgers. The optional Archived view includes retired namespaces; the topbar working-set switcher does not. Selection persists in `localStorage` under `gyrifi.ledger`. |
+| **Changes** | Durable inbox, PUT/DELETE submission, Change inspection and withdrawal, and the ordered selection flow that starts Proposal creation from `READY` Changes. |
 | **Proposals** | Linkable two-pane review workspace for ordered Changes, user-authored evaluation evidence, hash-bound approval, confirmed release, Draft cancellation, and recovery guidance. |
 | **Releases** | Immutable timeline and plans. Inspect/retry/abandon recovery Intents, or create a confirmed forward-history rollback Proposal from any non-HEAD Release. |
 
@@ -270,5 +280,4 @@ The Studio topbar exposes the selected Ledger switcher, the current HEAD Release
 |---|---|
 | `baseFingerprint` is never captured; no async Change preparation | GRF-221 |
 | No retention limits, quotas, or backup command | GRF-222 |
-| Ledgers and Changes are create-only — a mistaken ingestion is permanent | GRF-215 |
 | No rate limiting — one client can starve every other | GRF-226 |

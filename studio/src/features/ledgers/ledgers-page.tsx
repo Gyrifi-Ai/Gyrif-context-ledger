@@ -15,6 +15,7 @@ import { PageHeader } from "../../ui/layout/page-header";
 import { EmptyState } from "../../ui/feedback/empty-state";
 import { ErrorState } from "../../ui/feedback/error-state";
 import { Skeleton } from "../../ui/feedback/skeleton";
+import { ConfirmDialog } from "../../ui/patterns/confirm-dialog";
 import { HashChip } from "../../ui/patterns/hash-chip";
 import { StatusBadge } from "../../ui/patterns/status-badge";
 import { cn } from "../../lib/utils";
@@ -23,7 +24,7 @@ import { countReadyChanges, ledgerDescriptionMaxLength, ledgerNameMaxLength, val
 const confirmationDurationSeconds = 3;
 const millisecondsPerSecond = 1_000;
 
-function LedgerCard({ ledger, active, onSelect }: { ledger: Ledger; active: boolean; onSelect: (ledger: Ledger) => void }) {
+function LedgerCard({ ledger, active, onSelect, onLifecycle }: { ledger: Ledger; active: boolean; onSelect: (ledger: Ledger) => void; onLifecycle: (ledger: Ledger) => void }) {
   const readyQuery = useQuery(
     `ledger-ready-count-${ledger.id}`,
     async (signal) => {
@@ -51,7 +52,7 @@ function LedgerCard({ ledger, active, onSelect }: { ledger: Ledger; active: bool
       <button type="button" onClick={() => onSelect(ledger)} className="flex flex-1 flex-col p-5 text-left">
         <span className="flex items-start justify-between gap-3">
           <span className="text-base font-semibold text-foreground">{ledger.name}</span>
-          {active && <StatusBadge label="ACTIVE" tone="success" dot />}
+          <span className="flex gap-2">{ledger.archivedAt && <StatusBadge label="ARCHIVED" tone="neutral" />}{active && <StatusBadge label="ACTIVE" tone="success" dot />}</span>
         </span>
         <span title={ledger.description || undefined} className="mt-2 min-h-10 line-clamp-2 text-sm text-muted-foreground">
           {ledger.description || "No description provided."}
@@ -62,8 +63,9 @@ function LedgerCard({ ledger, active, onSelect }: { ledger: Ledger; active: bool
           <span>{releasesQuery.data ?? "—"} releases</span>
         </span>
       </button>
-      <div className="border-t border-border/60 px-5 py-3">
+      <div className="flex items-center justify-between gap-3 border-t border-border/60 px-5 py-3">
         <HashChip value={ledger.id} />
+        <Button variant="ghost" size="sm" onClick={() => onLifecycle(ledger)}>{ledger.archivedAt ? "Unarchive" : "Archive"}</Button>
       </div>
     </article>
   );
@@ -81,7 +83,7 @@ function LedgerGridSkeleton() {
   );
 }
 
-function LedgerList({ query, activeId, onSelect, onCreate }: { query: PaginatedQueryResult<Ledger>; activeId: string; onSelect: (ledger: Ledger) => void; onCreate: () => void }) {
+function LedgerList({ query, activeId, onSelect, onLifecycle, onCreate }: { query: PaginatedQueryResult<Ledger>; activeId: string; onSelect: (ledger: Ledger) => void; onLifecycle: (ledger: Ledger) => void; onCreate: () => void }) {
   if (query.loading && query.data === undefined) return <LedgerGridSkeleton />;
   if (query.error) return <ErrorState message={query.error.message} onRetry={query.refetch} />;
   if (query.data === undefined) return <div className={query.unavailable ? "gy-is-refetching" : undefined}><LedgerGridSkeleton /></div>;
@@ -99,7 +101,7 @@ function LedgerList({ query, activeId, onSelect, onCreate }: { query: PaginatedQ
   return (
     <div className={query.refetching || query.unavailable ? "gy-is-refetching" : undefined}>
       <div className="gy-ledger-grid">
-        {query.data.map((ledger) => <LedgerCard key={ledger.id} ledger={ledger} active={ledger.id === activeId} onSelect={onSelect} />)}
+        {query.data.map((ledger) => <LedgerCard key={ledger.id} ledger={ledger} active={ledger.id === activeId} onSelect={onSelect} onLifecycle={onLifecycle} />)}
       </div>
       {query.nextCursor && <div className="mt-5 flex justify-center"><Button variant="secondary" loading={query.loadingMore} disabled={query.loadingMore || query.refetching} onClick={query.loadMore}>Load more</Button></div>}
       {query.loadMoreError && <div className="mt-4"><ErrorState title="Unable to load more Ledgers" message={query.loadMoreError.message} onRetry={query.loadMore} retryDisabled={query.loadingMore} /></div>}
@@ -113,12 +115,14 @@ export function LedgersPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [confirmation, setConfirmation] = useState("");
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [lifecycleTarget, setLifecycleTarget] = useState<Ledger | null>(null);
   const confirmationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const newLedgerButtonRef = useRef<HTMLButtonElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const restoreHeaderFocusRef = useRef(false);
   const { ledgerId, refreshLedgers, setLedgerId } = useAppState();
-  const ledgerQuery = usePaginatedQuery("ledgers", (cursor, signal) => api.ledgers({ cursor }, { signal }), []);
+  const ledgerQuery = usePaginatedQuery("ledgers", (cursor, signal) => api.ledgers({ cursor, includeArchived: includeArchived || undefined }, { signal }), [includeArchived]);
   const createMutation = useMutation(async ({ ledgerName, ledgerDescription }: { ledgerName: string; ledgerDescription: string }) => {
     const ledger = await api.createLedger({ name: ledgerName, description: ledgerDescription || undefined });
     setLedgerId(ledger.id);
@@ -131,6 +135,18 @@ export function LedgersPage() {
     void refreshLedgers();
     showConfirmation(ledger);
     return ledger;
+  });
+  const lifecycleMutation = useMutation(async (ledger: Ledger) => {
+    if (ledger.archivedAt) {
+      await api.unarchiveLedger(ledger.id);
+    } else {
+      await api.archiveLedger(ledger.id);
+      if (ledger.id === ledgerId) setLedgerId("");
+    }
+    setLifecycleTarget(null);
+    ledgerQuery.refetch();
+    void refreshLedgers();
+    setConfirmation(`${ledger.name} ${ledger.archivedAt ? "unarchived" : "archived"}.`);
   });
 
   const showConfirmation = (ledger: Ledger) => {
@@ -206,7 +222,8 @@ export function LedgersPage() {
         actions={<Button ref={newLedgerButtonRef} size="sm" iconLeft={<Plus className="size-4" aria-hidden="true" />} onClick={openDrawer}>New ledger</Button>}
       />
       {confirmation && <p role="status" className="mb-4 text-sm font-medium text-success">{confirmation}</p>}
-      <LedgerList query={ledgerQuery} activeId={ledgerId} onSelect={selectLedger} onCreate={openDrawer} />
+      <label className="mb-4 flex w-fit items-center gap-2 text-sm font-medium"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} />Archived</label>
+      <LedgerList query={ledgerQuery} activeId={ledgerId} onSelect={selectLedger} onLifecycle={(ledger) => { lifecycleMutation.reset(); setLifecycleTarget(ledger); }} onCreate={openDrawer} />
       <Drawer
         open={drawerOpen}
         onClose={closeDrawer}
@@ -239,6 +256,18 @@ export function LedgersPage() {
           {mutationError && <div className="mt-5"><ErrorState title="Unable to create ledger" message={mutationError.message} onRetry={() => void createMutation.run({ ledgerName: name.trim(), ledgerDescription: description.trim() })} retryDisabled={createMutation.blocked} retryTitle={createMutation.disabledReason} /></div>}
         </form>
       </Drawer>
+      <ConfirmDialog
+        open={lifecycleTarget !== null}
+        onClose={() => setLifecycleTarget(null)}
+        title={lifecycleTarget?.archivedAt ? "Unarchive Ledger?" : "Archive Ledger?"}
+        consequence={<div className="grid gap-3"><p>{lifecycleTarget?.archivedAt ? "The Ledger will return to the working set and accept new work." : "The Ledger will leave the working set. Its complete history remains readable."}</p>{lifecycleMutation.error && <p role="alert" className="text-danger">{lifecycleMutation.error.message}</p>}</div>}
+        affectedCount={1}
+        confirmLabel={lifecycleTarget?.archivedAt ? "Unarchive Ledger" : "Archive Ledger"}
+        confirmLoading={lifecycleMutation.pending}
+        confirmDisabled={lifecycleMutation.blocked}
+        confirmTitle={lifecycleMutation.disabledReason}
+        onConfirm={() => { if (lifecycleTarget) void lifecycleMutation.run(lifecycleTarget); }}
+      />
     </>
   );
 }

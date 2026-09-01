@@ -60,6 +60,17 @@ func CanCancelProposal(proposal Proposal) error {
 	}
 }
 
+func CanWithdrawChange(change Change) error {
+	switch change.Status {
+	case ChangeAccepted, ChangeReady, ChangeInvalid:
+		return nil
+	case ChangeReleased:
+		return fmt.Errorf("%w: released Change is part of the audit trail and cannot be withdrawn", ErrConflict)
+	default:
+		return fmt.Errorf("%w: Change status %s cannot be withdrawn", ErrConflict, change.Status)
+	}
+}
+
 func ValidateReleaseParent(current Head, intent ReleaseIntent) error {
 	if current.LedgerID != intent.LedgerID || current.ReleaseID != intent.ParentID {
 		return fmt.Errorf("%w: proposal base no longer matches HEAD", ErrConflict)

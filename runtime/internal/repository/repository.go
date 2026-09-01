@@ -16,13 +16,23 @@ var (
 	ErrProposalNotDraft         = errors.New("proposal is not a draft")
 	ErrProposalReleased         = errors.New("proposal is released")
 	ErrProposalReleaseStarted   = errors.New("proposal release has started")
+	ErrLedgerArchived           = errors.New("ledger is archived")
+	ErrLedgerWorkInFlight       = errors.New("ledger has work in flight")
 )
 
+type ChangeClaimError struct {
+	ProposalID string
+}
+
+func (err *ChangeClaimError) Error() string { return ErrChangeClaimed.Error() }
+func (err *ChangeClaimError) Unwrap() error { return ErrChangeClaimed }
+
 type ListOptions struct {
-	Limit  int
-	Cursor *Cursor
-	Status *string
-	Action *string
+	Limit           int
+	Cursor          *Cursor
+	Status          *string
+	Action          *string
+	IncludeArchived bool
 }
 
 type Page[T any] struct {
@@ -40,9 +50,13 @@ type Repository interface {
 	DatabaseStats(context.Context) (OperationalStats, error)
 	ObjectStoreBytes(context.Context) (int64, error)
 	CreateLedger(context.Context, ledger.Ledger) error
+	LoadLedger(context.Context, string) (ledger.Ledger, error)
 	ListLedgers(context.Context, ListOptions) (Page[ledger.Ledger], error)
+	ArchiveLedger(context.Context, string, time.Time) (bool, error)
+	UnarchiveLedger(context.Context, string) (bool, error)
 	FindChangeByIdempotencyKey(context.Context, string, string) (ledger.Change, error)
 	InsertChange(context.Context, *ledger.Change) error
+	WithdrawChange(context.Context, string, string, string, time.Time) (bool, error)
 	ListChanges(context.Context, string, ListOptions) (Page[ledger.Change], error)
 	LoadChanges(context.Context, string, []string) ([]ledger.Change, error)
 	InsertProposal(context.Context, ledger.Proposal) error

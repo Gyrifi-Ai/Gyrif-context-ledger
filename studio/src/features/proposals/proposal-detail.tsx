@@ -104,7 +104,7 @@ export function ProposalDetail({ ledgerId, proposalId, onUpdated }: { ledgerId: 
           {!cancellation.enabled && cancellation.reason && <span className="text-xs text-muted-foreground">{cancellation.reason}</span>}
         </div>
       </Panel>
-      <ChangeDetailDrawer change={selectedChange} onClose={() => setSelectedChange(null)} />
+      <ChangeDetailDrawer change={selectedChange} onClose={() => setSelectedChange(null)} onWithdraw={() => undefined} withdrawBlocked withdrawDisabledReason="Cancel the Proposal first." />
       <ConfirmDialog open={confirmCancel} onClose={() => setConfirmCancel(false)} title="Cancel Proposal?" consequence={<p>The Changes will return to the inbox and can be selected into a new Proposal. Existing evidence and approvals remain in the audit trail.</p>} affectedCount={detail.changes.length} confirmLabel="Cancel Proposal" confirmLoading={cancelMutation.pending} confirmDisabled={!cancellation.enabled || cancelMutation.blocked} confirmTitle={!cancellation.enabled ? cancellation.reason : cancelMutation.disabledReason} onConfirm={() => void cancelMutation.run(undefined)} />
       {cancelMutation.error && <ErrorState title="Unable to cancel Proposal" message={cancelMutation.error.message} onRetry={() => setConfirmCancel(true)} retryDisabled={cancelMutation.blocked || !cancellation.enabled} retryTitle={!cancellation.enabled ? cancellation.reason : cancelMutation.disabledReason} />}
     </div>
